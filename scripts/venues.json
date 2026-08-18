@@ -1,0 +1,73 @@
+{
+  "$comment": [
+    "Tile-extraction bounding boxes ONLY. This is not circuit seed data.",
+    "",
+    "Nothing here asserts anything about a venue beyond 'download OSM map tiles",
+    "covering this rectangle'. Circuit presets (name, timezone, layout variants,",
+    "centre) and marshal-post numbering are reserved for human sourcing from",
+    "official documents under spec §0.2 and do not belong in this file.",
+    "",
+    "bbox order is [west, south, east, north] in decimal degrees, matching the",
+    "--bbox argument of `pmtiles extract`.",
+    "",
+    "To add a venue: draw a rectangle at bboxfinder.com, paste the four numbers,",
+    "then run `npm run tiles -- <key>`. Verify the result by opening the map and",
+    "checking the whole circuit is inside the extract — a bbox that clips the far",
+    "side of the track looks fine until you walk there."
+  ],
+  "planetBuild": "https://build.protomaps.com/20260817.pmtiles",
+  "venues": {
+    "nordschleife": {
+      "label": "Nürburgring Nordschleife + GP-Strecke",
+      "_note": "Wider than the circuit on purpose. The camera is bounded to this rectangle, so it must be roomy enough to frame the whole lap with padding at any screen aspect — a bbox that merely contains the track leaves the camera unable to zoom out far enough to show it, clipping Hohe Acht off the top.",
+      "bbox": [
+        6.88,
+        50.3,
+        7.04,
+        50.41
+      ],
+      "verified": true
+    },
+    "spa-francorchamps": {
+      "label": "Circuit de Spa-Francorchamps",
+      "bbox": [
+        5.92,
+        50.41,
+        6,
+        50.47
+      ],
+      "verified": true
+    },
+    "zandvoort": {
+      "label": "Circuit Zandvoort",
+      "bbox": [
+        4.51,
+        52.37,
+        4.575,
+        52.405
+      ],
+      "verified": true
+    },
+    "le-mans": {
+      "label": "Circuit de la Sarthe",
+      "_note": "Full 24h layout. The bbox reaches well south-east for the Mulsanne straight and Arnage, and is deliberately far wider than the circuit: la Sarthe is a tall, narrow shape, so a snug bbox leaves the camera unable to zoom out enough to frame the lap on a wide screen.",
+      "bbox": [
+        0.15,
+        47.88,
+        0.31,
+        47.99
+      ],
+      "verified": true
+    },
+    "zolder": {
+      "label": "Circuit Zolder",
+      "bbox": [
+        5.235,
+        50.975,
+        5.275,
+        51.005
+      ],
+      "verified": true
+    }
+  }
+}

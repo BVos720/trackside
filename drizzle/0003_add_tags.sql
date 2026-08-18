@@ -1,0 +1,1 @@
+ALTER TABLE `spots` ADD `tags` text DEFAULT '[]' NOT NULL;

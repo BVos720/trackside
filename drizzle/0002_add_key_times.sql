@@ -1,0 +1,1 @@
+ALTER TABLE `spots` ADD `key_times` text DEFAULT '[]' NOT NULL;

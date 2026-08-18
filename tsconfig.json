@@ -1,6 +1,24 @@
 {
   "extends": "expo/tsconfig.base",
   "compilerOptions": {
-    "strict": true
-  }
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "exactOptionalPropertyTypes": false,
+    // Declared explicitly because automatic @types inclusion does not pick
+    // these up under Expo's `moduleResolution: bundler` +
+    // `customConditions: ["react-native"]`. "node" is needed by the schema
+    // invariant tests, which read the generated migration SQL off disk.
+    "types": ["node", "react"],
+    "paths": {
+      "@core/*": ["./src/core/*"],
+      "@storage-local/*": ["./src/storage-local/*"],
+      // Named `ui`, not `app`: Expo Router claims `src/app/` as its file-based
+      // routing root, which would turn theme.ts into a route. Same layer the
+      // spec calls `app/` in §2.3, renamed to avoid the collision.
+      "@ui/*": ["./src/ui/*"]
+    }
+  },
+  "include": ["**/*.ts", "**/*.tsx"],
+  "exclude": ["node_modules", ".expo", "dist"]
 }

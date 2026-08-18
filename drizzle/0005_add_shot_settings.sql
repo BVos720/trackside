@@ -1,0 +1,1 @@
+ALTER TABLE `spots` ADD `shot_settings` text DEFAULT '[]' NOT NULL;

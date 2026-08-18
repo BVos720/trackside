@@ -1,0 +1,1 @@
+ALTER TABLE `media` ADD `is_key_image` integer DEFAULT false NOT NULL;

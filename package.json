@@ -3,20 +3,48 @@
   "version": "1.0.0",
   "main": "index.ts",
   "dependencies": {
+    "@expo/metro-runtime": "~57.0.11",
+    "@maplibre/maplibre-react-native": "^11.3.6",
+    "@protomaps/basemaps": "^5.7.2",
+    "drizzle-orm": "^0.45.2",
     "expo": "~57.0.14",
+    "expo-asset": "~57.0.12",
+    "expo-dev-client": "~57.0.13",
+    "expo-location": "~57.0.11",
+    "expo-sqlite": "~57.0.1",
     "expo-status-bar": "~57.0.1",
+    "maplibre-gl": "^5.24.0",
+    "pdfjs-dist": "^6.2.108",
+    "pmtiles": "^4.5.0",
     "react": "19.2.3",
-    "react-native": "0.86.2"
+    "react-dom": "19.2.3",
+    "react-native": "0.86.2",
+    "react-native-web": "^0.21.2",
+    "suncalc": "^2.0.1",
+    "uuid": "^14.0.1"
   },
   "devDependencies": {
+    "@turf/turf": "^7.4.0",
+    "@types/node": "^26.2.0",
     "@types/react": "~19.2.2",
-    "typescript": "~6.0.3"
+    "drizzle-kit": "^0.31.10",
+    "typescript": "~6.0.3",
+    "vitest": "^4.1.10"
   },
   "scripts": {
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "tiles": "node scripts/extract-tiles.mjs",
+    "circuits": "node scripts/extract-circuits.mjs",
+    "scenery": "node scripts/extract-scenery.mjs",
+    "paths": "node scripts/extract-paths.mjs",
+    "pdfworker": "node -e \"require('fs').copyFileSync('node_modules/pdfjs-dist/build/pdf.worker.min.mjs','public/pdf.worker.min.mjs')\"",
+    "postinstall": "npm run pdfworker"
   },
   "private": true
 }
