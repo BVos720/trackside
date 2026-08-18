@@ -38,6 +38,7 @@ import {
   type VenueKey,
   buildMapStyle,
   illuminationFromSun,
+  circuitMetricsFor,
 } from '../map/style';
 import { solarPosition } from '../../core/logic/sun';
 
@@ -670,9 +671,13 @@ export default function MapScreen({
             hoveredId !== null && items.some((i) => i.id === hoveredId);
           const CARD = expanded ? EXPANDED : COMPACT;
 
+          const hasMetrics = circuitMetricsFor(venue) != null;
+          // Avoid the CircuitRuler (148px) + space.md (16px) + extra margin (8px)
+          // Also ensures the stackBadge (sticks out 8px) is never clipped by screen.
+          const rightMargin = hasMetrics ? 148 + 16 + 8 : MARGIN + 8;
           const left = Math.max(
             MARGIN,
-            Math.min(p.x - CARD / 2, width - CARD - MARGIN),
+            Math.min(p.x - CARD / 2, width - CARD - rightMargin),
           );
           const stemLeft = Math.max(0, Math.min(p.x - left - 1, CARD - 2));
 

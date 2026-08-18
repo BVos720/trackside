@@ -212,6 +212,7 @@ export default function TimetableScreen({
     <Body
       style={embedded ? styles.embedded : styles.root}
       contentContainerStyle={embedded ? undefined : styles.content}
+      keyboardShouldPersistTaps="handled"
     >
       {!embedded && (
         <>

@@ -44,6 +44,7 @@ export default function EventScreen({
   onMoveStop,
   onNavigate,
   onOpenMap,
+  onStartEvent,
   onBack,
   onDelete,
 }: {
@@ -63,13 +64,14 @@ export default function EventScreen({
   onMoveStop: (stopId: string, toIndex: number) => void;
   onNavigate: (stopId: string) => void;
   onOpenMap: () => void;
+  onStartEvent: () => void;
   onBack: () => void;
   onDelete: () => void;
 }) {
   const range = formatDateRange(event.startDate, event.endDate);
 
   return (
-    <ScrollView style={styles.root} contentContainerStyle={styles.content}>
+    <ScrollView style={styles.root} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
       <Pressable
         onPress={onBack}
         hitSlop={8}
@@ -90,15 +92,23 @@ export default function EventScreen({
         {event.stops.length} planned
       </Text>
 
-      <Pressable
-        onPress={onOpenMap}
-        style={({ pressed }) => [styles.mapButton, pressed && styles.pressed]}
-      >
-        <Text style={styles.mapLabel}>Go to the map</Text>
-        <Text style={styles.mapHint}>
-          This event&apos;s waypoints, on the circuit
-        </Text>
-      </Pressable>
+      <View style={{ flexDirection: 'row', gap: 8, marginTop: 16 }}>
+        <Pressable
+          onPress={onOpenMap}
+          style={({ pressed }) => [styles.mapButton, pressed && styles.pressed, { flex: 1, marginTop: 0 }]}
+        >
+          <Text style={styles.mapLabel}>Go to the map</Text>
+          <Text style={styles.mapHint}>This event's waypoints</Text>
+        </Pressable>
+
+        <Pressable
+          onPress={onStartEvent}
+          style={({ pressed }) => [styles.mapButton, pressed && styles.pressed, { flex: 1, marginTop: 0, backgroundColor: '#F2A03D' }]}
+        >
+          <Text style={styles.mapLabel}>Start Event</Text>
+          <Text style={styles.mapHint}>Navigate to next spot</Text>
+        </Pressable>
+      </View>
 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Timetable</Text>
@@ -122,6 +132,7 @@ export default function EventScreen({
           event={event}
           spots={spots}
           network={network}
+          sessions={sessions}
           onAddStop={onAddStop}
           onUpdateStop={onUpdateStop}
           onRemoveStop={onRemoveStop}

@@ -89,7 +89,7 @@ export function useSpots(circuitId: CircuitId) {
   useEffect(() => {
     setLoading(true);
     void reload();
-  }, [reload]);
+  }, [reload, circuitId]);
 
   /**
    * Create a spot.

@@ -72,11 +72,19 @@ export default function PlannerScreen({
   onMoveStop,
   onNavigate,
   embedded = false,
+  sessions = [],
 }: {
   event: Event;
   /** Every spot at this circuit, for the picker. */
   spots: Spot[];
   network: WalkNetwork;
+  sessions?: readonly {
+    id: string;
+    title: string;
+    day: string;
+    start: string;
+    end: string;
+  }[];
   onAddStop: (spotId: SpotId, day: string | null) => void;
   onUpdateStop: (
     stopId: string,
@@ -162,6 +170,7 @@ export default function PlannerScreen({
     <Body
       style={embedded ? styles.embedded : styles.root}
       contentContainerStyle={embedded ? undefined : styles.content}
+      keyboardShouldPersistTaps="handled"
     >
       {!embedded && (
         <>
@@ -281,6 +290,7 @@ export default function PlannerScreen({
               stop={p.stop}
               index={i}
               count={planned.length}
+              sessions={sessions}
               onUpdate={(patch) => onUpdateStop(p.stop.id, patch)}
               onRemove={() => {
                 setEditing(null);
@@ -340,6 +350,7 @@ function StopEditor({
   stop,
   index,
   count,
+  sessions,
   onUpdate,
   onRemove,
   onMove,
@@ -348,6 +359,7 @@ function StopEditor({
   stop: PlanStop;
   index: number;
   count: number;
+  sessions: readonly { id: string; title: string; day: string; start: string; end: string }[];
   onUpdate: (patch: Partial<Omit<PlanStop, 'id' | 'spotId'>>) => void;
   onRemove: () => void;
   onMove: (to: number) => void;
@@ -355,6 +367,7 @@ function StopEditor({
 }) {
   const [time, setTime] = useState(stop.arriveAt ?? '');
   const [label, setLabel] = useState(stop.label ?? '');
+  const [showSuggestions, setShowSuggestions] = useState(false);
 
   // Held locally and committed on blur: writing every keystroke would persist
   // "1", "14", "14:" as arrival times and recompute the whole route each time.
@@ -376,6 +389,43 @@ function StopEditor({
     onUpdate({ arriveAt: normalised });
   };
 
+  const commitLabel = (text: string, sessionId?: string, start?: string) => {
+    const trimmed = text.trim();
+    setLabel(trimmed);
+    setShowSuggestions(false);
+    
+    // Create a mutable copy of the patch
+    const patch: Record<string, any> = { 
+      label: trimmed || null, 
+      sessionId: sessionId ?? stop.sessionId 
+    };
+
+    // Auto-fill time if the stop doesn't have one set yet
+    if (start && !time) {
+      const parsed = parseClock(start);
+      if (parsed !== null) {
+        const normalised = formatClock(parsed);
+        setTime(normalised);
+        patch.arriveAt = normalised;
+      }
+    }
+
+    onUpdate(patch as Partial<Omit<PlanStop, 'id' | 'spotId'>>);
+  };
+
+  const activeDay = stop.day;
+  const suggestions = useMemo(() => {
+    if (!showSuggestions || !label.trim()) return [];
+    const lower = label.toLowerCase();
+    
+    return [...sessions]
+      // Only include sessions that match the text AND (if the stop has a day set) are on the same day
+      .filter((s) => s.title.toLowerCase().includes(lower) && (!activeDay || s.day === activeDay))
+      // Sort by start time chronologically
+      .sort((a, b) => a.start.localeCompare(b.start))
+      .slice(0, 5); // Limit to 5 suggestions to avoid clutter
+  }, [sessions, label, showSuggestions, activeDay]);
+
   return (
     <View style={styles.editor}>
       <Text style={styles.editorLabel}>BE IN POSITION AT</Text>
@@ -391,14 +441,44 @@ function StopEditor({
       />
 
       <Text style={styles.editorLabel}>WHAT FOR</Text>
-      <TextInput
-        value={label}
-        onChangeText={setLabel}
-        onBlur={() => onUpdate({ label: label.trim() || null })}
-        placeholder="Racing legends race 1"
-        placeholderTextColor={color.textFaint}
-        style={styles.input}
-      />
+      <View style={{ zIndex: 1 }}>
+        <TextInput
+          value={label}
+          onChangeText={(text) => {
+            setLabel(text);
+            setShowSuggestions(true);
+          }}
+          onFocus={() => setShowSuggestions(true)}
+          onBlur={() => {
+            // Delay closing to let onPress fire
+            setTimeout(() => commitLabel(label), 150);
+          }}
+          placeholder="Racing legends race 1"
+          placeholderTextColor={color.textFaint}
+          style={styles.input}
+        />
+        {suggestions.length > 0 && (
+          <View style={styles.suggestionsContainer}>
+            {suggestions.map((s) => (
+              <Pressable
+                key={s.id}
+                onPress={() => commitLabel(s.title, s.id, s.start)}
+                style={({ pressed }) => [
+                  styles.suggestionRow,
+                  pressed && styles.pressed,
+                ]}
+              >
+                <Text style={styles.suggestionTitle} numberOfLines={1}>
+                  {s.title}
+                </Text>
+                <Text style={styles.suggestionMeta}>
+                  {s.start}–{s.end} {s.day ? `· ${s.day}` : ''}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        )}
+      </View>
 
       <View style={styles.editorRow}>
         <Pressable
@@ -610,6 +690,40 @@ const styles = StyleSheet.create({
     marginTop: space.md,
   },
   removeHint: { color: color.textFaint, fontSize: 11, marginTop: 2 },
+  
+  suggestionsContainer: {
+    position: 'absolute',
+    top: 52, // TextInput minHeight is 44 + marginTop space.xs (4 or 8)
+    left: 0,
+    right: 0,
+    backgroundColor: color.surface,
+    borderRadius: radius.md,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: color.border,
+    zIndex: 10,
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+  },
+  suggestionRow: {
+    padding: space.sm,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: color.border,
+  },
+  suggestionTitle: {
+    color: color.text,
+    fontSize: type.body,
+    fontWeight: weight.bold,
+  },
+  suggestionMeta: {
+    color: color.textMuted,
+    fontSize: 11,
+    marginTop: 2,
+    fontVariant: ['tabular-nums'],
+  },
 
   picker: { marginTop: space.md },
   pickRow: {

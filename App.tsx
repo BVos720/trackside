@@ -646,6 +646,29 @@ export default function App() {
                 setNavStopId(stopId);
                 setWhere('map');
               }}
+              onStartEvent={() => {
+                const now = new Date();
+                const m = String(now.getMonth() + 1).padStart(2, '0');
+                const d = String(now.getDate()).padStart(2, '0');
+                const currentIsoDate = `${now.getFullYear()}-${m}-${d}`;
+                const currentClock = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+
+                let nextStop = activeEvent.stops.find(s => {
+                  if (!s.day || !s.arriveAt) return false;
+                  if (s.day > currentIsoDate) return true;
+                  if (s.day === currentIsoDate && s.arriveAt >= currentClock) return true;
+                  return false;
+                });
+
+                if (!nextStop && activeEvent.stops.length > 0) {
+                  nextStop = activeEvent.stops[0];
+                }
+
+                if (nextStop) {
+                  setNavStopId(nextStop.id);
+                  setWhere('map');
+                }
+              }}
               onOpenMap={() => setWhere('map')}
               onBack={() => setWhere('events')}
               onDelete={() => {
