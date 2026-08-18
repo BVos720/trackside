@@ -71,6 +71,7 @@ export default function PlannerScreen({
   onRemoveStop,
   onMoveStop,
   onNavigate,
+  embedded = false,
 }: {
   event: Event;
   /** Every spot at this circuit, for the picker. */
@@ -85,6 +86,8 @@ export default function PlannerScreen({
   onMoveStop: (stopId: string, toIndex: number) => void;
   /** Open the navigator on a stop. */
   onNavigate: (stopId: string) => void;
+  /** Rendered inside the event page rather than as its own screen. */
+  embedded?: boolean;
 }) {
   const days = useMemo(() => eventDays(event), [event]);
   const [day, setDay] = useState<string | null>(days[0] ?? null);
@@ -151,14 +154,25 @@ export default function PlannerScreen({
     [spots, event.stops],
   );
 
+  // A plain View when embedded: nesting one vertical ScrollView inside
+  // another breaks scrolling on both.
+  const Body = (embedded ? View : ScrollView) as typeof ScrollView;
+
   return (
-    <ScrollView style={styles.root} contentContainerStyle={styles.content}>
-      <Text style={styles.kicker}>PLAN</Text>
-      <Text style={styles.title}>{event.name}</Text>
-      {formatDateRange(event.startDate, event.endDate) && (
-        <Text style={styles.subtitle}>
-          {formatDateRange(event.startDate, event.endDate)}
-        </Text>
+    <Body
+      style={embedded ? styles.embedded : styles.root}
+      contentContainerStyle={embedded ? undefined : styles.content}
+    >
+      {!embedded && (
+        <>
+          <Text style={styles.kicker}>PLAN</Text>
+          <Text style={styles.title}>{event.name}</Text>
+          {formatDateRange(event.startDate, event.endDate) && (
+            <Text style={styles.subtitle}>
+              {formatDateRange(event.startDate, event.endDate)}
+            </Text>
+          )}
+        </>
       )}
 
       {days.length > 1 && (
@@ -317,7 +331,7 @@ export default function PlannerScreen({
           </Pressable>
         </View>
       )}
-    </ScrollView>
+    </Body>
   );
 }
 
@@ -429,6 +443,7 @@ function StopEditor({
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: color.background },
+  embedded: { paddingTop: space.sm },
   content: { padding: space.md, paddingTop: 96, paddingBottom: space.xxl },
   pressed: { opacity: 0.7 },
   disabled: { opacity: 0.35 },

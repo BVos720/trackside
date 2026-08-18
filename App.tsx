@@ -10,6 +10,7 @@ import SpotListScreen from './src/ui/screens/SpotListScreen';
 import TimetableScreen from './src/ui/screens/TimetableScreen';
 import CircuitScreen from './src/ui/screens/CircuitScreen';
 import PlannerScreen from './src/ui/screens/PlannerScreen';
+import EventScreen from './src/ui/screens/EventScreen';
 import NavigatorPanel from './src/ui/screens/NavigatorPanel';
 import { usePosition } from './src/ui/state/usePosition';
 import { buildWalkNetwork, routeBetween } from './src/core/logic/route';
@@ -171,9 +172,40 @@ export default function App() {
     [activeEvent],
   );
 
-  const { sessions: savedSessions, addMany } = useSessions(
-    circuitId,
-    activeEventDays,
+  const {
+    sessions: savedSessions,
+    days: sessionDayLabels,
+    addMany,
+    remove: removeSession,
+  } = useSessions(circuitId, activeEventDays, activeEventId);
+
+  /**
+   * Sessions as the timetable displays them.
+   *
+   * Times are formatted in the device's zone, which is right at the circuit and
+   * wrong from home — the circuit's own timezone is `Circuit` preset data
+   * reserved for human sourcing (§0.2), so nothing here claims otherwise.
+   */
+  const sessionRows = useMemo(
+    () =>
+      savedSessions.map((s) => {
+        const clock = (iso: string) => {
+          const d = new Date(iso);
+          return Number.isNaN(d.getTime())
+            ? '--:--'
+            : `${String(d.getHours()).padStart(2, '0')}:${String(
+                d.getMinutes(),
+              ).padStart(2, '0')}`;
+        };
+        return {
+          id: s.id,
+          title: s.seriesName,
+          day: sessionDayLabels[s.eventDayId] ?? '',
+          start: clock(s.startTime),
+          end: clock(s.endTime),
+        };
+      }),
+    [savedSessions, sessionDayLabels],
   );
 
   const navStop = useMemo(
@@ -564,7 +596,9 @@ export default function App() {
                 if (key && key !== venue) setVenue(key);
               }
               activate(id as EventId | null);
-              setWhere('map');
+              // Choosing "Default map" has nowhere else to go; an event opens
+              // its own page, which onOpen handles.
+              if (id === null) setWhere('map');
             }}
             onCreate={(name, from, to, seedFromSpots, forCircuit) => {
               const key = VENUE_FOR_CIRCUIT[forCircuit];
@@ -581,11 +615,58 @@ export default function App() {
                 );
               })();
             }}
-            onPlan={() => setWhere('plan')}
-            onTimetable={() => setWhere('times')}
-            sessionCount={savedSessions.length}
+            onOpen={() => setWhere('event')}
             onDelete={(id) => void removeEvent(id)}
           />
+        ) : where === 'event' ? (
+          activeEvent ? (
+            <EventScreen
+              event={activeEvent}
+              circuitLabel={VENUE_VIEW[venue].label}
+              spots={visibleSpots}
+              network={walkNetwork}
+              sessions={sessionRows}
+              onCommitSessions={(pending) =>
+                void addMany(
+                  pending.map((p) => ({
+                    day: p.day,
+                    title: p.title,
+                    start: p.start,
+                    end: p.end,
+                    kind: p.kind,
+                  })),
+                )
+              }
+              onRemoveSession={(id) => void removeSession(asId(id))}
+              onAddStop={(spotId, day) => void addStop({ spotId, day })}
+              onUpdateStop={(stopId, patch) => void updateStop(stopId, patch)}
+              onRemoveStop={(stopId) => void removeStop(stopId)}
+              onMoveStop={(stopId, to) => void moveStop(stopId, to)}
+              onNavigate={(stopId) => {
+                setNavStopId(stopId);
+                setWhere('map');
+              }}
+              onOpenMap={() => setWhere('map')}
+              onBack={() => setWhere('events')}
+              onDelete={() => {
+                void removeEvent(activeEvent.id);
+                setWhere('events');
+              }}
+            />
+          ) : (
+            <View style={styles.emptyPlan}>
+              <Text style={styles.emptyPlanTitle}>No event open</Text>
+              <Pressable
+                onPress={() => setWhere('events')}
+                style={({ pressed }) => [
+                  styles.emptyPlanBtn,
+                  pressed && styles.pressed,
+                ]}
+              >
+                <Text style={styles.emptyPlanBtnLabel}>Go to Events</Text>
+              </Pressable>
+            </View>
+          )
         ) : where === 'plan' ? (
           activeEvent ? (
             <PlannerScreen

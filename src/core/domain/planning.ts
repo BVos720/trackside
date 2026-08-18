@@ -5,6 +5,7 @@ import type { EntityBase, Utc, Visibility } from './common';
 import type {
   CircuitId,
   EventDayId,
+  EventId,
   PlanId,
   PlanStopId,
   SessionId,
@@ -16,6 +17,17 @@ import type {
 export interface EventDay extends EntityBase {
   readonly id: EventDayId;
   readonly circuitId: CircuitId;
+  /**
+   * The event this day belongs to.
+   *
+   * A timetable is *this weekend's* running order, not a standing property of
+   * the circuit. Without this, every event at Spa shared one pile of sessions:
+   * import a 24h programme and a club day, and both events show all 43.
+   *
+   * Null is a day imported before events owned timetables. Those stay readable
+   * rather than being reassigned to an event they may not belong to.
+   */
+  readonly eventId: EventId | null;
   /** Calendar date at the circuit, `YYYY-MM-DD` in the circuit's timezone. */
   readonly date: string;
   /** Timetable document this day's sessions were parsed from (§5.3). */

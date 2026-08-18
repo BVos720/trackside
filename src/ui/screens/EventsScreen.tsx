@@ -50,9 +50,7 @@ export default function EventsScreen({
   onActivate,
   onCreate,
   onDelete,
-  onPlan,
-  onTimetable,
-  sessionCount,
+  onOpen,
 }: {
   circuitLabel: string;
   /** The circuit on screen — the default for a new event. */
@@ -74,12 +72,12 @@ export default function EventsScreen({
     seedFromSpots: boolean,
     forCircuit: CircuitId,
   ) => void;
-  /** Open the planner for the event that is already active. */
-  onPlan: () => void;
-  /** Open the timetable for the active event. */
-  onTimetable: () => void;
-  /** Sessions already saved against the active event. */
-  sessionCount: number;
+  /**
+   * Open one event's own page — timetable, plan and its map, together.
+   *
+   * The list is for choosing; everything you do *to* an event happens there.
+   */
+  onOpen: (id: EventId) => void;
   onDelete: (id: EventId) => void;
 }) {
   const [adding, setAdding] = useState(false);
@@ -154,7 +152,10 @@ export default function EventsScreen({
             return (
               <Pressable
                 key={e.id}
-                onPress={() => onActivate(e.id)}
+                onPress={() => {
+                  onActivate(e.id);
+                  onOpen(e.id);
+                }}
                 onLongPress={() => onDelete(e.id)}
                 style={({ pressed }) => [
                   styles.row,
@@ -177,46 +178,10 @@ export default function EventsScreen({
         </View>
       ))}
 
-      {/*
-        Both halves of an event live here. The timetable is what is running;
-        the plan is where you will be for it. Neither means anything without an
-        event, which is why they appear only once one is active.
-      */}
-      {activeId !== null && (
-        <>
-          <Pressable
-            onPress={onTimetable}
-            style={({ pressed }) => [
-              styles.planButton,
-              pressed && styles.pressed,
-            ]}
-          >
-            <Text style={styles.planLabel}>
-              Timetable
-              {sessionCount > 0 ? ` · ${sessionCount}` : ''}
-            </Text>
-            <Text style={styles.planHint}>
-              Import a PDF, paste it, or add sessions by hand
-            </Text>
-          </Pressable>
-
-          <Pressable
-            onPress={onPlan}
-            style={({ pressed }) => [
-              styles.planButton,
-              pressed && styles.pressed,
-            ]}
-          >
-            <Text style={styles.planLabel}>Plan</Text>
-            <Text style={styles.planHint}>
-              Route, times and when to leave for each stop
-            </Text>
-          </Pressable>
-        </>
-      )}
-
       {events.length > 0 && (
-        <Text style={styles.help}>Long-press an event to delete it.</Text>
+        <Text style={styles.help}>
+          Open an event for its timetable, plan and map.
+        </Text>
       )}
 
       {!adding ? (

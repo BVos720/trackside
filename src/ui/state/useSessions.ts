@@ -7,7 +7,8 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import { nowUtc, toUtc, type Utc } from '../../core/domain/common';
-import { newId, type CircuitId, type SessionId } from '../../core/domain/ids';
+import { newId, type CircuitId,
+  type EventId, type SessionId } from '../../core/domain/ids';
 import { SessionKind, type Session } from '../../core/domain/planning';
 import { matchEventDay } from '../../core/logic/eventDate';
 import { eventDays, sessions as sessionRepo } from '../../storage-local/repositories/documentRepositories';
@@ -72,12 +73,33 @@ function instantFrom(hhmm: string, isoDate: string | null): Utc {
  * @param eventDates the active event's days, `YYYY-MM-DD`. Empty when there is
  * no active event or it has no dates, in which case headings stay unresolved.
  */
-export function useSessions(circuitId: CircuitId, eventDates: readonly string[] = []) {
+export function useSessions(
+  circuitId: CircuitId,
+  eventDates: readonly string[] = [],
+  eventId: EventId | null = null,
+) {
   const [rows, setRows] = useState<Session[]>([]);
+  /** Day id → heading, so a saved session can be shown under its own day. */
+  const [days, setDays] = useState<Record<string, string>>({});
 
+  /**
+   * A timetable belongs to an event.
+   *
+   * With no event active there is nothing for sessions to be scheduled against,
+   * so the list is empty rather than showing every session ever imported at
+   * this circuit — which is what made one Spa event display another's 43.
+   */
   const reload = useCallback(async () => {
-    setRows(await sessionRepo.listByCircuit(circuitId));
-  }, [circuitId]);
+    setRows(eventId ? await sessionRepo.listByEvent(eventId) : []);
+
+    const labels: Record<string, string> = {};
+    for (const d of await eventDays.listByCircuit(circuitId)) {
+      // The heading as published, not a formatted date — the label is what the
+      // timetable actually said, and it is right even when the date is not.
+      labels[d.id] = d.label ?? d.date;
+    }
+    setDays(labels);
+  }, [circuitId, eventId]);
 
   useEffect(() => {
     void reload();
@@ -92,7 +114,12 @@ export function useSessions(circuitId: CircuitId, eventDates: readonly string[] 
         // Resolve the heading to one of the event's own days when it is
         // unambiguous; null keeps the label as written rather than guessing.
         const iso = matchEventDay(label, eventDates);
-        const day = await eventDays.ensure(circuitId, iso ?? label, label);
+        const day = await eventDays.ensure(
+          circuitId,
+          iso ?? label,
+          label,
+          eventId,
+        );
         const at = nowUtc();
         const session: Session = {
           id: newId<SessionId>(),
@@ -114,7 +141,7 @@ export function useSessions(circuitId: CircuitId, eventDates: readonly string[] 
       }
       await reload();
     },
-    [circuitId, eventDates, reload],
+    [circuitId, eventDates, eventId, reload],
   );
 
   const remove = useCallback(
@@ -125,5 +152,5 @@ export function useSessions(circuitId: CircuitId, eventDates: readonly string[] 
     [reload],
   );
 
-  return { sessions: rows, addMany, remove, reload };
+  return { sessions: rows, days, addMany, remove, reload };
 }

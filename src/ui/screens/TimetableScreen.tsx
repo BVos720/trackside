@@ -55,6 +55,9 @@ export default function TimetableScreen({
   savedCount,
   onCommit,
   onBack,
+  embedded = false,
+  sessions = [],
+  onRemoveSession,
 }: {
   circuitLabel: string;
   /**
@@ -70,6 +73,22 @@ export default function TimetableScreen({
   savedCount: number;
   onCommit: (rows: PendingSession[]) => void;
   onBack: () => void;
+  /**
+   * Rendered inside the event page rather than as its own screen.
+   *
+   * Drops the header and the outer scroll view: nesting one vertical
+   * ScrollView inside another breaks scrolling on both.
+   */
+  embedded?: boolean;
+  /** Saved sessions, newest import last, for the list. */
+  sessions?: readonly {
+    id: string;
+    title: string;
+    day: string;
+    start: string;
+    end: string;
+  }[];
+  onRemoveSession?: (id: string) => void;
 }) {
   const [raw, setRaw] = useState('');
   const [parsed, setParsed] = useState<PendingSession[]>([]);
@@ -185,27 +204,74 @@ export default function TimetableScreen({
     setStatus('Session added.');
   };
 
-  return (
-    <ScrollView style={styles.root} contentContainerStyle={styles.content}>
-      <Pressable
-        onPress={onBack}
-        hitSlop={8}
-        style={({ pressed }) => pressed && styles.pressed}
-      >
-        <Text style={styles.back}>‹ Events</Text>
-      </Pressable>
+  // A plain View when embedded: nesting one vertical ScrollView inside
+  // another breaks scrolling on both.
+  const Body = (embedded ? View : ScrollView) as typeof ScrollView;
 
-      <Text style={styles.kicker}>TIMETABLE</Text>
-      <Text style={styles.venue}>{eventName ?? circuitLabel}</Text>
-      <Text style={styles.help}>
-        {eventName ? `${circuitLabel}` : 'No event active'}
-        {eventDates ? ` · ${eventDates}` : ''}
-      </Text>
-      <Text style={styles.help}>
-        {savedCount === 0
-          ? 'No sessions saved yet.'
-          : `${savedCount} session${savedCount === 1 ? '' : 's'} saved.`}
-      </Text>
+  return (
+    <Body
+      style={embedded ? styles.embedded : styles.root}
+      contentContainerStyle={embedded ? undefined : styles.content}
+    >
+      {!embedded && (
+        <>
+          <Pressable
+            onPress={onBack}
+            hitSlop={8}
+            style={({ pressed }) => pressed && styles.pressed}
+          >
+            <Text style={styles.back}>‹ Events</Text>
+          </Pressable>
+
+          <Text style={styles.kicker}>TIMETABLE</Text>
+          <Text style={styles.venue}>{eventName ?? circuitLabel}</Text>
+        </>
+      )}
+      {!embedded && (
+        <Text style={styles.help}>
+          {eventName ? `${circuitLabel}` : 'No event active'}
+          {eventDates ? ` · ${eventDates}` : ''}
+        </Text>
+      )}
+
+      {/*
+        The timetable itself, above the import controls. This is what you came
+        to look at; the importer is how you filled it in.
+      */}
+      {sessions.length > 0 && (
+        <>
+          <Text style={styles.label}>RUNNING ORDER</Text>
+          {sessions.map((s) => (
+            <View key={s.id} style={styles.savedRow}>
+              <Text style={styles.savedTime}>
+                {s.start}–{s.end}
+              </Text>
+              <View style={styles.savedBody}>
+                <Text style={styles.savedTitle} numberOfLines={1}>
+                  {s.title}
+                </Text>
+                <Text style={styles.savedDay} numberOfLines={1}>
+                  {s.day}
+                </Text>
+              </View>
+              {onRemoveSession && (
+                <Pressable
+                  onPress={() => onRemoveSession(s.id)}
+                  hitSlop={8}
+                  style={({ pressed }) => pressed && styles.pressed}
+                >
+                  <Text style={styles.savedRemove}>Remove</Text>
+                </Pressable>
+              )}
+            </View>
+          ))}
+        </>
+      )}
+      {sessions.length === 0 && (
+        <Text style={styles.help}>
+          No sessions yet. Upload the programme, paste it, or add them by hand.
+        </Text>
+      )}
 
       <Text style={styles.label}>IMPORT</Text>
       <View style={styles.row}>
@@ -341,7 +407,7 @@ export default function TimetableScreen({
       >
         <Text style={styles.primaryLabel}>Add session</Text>
       </Pressable>
-    </ScrollView>
+    </Body>
   );
 }
 
@@ -356,6 +422,29 @@ const styles = StyleSheet.create({
     fontWeight: weight.bold,
     letterSpacing: 2,
   },
+  embedded: { paddingTop: space.sm },
+  savedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.sm,
+    minHeight: 48,
+    paddingHorizontal: space.sm,
+    borderRadius: radius.md,
+    backgroundColor: color.surface,
+    marginBottom: space.xs,
+  },
+  savedTime: {
+    color: color.accent,
+    fontSize: type.label,
+    fontWeight: weight.bold,
+    fontVariant: ['tabular-nums'],
+    width: 88,
+  },
+  savedBody: { flex: 1 },
+  savedTitle: { color: color.text, fontSize: type.label, fontWeight: weight.bold },
+  savedDay: { color: color.textFaint, fontSize: 10, marginTop: 1 },
+  savedRemove: { color: color.textMuted, fontSize: 11, fontWeight: weight.bold },
+
   back: {
     color: color.textMuted,
     fontSize: type.label,

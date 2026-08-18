@@ -5,7 +5,7 @@
  * Every mutation goes to storage first and then updates state, so a failed
  * write cannot leave the UI showing a spot that was never saved.
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { nowUtc } from '../../core/domain/common';
 import {
@@ -58,12 +58,24 @@ export interface SpotDraft {
 }
 
 export function useSpots(circuitId: CircuitId) {
+  /**
+   * The circuit to reload, read through a ref.
+   *
+   * `reload` is handed to callbacks that outlive the render they were made in.
+   * Cloning is the case that exposed it: creating an event at another circuit
+   * switches the venue and then writes the copies, and a `reload` closed over
+   * the *previous* circuit re-read the wrong set — the copies existed on disk
+   * and never appeared on the map.
+   */
+  const circuitRef = useRef(circuitId);
+  circuitRef.current = circuitId;
+
   const [spots, setSpots] = useState<Spot[]>([]);
   const [media, setMedia] = useState<Record<string, Media[]>>({});
   const [loading, setLoading] = useState(true);
 
   const reload = useCallback(async () => {
-    const rows = await repositories.spots.listByCircuit(circuitId);
+    const rows = await repositories.spots.listByCircuit(circuitRef.current);
     setSpots(rows);
 
     const bySpot: Record<string, Media[]> = {};
@@ -72,7 +84,7 @@ export function useSpots(circuitId: CircuitId) {
     }
     setMedia(bySpot);
     setLoading(false);
-  }, [circuitId]);
+  }, []);
 
   useEffect(() => {
     setLoading(true);

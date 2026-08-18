@@ -255,21 +255,28 @@ class EventDayRepository implements IEventDayRepository {
       .sort((a, b) => a.date.localeCompare(b.date));
   }
 
-  /** Idempotent per (circuit, date) — see the note on the interface. */
+  /** Idempotent per (event, circuit, date) — see the note on the interface. */
   async ensure(
     circuitId: CircuitId,
     date: string,
     label: string | null,
+    eventId: EventId | null,
   ): Promise<EventDay> {
     const rows = await readAll<EventDay>(DAYS_KEY);
+    // Keyed on the event too, so re-importing a revised timetable for one
+    // weekend does not fold into another weekend's day of the same name.
     const found = live(rows).find(
-      (d) => d.circuitId === circuitId && d.date === date,
+      (d) =>
+        d.circuitId === circuitId &&
+        d.date === date &&
+        (d.eventId ?? null) === eventId,
     );
     if (found) return found;
 
     const day: EventDay = {
       id: newId<EventDayId>(),
       circuitId,
+      eventId,
       date,
       sourceDocumentId: null,
       label,
@@ -305,6 +312,17 @@ class SessionRepository implements ISessionRepository {
         .filter((d) => d.circuitId === circuitId)
         .map((d) => d.id),
     );
+    const rows = await readAll<Session>(SESSIONS_KEY);
+    return live(rows)
+      .filter((s) => ids.has(s.eventDayId))
+      .sort((a, b) => a.startTime.localeCompare(b.startTime));
+  }
+
+  async listByEvent(eventId: EventId): Promise<Session[]> {
+    const days = live(await readAll<EventDay>(DAYS_KEY)).filter(
+      (d) => (d.eventId ?? null) === eventId,
+    );
+    const ids = new Set(days.map((d) => d.id));
     const rows = await readAll<Session>(SESSIONS_KEY);
     return live(rows)
       .filter((s) => ids.has(s.eventDayId))

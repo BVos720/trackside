@@ -21,6 +21,7 @@ export type Destination =
   | 'times'
   | 'light'
   | 'events'
+  | 'event'
   | 'plan'
   | 'circuit';
 
