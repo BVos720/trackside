@@ -12,6 +12,70 @@ import { type CircuitId,
   type EventId, type MarshalPostId, type SpotId, type UserId, newId } from './ids';
 
 /**
+ * What a position is good for.
+ *
+ * A photography spot and a spectating spot are not the same place, and the gap
+ * between them is not a detail. A gap in a debris fence at the exit of
+ * Pflanzgarten is a fine camera position and a miserable place to watch from;
+ * a grandstand with a big screen and a bratwurst stand is the reverse. Marking
+ * both on one map with no way to filter gives you a list where most entries
+ * are wrong for whatever you came to do.
+ *
+ * ── A set, not a third "both" value ───────────────────────────────────────
+ * Plenty of positions genuinely serve both, so that case has to be
+ * expressible — but as `['photography', 'spectating']`, not as a separate enum
+ * member. A three-value enum turns every filter into a two-branch test that
+ * someone eventually writes as one, and adding a fourth use later (filming,
+ * marshal viewing) means revisiting all of them. Set membership stays a single
+ * test however many uses exist.
+ *
+ * ── Not a safety field ────────────────────────────────────────────────────
+ * This says what a position is *useful* for, never whether you may be there.
+ * That is `accessClassification` below, and marking a spot as good for
+ * spectating must never be read as permission to stand in it.
+ */
+export const SpotUse = {
+  Photography: 'photography',
+  Spectating: 'spectating',
+} as const;
+export type SpotUse = (typeof SpotUse)[keyof typeof SpotUse];
+
+export const ALL_SPOT_USES: readonly SpotUse[] = [
+  SpotUse.Photography,
+  SpotUse.Spectating,
+];
+
+/**
+ * What a spot that does not say is assumed to be for.
+ *
+ * Every spot saved before this field existed was a camera position — that is
+ * the only thing the app did. Defaulting to photography preserves what those
+ * rows meant. Defaulting to both would silently claim they had been assessed
+ * as somewhere to watch from, which nobody ever did.
+ */
+export const DEFAULT_SPOT_USES: readonly SpotUse[] = [SpotUse.Photography];
+
+/**
+ * Coerce a stored or user-supplied set into a usable one.
+ *
+ * The empty set is the case worth guarding. A spot that is for nothing is
+ * filtered out of every mode and simply vanishes off the map — no error, and
+ * nothing left to tap to get it back. Unticking both boxes in the editor is
+ * one gesture away, so that is a state people will actually reach.
+ *
+ * Unknown values are dropped rather than kept: they come from a future build
+ * or a hand-edited bundle, and carrying them through would let a spot match a
+ * mode this build cannot name.
+ */
+export function normaliseUses(uses: readonly string[] | undefined): SpotUse[] {
+  const known = (uses ?? []).filter((u): u is SpotUse =>
+    ALL_SPOT_USES.includes(u as SpotUse),
+  );
+  const unique = [...new Set(known)];
+  return unique.length === 0 ? [...DEFAULT_SPOT_USES] : unique;
+}
+
+/**
  * Whether you are actually allowed to stand somewhere.
  *
  * ── This is a physical-safety and liability field. Spec §0.1, §9.1. ─────────
@@ -181,6 +245,14 @@ export interface Spot extends EntityBase {
    * photographer's notes, and they migrate into those rows when sharing lands.
    */
   readonly shotSettings: readonly ShotSetting[];
+  /**
+   * What this position is good for — see `SpotUse`.
+   *
+   * Never empty. A spot for nothing matches no mode and disappears from the
+   * map with nothing left to tap; `normaliseUses` is what keeps that state
+   * unreachable, and it runs at both the write and the read boundary.
+   */
+  readonly uses: readonly SpotUse[];
   readonly isHidden: boolean;
   readonly visibility: Visibility;
   readonly createdBy: UserId;
@@ -211,6 +283,7 @@ export function newSpot(input: {
   keyTimes?: readonly string[];
   tags?: readonly string[];
   shotSettings?: readonly ShotSetting[];
+  uses?: readonly SpotUse[];
   isHidden?: boolean;
   at?: Utc;
 }): Spot {
@@ -228,6 +301,9 @@ export function newSpot(input: {
     keyTimes: input.keyTimes ?? [],
     tags: input.tags ?? [],
     shotSettings: input.shotSettings ?? [],
+    // Through the normaliser rather than `?? DEFAULT`: a caller passing an
+    // empty array means "I unticked everything", which must not be stored.
+    uses: normaliseUses(input.uses),
     isHidden: input.isHidden ?? false,
     visibility: Visibility.Private,
     createdBy: input.createdBy,

@@ -45,9 +45,13 @@ import {
 } from './src/storage-local/eventFiles';
 import { applyImport, readLocalState } from './src/storage-local/importEvent';
 import {
+  getSpotUse,
   getVenue,
+  setSpotUse as setSpotUsePreference,
   setVenue as setVenuePreference,
 } from './src/storage-local/preferences';
+import { ALL_SPOT_USES, SpotUse } from './src/core/domain/spot';
+import { countByUse, spotsForUse } from './src/core/logic/spotUse';
 import { spotsForContext } from './src/core/logic/cloneSpots';
 import { withinBounds } from './src/core/logic/geo';
 import { repositories } from './src/storage-local/repositories/documentRepositories';
@@ -178,6 +182,27 @@ function AppShell() {
   useEffect(() => {
     void setVenuePreference(venue);
   }, [venue]);
+
+  /**
+   * Camera positions or watching positions.
+   *
+   * Photography is the default because that is what the app was built for and
+   * what every existing spot is. Restored on launch for the same reason the
+   * venue is: it describes why you came, not which view you last tapped.
+   */
+  const [spotUse, setSpotUse] = useState<SpotUse>(SpotUse.Photography);
+  useEffect(() => {
+    void (async () => {
+      const saved = await getSpotUse();
+      if (saved !== null && ALL_SPOT_USES.includes(saved as SpotUse)) {
+        setSpotUse(saved as SpotUse);
+      }
+    })();
+  }, []);
+
+  useEffect(() => {
+    void setSpotUsePreference(spotUse);
+  }, [spotUse]);
 
   const circuitId = CIRCUIT_IDS[venue];
   const {
@@ -369,15 +394,36 @@ function AppShell() {
     [spots, activeEventId],
   );
 
+  /**
+   * The same set, narrowed to what this mode is for.
+   *
+   * ── Deliberately *not* folded into `visibleSpots` ─────────────────────────
+   * `visibleSpots` is what the event owns, and it is what gets written into the
+   * backup bundle and what the planner schedules against. Filtering it by mode
+   * would mean saving a backup while in spectating mode quietly dropped every
+   * camera position from the file — a data-loss bug whose only symptom is a
+   * restore months later that is missing half the weekend.
+   *
+   * So the mode narrows what is *drawn and listed*, and nothing else. Anything
+   * that persists, plans or exports reads the unfiltered set.
+   */
+  const spotsInMode = useMemo(
+    () => spotsForUse(visibleSpots, spotUse),
+    [visibleSpots, spotUse],
+  );
+
+  /** Counted over the unfiltered set, so each side of the switch is honest. */
+  const useCounts = useMemo(() => countByUse(visibleSpots), [visibleSpots]);
+
   const visibleGeoJson = useMemo(() => {
-    const shown = new Set<string>(visibleSpots.map((s) => s.id));
+    const shown = new Set<string>(spotsInMode.map((s) => s.id));
     return {
       type: 'FeatureCollection' as const,
       features: asGeoJson.features.filter((f) =>
         shown.has(String(f.properties.id)),
       ),
     };
-  }, [asGeoJson, visibleSpots]);
+  }, [asGeoJson, spotsInMode]);
 
   /**
    * The route drawn on the map while navigating.
@@ -862,7 +908,7 @@ function AppShell() {
                 </View>
 
                 <SpotListScreen
-                  spots={visibleSpots}
+                  spots={spotsInMode}
                   media={media}
                   mediaUris={mediaUris}
                   onOpen={(id) => {
@@ -1113,11 +1159,15 @@ function AppShell() {
           venue={venue}
           eventName={activeEvent?.name ?? null}
           counts={{
-            spots: visibleSpots.length,
+            // The count for the mode you are in, matching what the map shows.
+            spots: spotsInMode.length,
             sessions: savedSessions.length,
             events: eventList.length,
             stops: activeEvent?.stops.length ?? 0,
           }}
+          spotUse={spotUse}
+          useCounts={useCounts}
+          onSpotUseChange={setSpotUse}
           onNavigate={setWhere}
         />
       )}

@@ -11,6 +11,8 @@ import { nowUtc } from '../../core/domain/common';
 import {
   type AccessClassification,
   type ShotSetting,
+  type SpotUse,
+  normaliseUses,
   type Spot,
   newSpot,
 } from '../../core/domain/spot';
@@ -55,6 +57,8 @@ export interface SpotDraft {
   keyTimes: string[];
   tags: string[];
   shotSettings: ShotSetting[];
+  /** What the position is good for. Never empty — see domain/spot.ts. */
+  uses: SpotUse[];
 }
 
 export function useSpots(circuitId: CircuitId) {
@@ -119,6 +123,7 @@ export function useSpots(circuitId: CircuitId) {
         keyTimes: draft.keyTimes,
         tags: draft.tags,
         shotSettings: draft.shotSettings,
+        uses: draft.uses,
       });
       await repositories.spots.save(spot);
       await reload();
@@ -145,6 +150,9 @@ export function useSpots(circuitId: CircuitId) {
         keyTimes: draft.keyTimes,
         tags: draft.tags,
         shotSettings: draft.shotSettings,
+        // Normalised on the way in as well as the way out: the editor cannot
+        // untick the last box, but a draft assembled anywhere else could.
+        uses: normaliseUses(draft.uses),
         updatedAt: nowUtc(),
       });
       await reload();

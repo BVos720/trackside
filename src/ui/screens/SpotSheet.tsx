@@ -21,9 +21,13 @@ import {
 
 import {
   AccessClassification,
+  DEFAULT_SPOT_USES,
+  SpotUse,
   type ShotSetting,
   type Spot,
+  normaliseUses,
 } from '../../core/domain/spot';
+import { toggleUse } from '../../core/logic/spotUse';
 import { type Media, ReferenceKind } from '../../core/domain/media';
 import type { SpotDraft } from '../state/useSpots';
 import { color, radius, space, type, weight } from '../theme';
@@ -36,6 +40,55 @@ import { color, radius, space, type, weight } from '../theme';
  * `official` here is an instruction to a stranger to stand somewhere that could
  * get them hurt or the spot fenced off for everyone.
  */
+/**
+ * What a position can be good for.
+ *
+ * The hints describe the job, not the place — "somewhere to shoot from" versus
+ * "somewhere to watch from" — because the same fence gap can be an excellent
+ * answer to one and a poor answer to the other, and the person tagging it is
+ * deciding which.
+ */
+const USE_OPTIONS: { value: SpotUse; label: string; hint: string }[] = [
+  {
+    value: SpotUse.Photography,
+    label: 'Photography',
+    hint: 'Somewhere to shoot from',
+  },
+  {
+    value: SpotUse.Spectating,
+    label: 'Spectating',
+    hint: 'Somewhere to watch from',
+  },
+];
+
+/**
+ * The form, broken into steps.
+ *
+ * ── Why this is not one long form ─────────────────────────────────────────
+ * Marking a spot happens at the side of a circuit, often with cars coming past
+ * and usually one-handed. A single scroll of ten labelled sections asks you to
+ * assess all of it at once, and the honest result is that everything below the
+ * fold gets left empty — so the fields that make a spot *useful later* are
+ * exactly the ones that never get filled.
+ *
+ * Four screens, each answering one question, with a big Next between them.
+ * §5.14 wants controls a gloved hand can hit without care, and that is much
+ * easier to give four sparse screens than one dense one.
+ *
+ * ── Save is available from the first step ─────────────────────────────────
+ * The steps are not a gate. A spot needs a name and a position to be worth
+ * keeping; everything after that is refinement you may well want to do later,
+ * in the car, rather than now, in the rain. A wizard that demanded all four
+ * screens before it would save anything would be slower than the scroll it
+ * replaced, which would defeat the point.
+ */
+const STEPS: { key: string; title: string; hint: string }[] = [
+  { key: 'basics', title: 'What', hint: 'Name, and what it is good for' },
+  { key: 'access', title: 'Access', hint: 'Whether you may stand here' },
+  { key: 'when', title: 'When', hint: 'Times and what the position is like' },
+  { key: 'detail', title: 'Detail', hint: 'Settings, notes and pictures' },
+];
+
 const ACCESS_OPTIONS: {
   value: AccessClassification;
   label: string;
@@ -135,6 +188,17 @@ export default function SpotSheet({
   const [customTime, setCustomTime] = useState('');
   const [tags, setTags] = useState<string[]>([]);
   const [customTag, setCustomTag] = useState('');
+  /**
+   * Which step is showing.
+   *
+   * Editing an existing spot opens on the first step like creating one does,
+   * but the step headers are tappable, so fixing one field is a tap rather
+   * than a walk through all four.
+   */
+  const [step, setStep] = useState(0);
+  const [uses, setUses] = useState<SpotUse[]>([...DEFAULT_SPOT_USES]);
+  /** The use whose untick was just refused, so the reason can be shown. */
+  const [blockedUse, setBlockedUse] = useState<SpotUse | null>(null);
   const [shots, setShots] = useState<ShotSetting[]>([]);
   const [draftShot, setDraftShot] = useState({
     technique: '',
@@ -146,6 +210,7 @@ export default function SpotSheet({
   });
 
   useEffect(() => {
+    setStep(0);
     setName(spot?.name ?? '');
     setAccess(spot?.accessClassification ?? AccessClassification.Unknown);
     setNotes(spot?.accessNotes ?? '');
@@ -153,6 +218,10 @@ export default function SpotSheet({
     setCustomTime('');
     setTags([...(spot?.tags ?? [])]);
     setCustomTag('');
+    // Through the normaliser: a spot saved before this field existed carries no
+    // `uses`, and reading it raw would open the form with nothing ticked.
+    setUses(normaliseUses(spot?.uses));
+    setBlockedUse(null);
     setShots([...(spot?.shotSettings ?? [])]);
     setDraftShot({
       technique: '',
@@ -179,6 +248,7 @@ export default function SpotSheet({
       keyTimes,
       tags,
       shotSettings: shots,
+      uses,
     });
 
   const toggleTime = (label: string) =>
@@ -271,6 +341,39 @@ export default function SpotSheet({
           {position.latitude.toFixed(5)}, {position.longitude.toFixed(5)}
         </Text>
 
+        {/*
+          Where you are in the form, and a way past it.
+
+          Tappable rather than decorative: coming back to add shot settings to a
+          spot marked last week should not mean stepping through name and access
+          again. It also means the four steps never trap you — every screen is
+          one tap from every other.
+        */}
+        <View style={styles.steps}>
+          {STEPS.map((s, i) => {
+            const on = i === step;
+            return (
+              <Pressable
+                key={s.key}
+                onPress={() => setStep(i)}
+                hitSlop={6}
+                style={({ pressed }) => [
+                  styles.stepChip,
+                  on && styles.stepChipOn,
+                  pressed && styles.pressed,
+                ]}
+              >
+                <Text style={[styles.stepChipLabel, on && styles.stepChipLabelOn]}>
+                  {s.title}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+        <Text style={styles.stepHint}>{STEPS[step]?.hint}</Text>
+
+        {step === 0 && (
+          <>
         <Text style={styles.label}>NAME</Text>
         <TextInput
           value={name}
@@ -280,6 +383,69 @@ export default function SpotSheet({
           style={styles.input}
         />
 
+        {/*
+          What the position is for, which decides which map it shows up on.
+
+          Placed above ACCESS deliberately, and worded to keep the two apart:
+          this is about whether the spot is any *good* for something, never
+          about whether you are allowed to be there. Ticking "spectating" must
+          never read as permission to stand somewhere.
+        */}
+        <Text style={styles.label}>GOOD FOR</Text>
+        <Text style={styles.help}>
+          Decides which map this appears on. Both is fine — plenty of positions
+          work either way.
+        </Text>
+        <View style={styles.useRow}>
+          {USE_OPTIONS.map((opt) => {
+            const on = uses.includes(opt.value);
+            // The last remaining tick cannot be removed: a spot that is for
+            // nothing shows on neither map and cannot be found again.
+            const locked = on && uses.length === 1;
+            return (
+              <Pressable
+                key={opt.value}
+                onPress={() => {
+                  // Explain the refusal only once it has been attempted.
+                  // Showing "needs at least one" on a freshly opened form reads
+                  // as a complaint about something the user has not done.
+                  if (locked) {
+                    setBlockedUse(opt.value);
+                    return;
+                  }
+                  setBlockedUse(null);
+                  setUses((u) => toggleUse(u, opt.value, !on));
+                }}
+                style={({ pressed }) => [
+                  styles.use,
+                  on && styles.useOn,
+                  pressed && !locked && styles.pressed,
+                ]}
+              >
+                <Text style={[styles.useLabel, on && styles.useLabelOn]}>
+                  {on ? '✓ ' : ''}
+                  {opt.label}
+                </Text>
+                <Text
+                  style={[
+                    styles.useHint,
+                    blockedUse === opt.value && styles.useHintBlocked,
+                  ]}
+                >
+                  {blockedUse === opt.value
+                    ? 'Keep at least one'
+                    : opt.hint}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+
+          </>
+        )}
+
+        {step === 1 && (
+          <>
         <Text style={styles.label}>ACCESS</Text>
         <Text style={styles.help}>
           Never guessed. Leave as “not documented” unless you know.
@@ -306,6 +472,11 @@ export default function SpotSheet({
           );
         })}
 
+          </>
+        )}
+
+        {step === 2 && (
+          <>
         <Text style={styles.label}>KEY TIMES</Text>
         <Text style={styles.help}>
           When this spot is worth being at.
@@ -435,6 +606,11 @@ export default function SpotSheet({
           </Pressable>
         </View>
 
+          </>
+        )}
+
+        {step === 3 && (
+          <>
         <Text style={styles.label}>SHOT SETTINGS</Text>
         <Text style={styles.help}>
           What works here, per technique. Focal lengths are full-frame
@@ -619,15 +795,38 @@ export default function SpotSheet({
             )}
           </>
         )}
+          </>
+        )}
       </ScrollView>
 
+      {/*
+        Back, Next and Save together.
+
+        Save sits alongside Next on every step rather than replacing it at the
+        end, because the remaining steps are optional and the common case at a
+        circuit is "name it now, describe it later". Making Save wait for the
+        last screen would turn four quick steps into a four-screen toll on
+        dropping a pin.
+      */}
       <View style={styles.actions}>
         <Pressable
-          onPress={onCancel}
+          onPress={() => (step === 0 ? onCancel() : setStep((s) => s - 1))}
           style={({ pressed }) => [styles.cancelBtn, pressed && styles.pressed]}
         >
-          <Text style={styles.cancelLabel}>Cancel</Text>
+          <Text style={styles.cancelLabel}>
+            {step === 0 ? 'Cancel' : 'Back'}
+          </Text>
         </Pressable>
+
+        {step < STEPS.length - 1 && (
+          <Pressable
+            onPress={() => setStep((s) => s + 1)}
+            style={({ pressed }) => [styles.nextBtn, pressed && styles.pressed]}
+          >
+            <Text style={styles.nextLabel}>Next</Text>
+          </Pressable>
+        )}
+
         <Pressable
           onPress={save}
           style={({ pressed }) => [styles.saveBtn, pressed && styles.pressed]}
@@ -691,6 +890,29 @@ const styles = StyleSheet.create({
     marginTop: space.xs,
     lineHeight: 17,
   },
+
+  useRow: { flexDirection: 'row', gap: space.sm, marginTop: space.sm },
+  /** 64pt: a gloved tap in the rain, per §5.14. */
+  use: {
+    flex: 1,
+    minHeight: 64,
+    justifyContent: 'center',
+    paddingHorizontal: space.md,
+    borderRadius: radius.md,
+    backgroundColor: color.surface,
+    borderWidth: 1,
+    borderColor: color.border,
+  },
+  useOn: { borderColor: color.accent, backgroundColor: color.surfaceRaised },
+  useLabel: {
+    color: color.textMuted,
+    fontSize: type.body,
+    fontWeight: weight.bold,
+  },
+  useLabelOn: { color: color.text },
+  useHint: { color: color.textFaint, fontSize: 11, marginTop: 2 },
+  useHintBlocked: { color: color.danger },
+
   clearLink: {
     color: color.textFaint,
     fontSize: type.label,
@@ -862,4 +1084,45 @@ const styles = StyleSheet.create({
     backgroundColor: color.accent,
   },
   saveLabel: { color: color.onAccent, fontSize: type.body, fontWeight: weight.bold },
+
+  /**
+   * Next is the expected action, so it is the wide one.
+   *
+   * Save keeps the accent colour because it is the one that commits, but Next
+   * gets the room — on three of the four steps it is what you are reaching for,
+   * and the two must not be confusable by a thumb that is not looking.
+   */
+  nextBtn: {
+    flex: 1.4,
+    height: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radius.md,
+    backgroundColor: color.surfaceRaised,
+    borderWidth: 1,
+    borderColor: color.accent,
+  },
+  nextLabel: { color: color.accent, fontSize: type.body, fontWeight: weight.bold },
+
+  steps: { flexDirection: 'row', gap: 6, marginTop: space.md },
+  stepChip: {
+    flex: 1,
+    minHeight: 34,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radius.sm,
+    backgroundColor: color.surface,
+  },
+  stepChipOn: { backgroundColor: color.accent },
+  stepChipLabel: {
+    color: color.textMuted,
+    fontSize: 12,
+    fontWeight: weight.bold,
+  },
+  stepChipLabelOn: { color: color.onAccent },
+  stepHint: {
+    color: color.textFaint,
+    fontSize: type.label,
+    marginTop: space.xs,
+  },
 });

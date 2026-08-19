@@ -13,8 +13,21 @@
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { SpotUse } from '../core/domain/spot';
 import { VENUE_VIEW, type VenueKey } from './map/style';
 import { MENU_HEIGHT, MENU_TOP, color, radius, space, type, weight } from './theme';
+
+/**
+ * The two things you can be at a circuit to do.
+ *
+ * Labelled by the activity rather than the noun — "Photography" and
+ * "Spectating" read as what you are here for, which is the question the switch
+ * is actually asking.
+ */
+const USE_OPTIONS: { value: SpotUse; label: string }[] = [
+  { value: SpotUse.Photography, label: 'Photography' },
+  { value: SpotUse.Spectating, label: 'Spectating' },
+];
 
 export type Destination =
   | 'map'
@@ -58,6 +71,9 @@ export default function MainMenu({
   venue,
   eventName,
   counts,
+  spotUse,
+  useCounts,
+  onSpotUseChange,
   onNavigate,
 }: {
   open: boolean;
@@ -66,6 +82,11 @@ export default function MainMenu({
   /** Null means the default map — every spot at this circuit. */
   eventName: string | null;
   counts: { spots: number; sessions: number; events: number; stops: number };
+  /** Camera positions or watching positions — what the map is showing. */
+  spotUse: SpotUse;
+  /** How many spots each mode would show, for the switch's labels. */
+  useCounts: Record<SpotUse, number>;
+  onSpotUseChange: (use: SpotUse) => void;
   onNavigate: (to: Destination) => void;
 }) {
   const insets = useSafeAreaInsets();
@@ -113,6 +134,43 @@ export default function MainMenu({
             <Text style={styles.venueSub}>
               {eventName ?? 'Default map — all your spots here'}
             </Text>
+
+            {/*
+              Why you are here, which is a different question from where.
+
+              A camera position and a place to watch from are rarely the same
+              place, so this changes what the map is *showing* rather than how
+              it looks. It sits in the menu rather than on the map because it is
+              set once for a weekend, not tapped between corners — and the map's
+              corner already holds as many controls as it can.
+
+              Each side carries its own count, so switching to an empty mode
+              reads as a choice rather than a map that has broken.
+            */}
+            <View style={styles.modeRow}>
+              {USE_OPTIONS.map((option) => {
+                const on = option.value === spotUse;
+                const count = useCounts[option.value];
+                return (
+                  <Pressable
+                    key={option.value}
+                    onPress={() => onSpotUseChange(option.value)}
+                    style={({ pressed }) => [
+                      styles.mode,
+                      on && styles.modeOn,
+                      pressed && styles.pressed,
+                    ]}
+                  >
+                    <Text style={[styles.modeLabel, on && styles.modeLabelOn]}>
+                      {option.label}
+                    </Text>
+                    <Text style={[styles.modeCount, on && styles.modeCountOn]}>
+                      {count} spot{count === 1 ? '' : 's'}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
 
             <ScrollView style={styles.items}>
               {ITEMS.map((item) => {
@@ -190,6 +248,27 @@ const styles = StyleSheet.create({
     fontWeight: weight.bold,
   },
   venueSub: { color: color.textMuted, fontSize: type.label, marginTop: 2 },
+
+  modeRow: { flexDirection: 'row', gap: space.sm, marginTop: space.md },
+  /**
+   * Sized for §5.14 — a gloved thumb, in the rain, without looking carefully.
+   * 56pt is the floor for a control that changes what the whole map means.
+   */
+  mode: {
+    flex: 1,
+    minHeight: 56,
+    justifyContent: 'center',
+    paddingHorizontal: space.md,
+    borderRadius: radius.md,
+    backgroundColor: color.surfaceRaised,
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  modeOn: { borderColor: color.accent, backgroundColor: color.surface },
+  modeLabel: { color: color.textMuted, fontSize: type.body, fontWeight: weight.bold },
+  modeLabelOn: { color: color.text },
+  modeCount: { color: color.textFaint, fontSize: 11, marginTop: 2 },
+  modeCountOn: { color: color.accent },
 
   items: { marginTop: space.md },
   item: {

@@ -14,6 +14,7 @@ import { kv } from './kv';
 
 const ACTIVE_EVENT = 'trackside.ui.activeEventId.v1';
 const ACTIVE_VENUE = 'trackside.ui.venue.v1';
+const SPOT_USE = 'trackside.ui.spotUse.v1';
 
 export async function getActiveEventId(): Promise<string | null> {
   return kv.get(ACTIVE_EVENT);
@@ -30,4 +31,19 @@ export async function getVenue(): Promise<string | null> {
 
 export async function setVenue(venue: string): Promise<void> {
   await kv.set(ACTIVE_VENUE, venue);
+}
+
+/**
+ * Whether the map is showing camera positions or watching positions.
+ *
+ * Remembered because it says why you are at the circuit at all, rather than
+ * being a view option you flick between — someone spectating for a weekend
+ * should not reselect it every time Android kills the process.
+ */
+export async function getSpotUse(): Promise<string | null> {
+  return kv.get(SPOT_USE);
+}
+
+export async function setSpotUse(use: string): Promise<void> {
+  await kv.set(SPOT_USE, use);
 }
