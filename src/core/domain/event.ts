@@ -95,6 +95,37 @@ export interface Event extends EntityBase {
   /** The planned route, in order. See the note at the top of this file. */
   readonly stops: readonly PlanStop[];
   readonly createdBy: UserId;
+  /**
+   * A stable label for this weekend, generated once at creation.
+   *
+   * Meant to be stamped onto every photo taken at the event (a later pass —
+   * `Media` does not carry it yet) so a shot stays filterable by "which
+   * weekend" long after the event itself stops showing up in the events list.
+   * Two things can hide an event without touching this tag at all: it can be
+   * derived as finished (see `isEventFinished` in `../logic/eventLifecycle`,
+   * which never stores that fact — nothing to keep current, nothing to go
+   * stale) and folded out of view by the show-finished toggle, or it can be
+   * tombstoned via `deletedAt` (§0.1 — always a soft delete, never gone for
+   * good). Neither state destroys the event record. But a photo that only
+   * carried a live `EventId` would still need every place that lists photos
+   * to know how to look the event back up and reason about both of those
+   * states just to answer "which weekend was this shot at". A tag copied onto
+   * the photo at capture time answers that on its own, with no join back to
+   * this row required.
+   *
+   * Derived from `name` at creation and never recomputed afterwards —
+   * deliberately not a getter. Renaming the event later must not retag every
+   * photo already shot under the old name; someone filtering their camera
+   * roll for "NLS10" months on should still find those shots even if the
+   * event was renamed to "NLS10 (rain-delayed)" afterwards.
+   *
+   * Shaped like `bundleFileName` in `../logic/eventBundle.ts` for the same
+   * reason that function is shaped this way — human-readable, but
+   * disambiguated by the tail of the id rather than its head, because a UUID
+   * v7's leading characters are a shared millisecond timestamp and two events
+   * made back to back would otherwise tag identically.
+   */
+  readonly tag: string;
 }
 
 export function newEvent(input: {
@@ -108,8 +139,9 @@ export function newEvent(input: {
   stops?: readonly PlanStop[];
   at?: Utc;
 }): Event {
+  const id = newId<EventId>();
   return {
-    id: newId<EventId>(),
+    id,
     circuitId: input.circuitId,
     name: input.name,
     startDate: input.startDate ?? null,
@@ -118,8 +150,33 @@ export function newEvent(input: {
     spotIds: input.spotIds ?? [],
     stops: input.stops ?? [],
     createdBy: input.createdBy,
+    tag: newEventTag(input.name, id),
     ...newEntityBase(input.at),
   };
+}
+
+/**
+ * Build the stable per-event tag described on `Event.tag`.
+ *
+ * Exported (rather than kept private to `newEvent`) so a caller reconstructing
+ * an event from an older record that predates this field — an imported bundle
+ * written before today, say — can derive the same shape rather than leaving
+ * `tag` empty.
+ */
+export function newEventTag(name: string, id: EventId): string {
+  const slug = name
+    .normalize('NFD')
+    // Strip combining marks so "Nürburgring" becomes "Nurburgring" rather than
+    // losing the letter entirely — same reasoning as bundleFileName's slug.
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-zA-Z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 48)
+    .toLowerCase();
+
+  // The *tail* of the id, not the head — see the note on `Event.tag`.
+  const short = id.slice(-8);
+  return `${slug === '' ? 'event' : slug}-${short}`;
 }
 
 /**
@@ -146,8 +203,14 @@ export function newPlanStop(input: {
   };
 }
 
-/** Local `YYYY-MM-DD` → Date at local midnight, or null. */
-function parseIsoDate(iso: string): Date | null {
+/**
+ * Local `YYYY-MM-DD` → Date at local midnight, or null.
+ *
+ * Exported so `../logic/eventLifecycle.ts` can parse `endDate` the same way
+ * `eventDays` does here, rather than growing a second, subtly different
+ * parser for the same field.
+ */
+export function parseIsoDate(iso: string): Date | null {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
   if (!m) return null;
   const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
