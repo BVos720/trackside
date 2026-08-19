@@ -4,7 +4,7 @@
  * `activeId === null` is the default map: every spot you have at this circuit.
  * With an event active, the map narrows to that event's selection.
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { nowUtc } from '../../core/domain/common';
 import {
@@ -20,6 +20,10 @@ import type {
   SpotId,
 } from '../../core/domain/ids';
 import { events as repo } from '../../storage-local/repositories/documentRepositories';
+import {
+  getActiveEventId,
+  setActiveEventId,
+} from '../../storage-local/preferences';
 import { LOCAL_USER_ID } from './useSpots';
 
 /**
@@ -39,6 +43,35 @@ export function useEvents(circuitId: CircuitId) {
   useEffect(() => {
     void reload();
   }, [reload]);
+
+  /**
+   * Restore whichever event was open last.
+   *
+   * Android kills backgrounded apps freely, and losing your event on every
+   * relaunch means re-picking it repeatedly across a weekend — and, because the
+   * file backup only runs for the active event, it also meant nothing was ever
+   * written to disk unless you happened to reselect first.
+   *
+   * Restored only once, and only if the event still exists and belongs to the
+   * circuit on screen; the guard below owns every later correction.
+   */
+  const restored = useRef(false);
+  useEffect(() => {
+    if (restored.current || events.length === 0) return;
+    restored.current = true;
+
+    void (async () => {
+      const saved = await getActiveEventId();
+      if (saved === null) return;
+      const event = events.find((e) => e.id === saved);
+      if (event && event.circuitId === circuitId) setActiveId(event.id as EventId);
+    })();
+  }, [events, circuitId]);
+
+  /** Remember the choice, including "none". */
+  useEffect(() => {
+    void setActiveEventId(activeId);
+  }, [activeId]);
 
   /**
    * An active event must match the circuit on screen.

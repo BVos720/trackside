@@ -83,7 +83,17 @@ export function bundleFileName(event: Event): string {
     .slice(0, 48)
     .toLowerCase();
 
-  const short = event.id.slice(0, 8);
+  /*
+   * The *tail* of the id, not the head.
+   *
+   * A UUID v7 begins with a millisecond timestamp, so two events created in the
+   * same millisecond share their first eight characters — and would share a
+   * filename, one silently overwriting the other. For a feature whose entire
+   * job is not losing data that is the worst possible bug, and it is invisible
+   * until the day two events go in and one comes out. The trailing characters
+   * come from the random section.
+   */
+  const short = event.id.slice(-8);
   return `${slug === '' ? 'event' : slug}-${short}.json`;
 }
 

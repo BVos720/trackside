@@ -23,6 +23,16 @@ import MainMenu, { type Destination } from './src/ui/MainMenu';
 import EventsScreen from './src/ui/screens/EventsScreen';
 import { useEvents } from './src/ui/state/useEvents';
 import { eventDays } from './src/core/domain/event';
+import { buildEventBundle } from './src/core/logic/eventBundle';
+import {
+  FILES_SUPPORTED,
+  eventsFolderUri,
+  saveEventBundle,
+} from './src/storage-local/eventFiles';
+import {
+  getVenue,
+  setVenue as setVenuePreference,
+} from './src/storage-local/preferences';
 import { spotsForContext } from './src/core/logic/cloneSpots';
 import { withinBounds } from './src/core/logic/geo';
 import { repositories } from './src/storage-local/repositories/documentRepositories';
@@ -133,6 +143,26 @@ function AppShell() {
   /** The stop being navigated to, if any. Null means the navigator is closed. */
   const [navStopId, setNavStopId] = useState<string | null>(null);
   const [venue, setVenue] = useState<VenueKey>('nordschleife');
+
+  /**
+   * The circuit you were last looking at, restored on launch.
+   *
+   * Without this the app opens at the Nürburgring every time, which is wrong
+   * for anyone standing at Spa — and it silently broke the file backup, since
+   * the active event is only restored when it belongs to the circuit on screen.
+   * A default that is right once a week is a default that is wrong six days out
+   * of seven.
+   */
+  useEffect(() => {
+    void (async () => {
+      const saved = await getVenue();
+      if (saved !== null && saved in VENUE_VIEW) setVenue(saved as VenueKey);
+    })();
+  }, []);
+
+  useEffect(() => {
+    void setVenuePreference(venue);
+  }, [venue]);
 
   const circuitId = CIRCUIT_IDS[venue];
   const {
@@ -379,6 +409,46 @@ function AppShell() {
       })),
     };
   }, [navSpot, fix, walkNetwork]);
+
+  /**
+   * The active event, written out as a file whenever it changes.
+   *
+   * Debounced because a bundle is rewritten whole and edits arrive in bursts —
+   * typing a stop's label fires per keystroke commit, and rewriting the file
+   * each time is pointless churn on flash storage.
+   *
+   * Fire-and-forget on purpose: a failed backup must never block the edit that
+   * triggered it. The KV store is still the source of truth; this is the copy
+   * that outlives it.
+   */
+  const [savedTo, setSavedTo] = useState<string | null>(null);
+  useEffect(() => {
+    if (!FILES_SUPPORTED || !activeEvent) return;
+
+    const timer = setTimeout(() => {
+      void (async () => {
+        try {
+          const bundle = buildEventBundle({
+            event: activeEvent,
+            spots: visibleSpots,
+            sessions: savedSessions,
+            days: Object.entries(sessionDayLabels).map(([id, label]) => ({
+              id,
+              date: label,
+              label,
+            })),
+          });
+          setSavedTo(await saveEventBundle(bundle));
+        } catch {
+          // Left silent by design: see above. The UI shows the last path that
+          // did succeed, so a stale value is never mistaken for a fresh save.
+          setSavedTo(null);
+        }
+      })();
+    }, 1500);
+
+    return () => clearTimeout(timer);
+  }, [activeEvent, visibleSpots, savedSessions, sessionDayLabels]);
 
   const activeId = sheet.kind === 'overview' || sheet.kind === 'edit' ? sheet.id : null;
   const activeSpot = useMemo(
@@ -817,6 +887,21 @@ function AppShell() {
                   setNavStopId(nextStop.id);
                   setWhere('map');
                 }
+              }}
+              savedTo={savedTo}
+              filesFolder={FILES_SUPPORTED ? eventsFolderUri() : null}
+              onSaveNow={() => {
+                void (async () => {
+                  const bundle = buildEventBundle({
+                    event: activeEvent,
+                    spots: visibleSpots,
+                    sessions: savedSessions,
+                    days: Object.entries(sessionDayLabels).map(
+                      ([id, label]) => ({ id, date: label, label }),
+                    ),
+                  });
+                  setSavedTo(await saveEventBundle(bundle));
+                })();
               }}
               onOpenMap={() => setWhere('map')}
               onBack={() => setWhere('events')}

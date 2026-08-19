@@ -45,6 +45,9 @@ export default function EventScreen({
   onMoveStop,
   onNavigate,
   onOpenMap,
+  savedTo = null,
+  filesFolder = null,
+  onSaveNow,
   onStartEvent,
   onBack,
   onDelete,
@@ -66,6 +69,11 @@ export default function EventScreen({
   onMoveStop: (stopId: string, toIndex: number) => void;
   onNavigate: (stopId: string) => void;
   onOpenMap: () => void;
+  /** Path of the last successful bundle write, or null. */
+  savedTo?: string | null;
+  /** Where bundles live, or null where the platform has no file storage. */
+  filesFolder?: string | null;
+  onSaveNow?: () => void;
   onStartEvent: () => void;
   onBack: () => void;
   onDelete: () => void;
@@ -144,6 +152,39 @@ export default function EventScreen({
         />
       </View>
 
+      {/*
+        Where this event lives on disk.
+
+        Shown rather than assumed: "saved" with no location is not a claim
+        anyone can check, and being able to go and find the file is most of the
+        reason bundles exist at all.
+      */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Backup</Text>
+        <Text style={styles.fileHint}>
+          {filesFolder === null
+            ? 'This build has no app storage, so nothing is saved automatically. Download a copy to keep it.'
+            : savedTo === null
+              ? 'Saving a copy of this event — its spots, timetable and plan — to your files.'
+              : 'Saved automatically. The file holds this event, its spots, its timetable and its plan.'}
+        </Text>
+        {savedTo !== null && (
+          <Text style={styles.filePath} numberOfLines={2}>
+            {savedTo.replace('file://', '')}
+          </Text>
+        )}
+        {onSaveNow && (
+          <Pressable
+            onPress={onSaveNow}
+            style={({ pressed }) => [styles.saveBtn, pressed && styles.pressed]}
+          >
+            <Text style={styles.saveLabel}>
+              {filesFolder === null ? 'Download a copy' : 'Save now'}
+            </Text>
+          </Pressable>
+        )}
+      </View>
+
       <Pressable onPress={onDelete} hitSlop={8}>
         <Text style={styles.delete}>Delete this event</Text>
       </Pressable>
@@ -203,6 +244,35 @@ const styles = StyleSheet.create({
     fontSize: type.body,
     fontWeight: weight.bold,
     letterSpacing: 0.5,
+  },
+
+  fileHint: {
+    color: color.textMuted,
+    fontSize: type.label,
+    lineHeight: 17,
+    marginTop: space.xs,
+  },
+  filePath: {
+    color: color.textFaint,
+    fontSize: 10,
+    marginTop: space.xs,
+    fontVariant: ['tabular-nums'],
+  },
+  saveBtn: {
+    marginTop: space.sm,
+    alignSelf: 'flex-start',
+    paddingHorizontal: space.md,
+    height: 44,
+    justifyContent: 'center',
+    borderRadius: radius.md,
+    backgroundColor: color.surfaceRaised,
+    borderWidth: 1,
+    borderColor: color.border,
+  },
+  saveLabel: {
+    color: color.text,
+    fontSize: type.label,
+    fontWeight: weight.bold,
   },
 
   delete: {
