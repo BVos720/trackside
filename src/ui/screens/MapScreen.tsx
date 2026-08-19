@@ -27,6 +27,7 @@ import {
   View,
 } from 'react-native';
 import { Asset } from 'expo-asset';
+import { prepareGlyphs } from '../../storage-local/glyphs';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   Camera,
@@ -49,6 +50,7 @@ import {
 } from '../theme';
 import CircuitRuler from '../map/CircuitRuler';
 import {
+  REMOTE_GLYPHS_URL,
   SCENERY_SPRITES,
   SPOTS_SOURCE,
   VENUE_VIEW,
@@ -126,6 +128,16 @@ export default function MapScreen({
   const [error, setError] = useState<string | null>(null);
   const [zoom, setZoom] = useState(VENUE_VIEW[venue].zoom);
   const [is3D, setIs3D] = useState(false);
+  /**
+   * Local glyph template, once the ranges are on disk.
+   *
+   * Null until ready, and null forever if the copy fails — the style then keeps
+   * the remote URL, so labels degrade to needing signal rather than vanishing.
+   */
+  const [glyphsUrl, setGlyphsUrl] = useState<string | null>(null);
+  useEffect(() => {
+    void (async () => setGlyphsUrl(await prepareGlyphs()))();
+  }, []);
   const insets = useSafeAreaInsets();
   const cameraRef = useRef<CameraRef>(null);
 
@@ -191,8 +203,9 @@ export default function MapScreen({
             undefined,
             true,
             is3D,
+            glyphsUrl ?? REMOTE_GLYPHS_URL,
           ) as never),
-    [tilesUri, venue, is3D],
+    [tilesUri, venue, is3D, glyphsUrl],
   );
 
   if (error !== null) {

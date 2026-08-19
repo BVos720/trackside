@@ -32,6 +32,20 @@ builds and runs on an Android emulator (Pixel 10 Pro, API 37 preview).
 - Web (`maplibre-gl` v5) and native (`@maplibre/maplibre-react-native` v11)
   build from the same style module.
 
+### Offline labels
+- Latin glyph ranges (0-255, 256-511) bundled for three stacks — Regular,
+  Medium, Italic — 590 KB total. `npm run glyphs` fetches them into the repo,
+  alongside the `.pmtiles` archives and for the same reason.
+- `normaliseFontStacks` rewrites every layer to exactly one bundled stack. The
+  Protomaps basemap ships fallback arrays such as
+  `["Noto Sans Regular", "Noto Sans Devanagari"]`, and a multi-entry stack is
+  requested as one comma-joined name that no bundled folder can match.
+- Native copies the ranges out of the bundle on first run into
+  `files/glyphs/<stack>/`; falls back to the remote URL if that ever fails,
+  because remote labels beat no labels.
+- **Not bundled:** CJK. Japanese labels at Suzuka and Fuji fall back to Latin
+  script or stay unnamed — tens of megabytes to name two circuits.
+
 ### Spots
 - Create, edit, move, delete, hide. Key picture, photos (web only — see below).
 - Key times, free tags, shot settings (focal length stored as **full-frame
@@ -45,13 +59,20 @@ builds and runs on an Android emulator (Pixel 10 Pro, API 37 preview).
 - Creating one picks its circuit up front and takes a date **range** from a
   calendar (no native module — see decisions).
 - "Start from my spots" **clones** them (see decisions).
-- One event page holds timetable, plan, map and backup.
+- One event page holds timetable, plan, map and backup, each folded into a
+  collapsible section — closed by default, with a count and a one-line hint so
+  a shut section still tells you whether it has anything in it.
 - Active event and selected circuit both survive a restart.
 
 ### Timetable
 - Deterministic parser, built against three real Spa PDFs.
 - Paste text, or add sessions by hand. Sessions belong to an **event**.
-- Day headings resolve to real dates when unambiguous, else kept verbatim.
+- Manual entry picks the day from the event's own dates, written in full
+  ("Saturday 22 August 2026") so it resolves through the same matcher an
+  imported heading does.
+- Saved sessions are **grouped by day**, each day collapsible, in the order the
+  timetable gave them — sorting by a parsed date would reorder days whose
+  headings never resolved to one.
 - PDF picker opens the real file system on device.
 
 ### Planner
@@ -92,36 +113,39 @@ the SVG sprites to PNG (Android cannot decode SVG in that path).
 
 ## Not done
 
+> **Offline has never been tested end to end.** Airplane mode also cuts a *dev*
+> build off from Metro, which serves the JS bundle, so the app cannot start at
+> all. A real test needs a preview build (`eas build --profile preview`) that
+> embeds the bundle. What *is* verified: every glyph stack resolves locally,
+> zero glyph failures, labels render.
+
 ### Next up
 1. **Import a bundle back.** Saving works; reading one in does not.
-2. **Sessions grouped by day**, with a dropdown per day.
+2. **PDF text extraction on device.** The picker works and reports honestly that
+   reading is unsupported. pdfjs needs a DOM and a worker bundle Metro will not
+   produce. Route: a native text module — or OCR from a screenshot, which suits
+   a phone better anyway.
+3. **Photos on device.** `mediaStore` throws on native. Needs expo-file-system
+   storage, expo-image-picker, and the §5.1 EXIF strip.
 
 ### Known gaps
-3. **Labels need network.** Glyphs load from `protomaps.github.io`, so corner
-   names will not render in the Eifel. This is the biggest hole in the offline
-   promise. Fix: bundle a latin glyph set and point `glyphs` at a local URI.
-4. **PDF text extraction on device.** The picker works; pdfjs needs a DOM and a
-   worker bundle Metro will not produce. Pasted text goes through the identical
-   parser. Route: a native text-extraction module, not pdfjs.
-5. **Photos on device.** `mediaStore` throws on native. Needs expo-file-system
-   storage, expo-image-picker, and the §5.1 EXIF strip.
-6. **Never run on a real phone.** Emulator only. The Huawei P30 Lite is locked
+4. **Never run on a real phone.** Emulator only. The Huawei P30 Lite is locked
    by FRP after a factory reset with a deleted account.
-7. **iOS** needs a paid Apple account to build from Windows.
+5. **iOS** needs a paid Apple account to build from Windows.
 
 ### Cleanups
-8. `@maplibre/maplibre-react-native` deprecates the `style` prop; removed in
+6. `@maplibre/maplibre-react-native` deprecates the `style` prop; removed in
    v12. Migrate to `paint`/`layout`.
-9. ESLint rule to enforce layer boundaries (`core/` must not import `ui/`).
-10. Repositories still sit on the KV document store. The Drizzle tables exist
-    and are migrated; moving over is confined to `storage-local/`.
-11. Kerbs are generated but disabled (`SHOW_KERBS = false`).
+7. ESLint rule to enforce layer boundaries (`core/` must not import `ui/`).
+8. Repositories still sit on the KV document store. The Drizzle tables exist and
+   are migrated; moving over is confined to `storage-local/`.
+9. Kerbs are generated but disabled (`SHOW_KERBS = false`).
 
 ### Reserved for a human (§0.2)
-12. **Le Mans is partial.** The Mulsanne is public road (D338) with no route
+10. **Le Mans is partial.** The Mulsanne is public road (D338) with no route
     relation; which ways form the lap is a judgement call, not an extraction.
     Labelled "(WIP)" in the UI.
-13. Circuit presets — timezone, layout variants, marshal post numbering — are
+11. Circuit presets — timezone, layout variants, marshal post numbering — are
     seed data to be sourced from official documents, not inferred.
 
 ---
@@ -139,7 +163,13 @@ the SVG sprites to PNG (Android cannot decode SVG in that path).
   was 57× and 180° wrong. A unit test pins it.
 - **maplibre-gl is pinned to v5.** v6 is chunked ESM with a worker and does not
   bundle under Metro.
+- **Glyph stacks are renamed without spaces.** MapLibre substitutes the stack
+  name into the URL, and `%20` is decoded by some file URI handlers and not
+  others. The name is only a lookup key.
 - **Direct route legs are drawn dashed** and never styled like a path. They are
   a bearing, not a way — the same honesty rule as never inferring access.
 - **Estimates round up and are labelled "about".** Five minutes early costs
   five minutes; five minutes late costs the session.
+- **Bundle filenames use the id's *tail*.** UUID v7 begins with a millisecond
+  timestamp, so two events created in the same millisecond shared a filename
+  and one silently overwrote the other. Caught by a test.

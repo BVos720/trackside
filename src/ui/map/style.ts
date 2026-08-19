@@ -177,17 +177,64 @@ export function illuminationFromSun(altitude: number, azimuth: number): number {
 export const OSM_ATTRIBUTION = '© OpenStreetMap contributors';
 
 /**
- * Remote glyph endpoint — a known offline gap.
+ * Where label glyphs come from — §1.4.
  *
- * ── This breaks §1.4 and is not yet solved. ────────────────────────────────
- * Label glyphs are fetched over the network. With no signal the basemap
- * geometry still draws correctly, but text labels will be missing — so at the
- * Nordschleife, exactly where the app is meant to work, place names disappear.
+ * Bundled, not fetched. Labels used to come from protomaps.github.io, which
+ * meant that in the Eifel — the one place this app is built for — the basemap
+ * drew every road and named none of them. `npm run glyphs` downloads the Latin
+ * ranges into the repo; web serves them from `public/`, and native copies them
+ * out of the bundle on first run (storage-local/glyphs.ts).
  *
- * Fixing it means bundling the glyph PBFs for the scripts actually needed
- * (latin is enough for NL/BE/DE/FR) and pointing `glyphs` at a local URI.
+ * The remote URL is kept as a fallback for the case where the native copy
+ * fails: remote labels beat no labels, and this must never be the reason a
+ * basemap does not load.
+ *
+ * Non-Latin is not bundled. Japanese labels at Suzuka and Fuji need most of the
+ * CJK ranges — tens of megabytes — so they fall back to Latin script or stay
+ * unnamed. Documented rather than silently broken.
  */
-export const GLYPHS_URL =
+export const GLYPHS_URL = '/fonts/{fontstack}/{range}.pbf';
+
+/** The stacks `npm run glyphs` bundles. Nothing else may be requested. */
+export const BUNDLED_STACKS = [
+  'NotoSansRegular',
+  'NotoSansMedium',
+  'NotoSansItalic',
+] as const;
+
+/**
+ * Rewrite every layer's `text-font` to a single bundled stack.
+ *
+ * ── Why this is necessary and not merely tidy ─────────────────────────────
+ * The Protomaps basemap ships its own layers with their own fonts, including
+ * fallback arrays like `["Noto Sans Regular", "Noto Sans Devanagari"]`. A
+ * multi-entry stack is requested as one comma-joined name, which no bundled
+ * directory can match — so those labels fail against a local glyph source even
+ * though the fonts "look" present.
+ *
+ * Collapsing to one entry per layer means every request resolves to a folder
+ * that exists. Weight and italic are preserved by mapping to the matching
+ * bundled stack; anything unrecognised becomes Regular, because an unknown font
+ * rendering in the wrong weight beats a label that does not render at all.
+ */
+function normaliseFontStacks(layers: unknown[]): void {
+  for (const layer of layers) {
+    const l = layer as { layout?: Record<string, unknown> };
+    const font = l.layout?.['text-font'];
+    if (!Array.isArray(font) || font.length === 0) continue;
+
+    const joined = font.join(' ');
+    l.layout!['text-font'] = [
+      /italic/i.test(joined)
+        ? 'NotoSansItalic'
+        : /medium|bold/i.test(joined)
+          ? 'NotoSansMedium'
+          : 'NotoSansRegular',
+    ];
+  }
+}
+
+export const REMOTE_GLYPHS_URL =
   'https://protomaps.github.io/basemaps-assets/fonts/{fontstack}/{range}.pbf';
 
 export const SPRITE_URL =
@@ -455,6 +502,13 @@ export function buildMapStyle(
    * unlike renaming a spot — which is why `omitSpots` exists directly above.
    */
   terrain3d = false,
+  /**
+   * Override the glyph URL template.
+   *
+   * Native passes a `file://` template once the ranges have been copied out of
+   * the bundle; web uses the default, which its dev server already serves.
+   */
+  glyphsUrl: string = GLYPHS_URL,
 ): unknown {
   const generated = layers(BASEMAP_SOURCE, namedFlavor('dark'), {
     lang: 'en',
@@ -670,7 +724,7 @@ export function buildMapStyle(
     filter: ['==', ['get', 'kind_detail'], 'locality'],
     layout: {
       'text-field': ['get', 'name'],
-      'text-font': ['Noto Sans Medium'],
+      'text-font': ['NotoSansMedium'],
       'text-size': ['interpolate', ['linear'], ['zoom'], 12, 10, 15, 14],
       'text-max-width': 8,
       'text-padding': 4,
@@ -746,7 +800,7 @@ export function buildMapStyle(
       maxzoom: 13,
       layout: {
         'text-field': ['get', 'name'],
-        'text-font': ['Noto Sans Medium'],
+        'text-font': ['NotoSansMedium'],
         'text-size': 12,
         'text-offset': [0, 1.1],
         'text-anchor': 'top',
@@ -765,9 +819,9 @@ export function buildMapStyle(
     },
   ];
 
-  return {
+  const style = {
     version: 8,
-    glyphs: GLYPHS_URL,
+    glyphs: glyphsUrl,
     sprite: SPRITE_URL,
     sources: {
       [BASEMAP_SOURCE]: {
@@ -831,6 +885,10 @@ export function buildMapStyle(
       ...(omitSpots ? [] : spotLayers),
     ],
   };
+
+  // Must run on the finished document: the basemap layers are merged in above.
+  normaliseFontStacks(style.layers as unknown[]);
+  return style;
 }
 
 /**
