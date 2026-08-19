@@ -30,6 +30,14 @@ export interface IEventRepository {
   listAllIncludingDeleted(): Promise<Event[]>;
   get(id: EventId): Promise<Event | null>;
   save(event: Event): Promise<void>;
+  /**
+   * Tombstone an event and the spots it owns.
+   *
+   * An event holds *copies* of its spots rather than references to them (see
+   * cloneSpots.ts), so its copies go with it — they are reachable through
+   * nothing else once the event is gone. Spots on the home map are untouched:
+   * an event may not delete from the permanent collection.
+   */
   softDelete(id: EventId, at?: string): Promise<void>;
   /** Add or remove a spot reference. Idempotent in both directions. */
   setSpotIncluded(id: EventId, spotId: SpotId, included: boolean): Promise<void>;

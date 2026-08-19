@@ -424,8 +424,32 @@ class EventRepository implements IEventRepository {
         e.id === id ? { ...e, deletedAt: at as Utc, updatedAt: at as Utc } : e,
       ),
     );
-    // Spots are deliberately untouched. An event is a selection over them, so
-    // deleting the selection must not delete the places.
+    /*
+     * The event's own copies of the spots go with it.
+     *
+     * This used to leave every spot alone, reasoning that an event is a
+     * selection over the permanent collection (§4.2), so deleting the
+     * selection must not delete the places. That reasoning went stale when
+     * events stopped holding references: "Start from my spots" clones rather
+     * than points (cloneSpots.ts) and an imported event gets its own copies
+     * too (importBundle.ts), so an event now *owns* the rows carrying its id.
+     *
+     * Those copies are reachable only through their event —
+     * `spotsForContext` puts a spot with an `eventId` on that event's map and
+     * nowhere else — so leaving them behind a tombstoned event makes them
+     * invisible everywhere while they accumulate in the store forever.
+     *
+     * Spots with `eventId === null` are still deliberately untouched. That is
+     * the original rule with its actual reason intact: the home map is the
+     * permanent collection, and no event may delete from it.
+     */
+    await update<Spot>(SPOTS_KEY, (rows) =>
+      rows.map((s) =>
+        (s.eventId ?? null) === id && s.deletedAt === null
+          ? { ...s, deletedAt: at as Utc, updatedAt: at as Utc }
+          : s,
+      ),
+    );
   }
 
   async setSpotIncluded(
