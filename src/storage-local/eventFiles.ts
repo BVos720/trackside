@@ -18,6 +18,7 @@
  * a partial write of a merge would be worse than a rewrite: the failure mode
  * for a backup must never be a file that looks valid and is not.
  */
+import * as DocumentPicker from 'expo-document-picker';
 import { Directory, File, Paths } from 'expo-file-system';
 
 import type { EventBundle } from '../core/logic/eventBundle';
@@ -31,6 +32,19 @@ export interface StoredBundle {
   readonly uri: string;
   readonly bundle: EventBundle;
 }
+
+/**
+ * The outcome of asking the user for a file.
+ *
+ * Three cases, not two. Backing out of the picker and picking the wrong file
+ * are different things, and collapsing them into `null` means either an error
+ * on cancel or silence on a genuine mistake — both of which teach the user to
+ * ignore the screen.
+ */
+export type PickedBundle =
+  | { readonly kind: 'cancelled' }
+  | { readonly kind: 'ok'; readonly fileName: string; readonly uri: string; readonly bundle: EventBundle }
+  | { readonly kind: 'error'; readonly message: string };
 
 function eventsDirectory(): Directory {
   const dir = new Directory(Paths.document, FOLDER);
@@ -86,6 +100,56 @@ export async function readBundleFile(uri: string): Promise<StoredBundle | null> 
   } catch {
     return null;
   }
+}
+
+/**
+ * Read a bundle the user picked from anywhere on the device.
+ *
+ * Separate from `listEventBundles`, which only sees the app's own folder. On
+ * Android that folder is app-private storage — invisible to the system file
+ * picker and wiped on uninstall — so a bundle that was copied off the phone and
+ * is coming back has to arrive through here.
+ *
+ * ── Why the filter is every type, not application/json ────────────────────
+ * Android passes the MIME type to the file provider, and providers routinely
+ * report a .json file as application/octet-stream; filtering on the honest type
+ * shows an empty picker with no explanation. So anything may be chosen and
+ * `readEventBundle` decides — it refuses an unknown `format` and says what it
+ * expected, which is a better error than a file the user cannot see.
+ */
+export async function importBundleFromPicker(): Promise<PickedBundle> {
+  const result = await DocumentPicker.getDocumentAsync({
+    type: '*/*',
+    // As with the PDF picker: without this the URI can be revoked the moment
+    // the picker closes, and the read fails looking like a corrupt file.
+    copyToCacheDirectory: true,
+    multiple: false,
+  });
+
+  if (result.canceled) return { kind: 'cancelled' };
+  const asset = result.assets?.[0];
+  if (!asset) return { kind: 'cancelled' };
+
+  let text: string;
+  try {
+    text = await new File(asset.uri).text();
+  } catch {
+    return { kind: 'error', message: 'That file could not be read.' };
+  }
+
+  const { bundle, error } = readEventBundle(text);
+  if (!bundle) {
+    return {
+      kind: 'error',
+      message: `${asset.name ?? 'That file'} is not a Trackside event file. ${error ?? ''}`.trim(),
+    };
+  }
+  return {
+    kind: 'ok',
+    fileName: asset.name ?? 'event.json',
+    uri: asset.uri,
+    bundle,
+  };
 }
 
 export async function deleteEventBundle(uri: string): Promise<void> {

@@ -196,6 +196,11 @@ class SpotRepository implements ISpotRepository {
       .sort((a, b) => (a.id < b.id ? 1 : -1));
   }
 
+  /** Tombstones included — see the interface. Import is the only caller. */
+  async listAllIncludingDeleted(): Promise<Spot[]> {
+    return (await readAll<Spot>(SPOTS_KEY)).map(normaliseSpot);
+  }
+
   async get(id: SpotId): Promise<Spot | null> {
     const rows = await readAll<Spot>(SPOTS_KEY);
     const row = rows.find((s) => s.id === id);
@@ -326,6 +331,11 @@ class EventDayRepository implements IEventDayRepository {
     });
   }
 
+  /** Caller-supplied id, for restoring a backup — see the interface. */
+  async save(day: EventDay): Promise<void> {
+    await update<EventDay>(DAYS_KEY, (rows) => upsert(rows, day));
+  }
+
   async softDelete(id: EventDayId, at: string = nowUtc()): Promise<void> {
     await update<EventDay>(DAYS_KEY, (rows) =>
       rows.map((d) =>
@@ -391,6 +401,11 @@ class EventRepository implements IEventRepository {
   async listAll(): Promise<Event[]> {
     const rows = (await readAll<Event>(EVENTS_KEY)).map(normaliseEvent);
     return live(rows).sort((a, b) => (a.id < b.id ? 1 : -1));
+  }
+
+  /** Tombstones included — see the interface. Import is the only caller. */
+  async listAllIncludingDeleted(): Promise<Event[]> {
+    return (await readAll<Event>(EVENTS_KEY)).map(normaliseEvent);
   }
 
   async get(id: EventId): Promise<Event | null> {

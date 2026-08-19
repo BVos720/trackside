@@ -23,12 +23,27 @@ import MainMenu, { type Destination } from './src/ui/MainMenu';
 import EventsScreen from './src/ui/screens/EventsScreen';
 import { useEvents } from './src/ui/state/useEvents';
 import { eventDays } from './src/core/domain/event';
-import { buildEventBundle } from './src/core/logic/eventBundle';
+import {
+  buildEventBundle,
+  describeBundle,
+  type EventBundle,
+} from './src/core/logic/eventBundle';
+import {
+  describeImport,
+  inspectBundle,
+  planImport,
+  type ImportMode,
+  type LocalState,
+} from './src/core/logic/importBundle';
 import {
   FILES_SUPPORTED,
   eventsFolderUri,
+  importBundleFromPicker,
+  listEventBundles,
+  readBundleFile,
   saveEventBundle,
 } from './src/storage-local/eventFiles';
+import { applyImport, readLocalState } from './src/storage-local/importEvent';
 import {
   getVenue,
   setVenue as setVenuePreference,
@@ -178,6 +193,7 @@ function AppShell() {
     removePhoto,
     asGeoJson,
     cloneInto,
+    reload: reloadSpots,
   } = useSpots(circuitId);
 
   const {
@@ -193,6 +209,7 @@ function AppShell() {
     updateStop,
     removeStop,
     moveStop,
+    reload: reloadEvents,
   } = useEvents(circuitId);
 
   /**
@@ -244,6 +261,7 @@ function AppShell() {
     days: sessionDayLabels,
     addMany,
     remove: removeSession,
+    reload: reloadSessions,
   } = useSessions(circuitId, activeEventDays, activeEventId);
 
   /**
@@ -449,6 +467,91 @@ function AppShell() {
 
     return () => clearTimeout(timer);
   }, [activeEvent, visibleSpots, savedSessions, sessionDayLabels]);
+
+  /*
+   * ── Reading an event back in ──────────────────────────────────────────────
+   *
+   * A file that has been read but not yet acted on, together with the state it
+   * was inspected against. Both are held so the two outcomes can be described
+   * before the user picks one — see core/logic/importBundle.ts, which owns
+   * every rule about what an import may overwrite.
+   */
+  const [pendingBundle, setPendingBundle] = useState<{
+    fileName: string;
+    bundle: EventBundle;
+    local: LocalState;
+  } | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [storedBundles, setStoredBundles] = useState<
+    { uri: string; title: string; subtitle: string }[]
+  >([]);
+
+  /** The app's own folder, refreshed whenever the events list is opened. */
+  useEffect(() => {
+    if (where !== 'events') return;
+    void (async () => {
+      const found = await listEventBundles();
+      setStoredBundles(
+        found.map((f) => ({
+          uri: f.uri,
+          title: f.bundle.event.name,
+          subtitle: describeBundle(f.bundle),
+        })),
+      );
+    })();
+  }, [where, savedTo]);
+
+  /** Read the current state fresh: it may have changed since the last render. */
+  const offerBundle = useCallback(
+    async (bundle: EventBundle, fileName: string) => {
+      setImportError(null);
+      setPendingBundle({ fileName, bundle, local: await readLocalState() });
+    },
+    [],
+  );
+
+  const runImport = useCallback(
+    async (mode: ImportMode) => {
+      if (!pendingBundle) return;
+      const plan = planImport(pendingBundle.bundle, pendingBundle.local, mode);
+
+      try {
+        await applyImport(plan);
+      } catch {
+        setImportError('The import could not be written. Nothing was changed.');
+        return;
+      }
+      setPendingBundle(null);
+
+      // The event may belong to a circuit other than the one on screen, and its
+      // spots only exist there — so follow it, exactly as activating one does.
+      const key = VENUE_FOR_CIRCUIT[plan.event.circuitId];
+      if (key && key !== venue) setVenue(key);
+
+      await Promise.all([reloadEvents(), reloadSpots(), reloadSessions()]);
+      activate(plan.event.id);
+      setWhere('event');
+    },
+    [pendingBundle, venue, reloadEvents, reloadSpots, reloadSessions, activate],
+  );
+
+  /** Both outcomes, described, so each button can show its own consequences. */
+  const pendingImport = useMemo(() => {
+    if (!pendingBundle) return null;
+    const { bundle, local, fileName } = pendingBundle;
+    const restore = planImport(bundle, local, 'restore');
+    const copy = planImport(bundle, local, 'copy');
+    const circuit = VENUE_FOR_CIRCUIT[bundle.event.circuitId];
+
+    return {
+      fileName,
+      eventName: bundle.event.name,
+      circuitLabel: circuit ? VENUE_VIEW[circuit].label : 'Unknown circuit',
+      conflict: inspectBundle(bundle, local),
+      restore: { summary: describeImport(restore), warnings: restore.warnings },
+      copy: { summary: describeImport(copy), warnings: copy.warnings },
+    };
+  }, [pendingBundle]);
 
   const activeId = sheet.kind === 'overview' || sheet.kind === 'edit' ? sheet.id : null;
   const activeSpot = useMemo(
@@ -835,6 +938,36 @@ function AppShell() {
             }}
             onOpen={() => setWhere('event')}
             onDelete={(id) => void removeEvent(id)}
+            storedBundles={storedBundles}
+            pendingImport={pendingImport}
+            importError={importError}
+            onChooseImportFile={() => {
+              void (async () => {
+                const picked = await importBundleFromPicker();
+                // Backing out is not an error, and must not look like one.
+                if (picked.kind === 'cancelled') return;
+                if (picked.kind === 'error') {
+                  setImportError(picked.message);
+                  return;
+                }
+                await offerBundle(picked.bundle, picked.fileName);
+              })();
+            }}
+            onOpenStoredBundle={(uri) => {
+              void (async () => {
+                const stored = await readBundleFile(uri);
+                if (!stored) {
+                  setImportError('That file could no longer be read.');
+                  return;
+                }
+                await offerBundle(stored.bundle, stored.fileName);
+              })();
+            }}
+            onConfirmImport={(mode) => void runImport(mode)}
+            onCancelImport={() => {
+              setPendingBundle(null);
+              setImportError(null);
+            }}
           />
         ) : where === 'event' ? (
           activeEvent ? (

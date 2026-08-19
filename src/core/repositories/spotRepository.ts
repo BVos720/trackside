@@ -27,6 +27,16 @@ import type { CircuitId, MediaId, SpotId, UserId } from '../domain/ids';
 export interface ISpotRepository {
   /** Every non-deleted spot at a circuit, newest first. */
   listByCircuit(circuitId: CircuitId): Promise<Spot[]>;
+  /**
+   * Every spot everywhere, tombstones included.
+   *
+   * For import, which has to know what an incoming id would land on before it
+   * writes. A tombstoned spot still owns its id, and a spot on the home map is
+   * still on the home map after it is deleted — restoring a bundle over either
+   * of those would move a permanent record into an event, which is the failure
+   * cloning exists to prevent. Not for display.
+   */
+  listAllIncludingDeleted(): Promise<Spot[]>;
   get(id: SpotId): Promise<Spot | null>;
   /** Insert or replace. The caller supplies the id. */
   save(spot: Spot): Promise<void>;

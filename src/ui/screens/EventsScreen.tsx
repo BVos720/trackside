@@ -5,11 +5,17 @@
  * you are looking at. An event narrows the map to a chosen set, so a race
  * weekend is not cluttered by every position you have ever marked.
  *
- * ── Import copies references, not spots ────────────────────────────────────
- * "Start from my spots" seeds the event with the *ids* of your existing spots.
- * Duplicating the spots themselves would recreate the failure spec §4.2 exists
- * to prevent — four events meaning four Brünnchen pins, and a coordinate fix
- * needing four edits.
+ * ── "Start from my spots" makes copies ─────────────────────────────────────
+ * The event gets its own duplicates, not references to your collection. This
+ * reverses what §4.2 implies, for reasons argued in core/logic/cloneSpots.ts:
+ * with references, tidying a race-weekend map deleted spots permanently from
+ * the map they had been gathered on over years.
+ *
+ * ── "Import an event" is a different thing entirely ────────────────────────
+ * That reads a saved bundle file back in — a whole event with its spots,
+ * timetable and plan. It offers restore and copy as separate choices and shows
+ * what each would do, because the two are not interchangeable and the wrong one
+ * is only noticed later. The rules live in core/logic/importBundle.ts.
  *
  * ── The list spans circuits; an event does not ─────────────────────────────
  * You plan a season, so every event is listed here whichever venue is on
@@ -31,12 +37,43 @@ import {
 
 import type { Event } from '../../core/domain/event';
 import type { CircuitId, EventId } from '../../core/domain/ids';
+import type { ImportConflict, ImportMode } from '../../core/logic/importBundle';
+import Collapsible from '../Collapsible';
 import DateRangePicker, { formatDateRange } from '../DateRangePicker';
 import { color, radius, space, type, weight } from '../theme';
 
 export interface CircuitChoice {
   readonly id: CircuitId;
   readonly label: string;
+}
+
+/** A bundle sitting in the app's own folder, offered without a file picker. */
+export interface StoredBundleOption {
+  readonly uri: string;
+  readonly title: string;
+  readonly subtitle: string;
+}
+
+/** What one mode would do, worked out before the user commits to it. */
+export interface ImportOutcome {
+  readonly summary: string;
+  readonly warnings: readonly string[];
+}
+
+/**
+ * A file that has been read and understood, waiting on a decision.
+ *
+ * Both outcomes are computed up front so each button can show its own
+ * consequences. Choosing between "restore" and "import a copy" with nothing to
+ * go on but the words is how someone overwrites a weekend they meant to keep.
+ */
+export interface PendingImport {
+  readonly fileName: string;
+  readonly eventName: string;
+  readonly circuitLabel: string;
+  readonly conflict: ImportConflict;
+  readonly restore: ImportOutcome;
+  readonly copy: ImportOutcome;
 }
 
 export default function EventsScreen({
@@ -51,6 +88,13 @@ export default function EventsScreen({
   onCreate,
   onDelete,
   onOpen,
+  storedBundles = [],
+  pendingImport = null,
+  importError = null,
+  onChooseImportFile,
+  onOpenStoredBundle,
+  onConfirmImport,
+  onCancelImport,
 }: {
   circuitLabel: string;
   /** The circuit on screen — the default for a new event. */
@@ -79,6 +123,18 @@ export default function EventsScreen({
    */
   onOpen: (id: EventId) => void;
   onDelete: (id: EventId) => void;
+
+  // ── import ────────────────────────────────────────────────────────────────
+  /** Bundles found in the app's own folder. Empty where there is no folder. */
+  storedBundles?: readonly StoredBundleOption[];
+  /** A file that has been read and is waiting on restore-or-copy. */
+  pendingImport?: PendingImport | null;
+  /** Why the last attempt failed, in words the user can act on. */
+  importError?: string | null;
+  onChooseImportFile?: () => void;
+  onOpenStoredBundle?: (uri: string) => void;
+  onConfirmImport?: (mode: ImportMode) => void;
+  onCancelImport?: () => void;
 }) {
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState('');
@@ -279,6 +335,116 @@ export default function EventsScreen({
           </Pressable>
         </>
       )}
+
+      {onChooseImportFile && (
+        <Collapsible
+          title="Import an event"
+          hint={
+            pendingImport
+              ? `${pendingImport.eventName} — waiting`
+              : storedBundles.length > 0
+                ? `${storedBundles.length} saved file${storedBundles.length === 1 ? '' : 's'}`
+                : 'From a file'
+          }
+        >
+          {pendingImport === null ? (
+            <>
+              {storedBundles.map((b) => (
+                <Pressable
+                  key={b.uri}
+                  onPress={() => onOpenStoredBundle?.(b.uri)}
+                  style={({ pressed }) => [styles.row, pressed && styles.pressed]}
+                >
+                  <View style={styles.rowText}>
+                    <Text style={styles.rowTitle}>{b.title}</Text>
+                    <Text style={styles.rowSub}>{b.subtitle}</Text>
+                  </View>
+                </Pressable>
+              ))}
+
+              <Pressable
+                onPress={onChooseImportFile}
+                style={({ pressed }) => [styles.primary, pressed && styles.pressed]}
+              >
+                <Text style={styles.primaryLabel}>Choose a file…</Text>
+              </Pressable>
+
+              {importError !== null && (
+                <Text style={styles.importError}>{importError}</Text>
+              )}
+
+              <Text style={styles.help}>
+                {storedBundles.length > 0
+                  ? 'Files above are the backups this app wrote. Choosing a file also reads one from anywhere else on the device.'
+                  : 'An event file holds the event, its spots, its timetable and its plan.'}
+              </Text>
+            </>
+          ) : (
+            <>
+              <Text style={styles.importName}>{pendingImport.eventName}</Text>
+              <Text style={styles.rowSub}>
+                {pendingImport.circuitLabel} · {pendingImport.fileName}
+              </Text>
+
+              {/*
+                What is already here under this event's id, said plainly.
+
+                A restore is destructive when something live is in the way, and
+                it is a resurrection when a tombstone is. Neither should be
+                discovered afterwards.
+              */}
+              <Text
+                style={[
+                  styles.importConflict,
+                  pendingImport.conflict.kind === 'live' && styles.importDanger,
+                ]}
+              >
+                {pendingImport.conflict.kind === 'live'
+                  ? `“${pendingImport.conflict.localName}” is already in the app under this file’s id. Restoring replaces it.`
+                  : pendingImport.conflict.kind === 'deleted'
+                    ? `You deleted “${pendingImport.conflict.localName}”. Restoring brings it back.`
+                    : 'This event is not in the app. Restoring brings it back as it was.'}
+              </Text>
+
+              <View style={styles.choices}>
+                <Pressable
+                  onPress={() => onConfirmImport?.('restore')}
+                  style={({ pressed }) => [styles.choice, pressed && styles.pressed]}
+                >
+                  <Text style={styles.choiceLabel}>
+                    {pendingImport.conflict.kind === 'live' ? 'Replace' : 'Restore'}
+                  </Text>
+                  <Text style={styles.choiceHint}>
+                    {pendingImport.restore.summary}
+                  </Text>
+                  {pendingImport.restore.warnings.map((w) => (
+                    <Text key={w} style={styles.importWarning}>
+                      {w}
+                    </Text>
+                  ))}
+                </Pressable>
+
+                <Pressable
+                  onPress={() => onConfirmImport?.('copy')}
+                  style={({ pressed }) => [styles.choice, pressed && styles.pressed]}
+                >
+                  <Text style={styles.choiceLabel}>Import a copy</Text>
+                  <Text style={styles.choiceHint}>{pendingImport.copy.summary}</Text>
+                  {pendingImport.copy.warnings.map((w) => (
+                    <Text key={w} style={styles.importWarning}>
+                      {w}
+                    </Text>
+                  ))}
+                </Pressable>
+              </View>
+
+              <Pressable onPress={onCancelImport}>
+                <Text style={styles.cancel}>Cancel</Text>
+              </Pressable>
+            </>
+          )}
+        </Collapsible>
+      )}
     </ScrollView>
   );
 }
@@ -422,5 +588,32 @@ const styles = StyleSheet.create({
     fontSize: type.label,
     textAlign: 'center',
     marginTop: space.md,
+  },
+
+  importName: {
+    color: color.text,
+    fontSize: type.body,
+    fontWeight: weight.bold,
+    marginTop: space.sm,
+  },
+  importConflict: {
+    color: color.textMuted,
+    fontSize: type.label,
+    lineHeight: 17,
+    marginTop: space.sm,
+  },
+  /** Reserved for the case where a restore would overwrite something live. */
+  importDanger: { color: color.danger },
+  importWarning: {
+    color: color.danger,
+    fontSize: 11,
+    lineHeight: 15,
+    marginTop: 4,
+  },
+  importError: {
+    color: color.danger,
+    fontSize: type.label,
+    lineHeight: 17,
+    marginTop: space.sm,
   },
 });

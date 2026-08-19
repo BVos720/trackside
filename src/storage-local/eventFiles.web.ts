@@ -20,6 +20,12 @@ export interface StoredBundle {
   readonly bundle: EventBundle;
 }
 
+/** See the native sibling: cancelling and picking the wrong file differ. */
+export type PickedBundle =
+  | { readonly kind: 'cancelled' }
+  | { readonly kind: 'ok'; readonly fileName: string; readonly uri: string; readonly bundle: EventBundle }
+  | { readonly kind: 'error'; readonly message: string };
+
 /** Offers the bundle as a download. Returns the filename it suggested. */
 export async function saveEventBundle(bundle: EventBundle): Promise<string> {
   const doc = (globalThis as { document?: Document }).document;
@@ -59,9 +65,9 @@ export function eventsFolderUri(): string {
 }
 
 /** Read a bundle the user picked with a file input. */
-export async function importBundleFromPicker(): Promise<StoredBundle | null> {
+export async function importBundleFromPicker(): Promise<PickedBundle> {
   const doc = (globalThis as { document?: Document }).document;
-  if (!doc) return null;
+  if (!doc) return { kind: 'cancelled' };
 
   return new Promise((resolve) => {
     const input = doc.createElement('input');
@@ -70,13 +76,20 @@ export async function importBundleFromPicker(): Promise<StoredBundle | null> {
     input.onchange = async () => {
       const file = input.files?.[0];
       if (!file) {
-        resolve(null);
+        resolve({ kind: 'cancelled' });
         return;
       }
-      const { bundle } = readEventBundle(await file.text());
-      resolve(bundle ? { fileName: file.name, uri: '', bundle } : null);
+      const { bundle, error } = readEventBundle(await file.text());
+      resolve(
+        bundle
+          ? { kind: 'ok', fileName: file.name, uri: '', bundle }
+          : {
+              kind: 'error',
+              message: `${file.name} is not a Trackside event file. ${error ?? ''}`.trim(),
+            },
+      );
     };
-    input.oncancel = () => resolve(null);
+    input.oncancel = () => resolve({ kind: 'cancelled' });
     input.click();
   });
 }

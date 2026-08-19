@@ -1,0 +1,73 @@
+{
+  "format": "trackside.event.v1",
+  "exportedAt": "2026-08-19T13:53:12.415Z",
+  "event": {
+    "id": "01a019b0-d91d-756c-ab8b-2791d8079210",
+    "circuitId": "01920000-0000-7000-8000-000000000002",
+    "name": "4 uur van spa",
+    "startDate": "2026-08-21",
+    "endDate": "2026-08-23",
+    "notes": null,
+    "spotIds": [
+      "01a019b0-d9b9-706a-bd64-c545470a4f64"
+    ],
+    "stops": [
+      {
+        "id": "stop_guyazl66",
+        "spotId": "01a019b0-d9b9-706a-bd64-c545470a4f64",
+        "day": "2026-08-23",
+        "arriveAt": null,
+        "label": null,
+        "sessionId": null
+      }
+    ],
+    "createdBy": "00000000-0000-7000-8000-000000000001",
+    "createdAt": "2026-08-19T11:03:35.458Z",
+    "updatedAt": "2026-08-19T11:16:47.033Z",
+    "deletedAt": null,
+    "syncState": "local"
+  },
+  "spots": [
+    {
+      "id": "01a019b0-d9b9-706a-bd64-c545470a4f64",
+      "circuitId": "01920000-0000-7000-8000-000000000002",
+      "eventId": "01a019b0-d91d-756c-ab8b-2791d8079210",
+      "nearestMarshalPostId": null,
+      "name": "Bruxelles",
+      "position": {
+        "latitude": 50.42808755103377,
+        "longitude": 5.972897410997234,
+        "elevation": null
+      },
+      "shootingBearing": null,
+      "accessClassification": "official",
+      "accessNotes": "Excelent panning spot",
+      "keyTimes": [
+        "Sunrise",
+        "Golden hour",
+        "Blue hour",
+        "Sundown",
+        "Overcast",
+        "Night",
+        "Midday"
+      ],
+      "tags": [
+        "Blocking fence",
+        "Debris fence",
+        "Behind barrier",
+        "Elevated",
+        "Close to track"
+      ],
+      "shotSettings": [],
+      "isHidden": false,
+      "visibility": "private",
+      "createdBy": "00000000-0000-7000-8000-000000000001",
+      "createdAt": "2026-08-19T11:03:35.609Z",
+      "updatedAt": "2026-08-19T11:03:35.609Z",
+      "deletedAt": null,
+      "syncState": "local"
+    }
+  ],
+  "sessions": [],
+  "days": []
+}

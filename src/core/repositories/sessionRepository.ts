@@ -25,6 +25,16 @@ export interface IEventDayRepository {
     /** The event this day belongs to; null for days imported before events. */
     eventId: EventId | null,
   ): Promise<EventDay>;
+  /**
+   * Write a day with an id chosen by the caller.
+   *
+   * `ensure` mints its own id, which is right when a timetable is being
+   * imported — the day is being discovered — and wrong when a backup is being
+   * restored, where the id is part of what is being restored. Sessions
+   * reference days by id, so letting `ensure` mint a fresh one would detach
+   * every session in the file from the day it belongs to.
+   */
+  save(day: EventDay): Promise<void>;
   softDelete(id: EventDayId, at?: string): Promise<void>;
 }
 

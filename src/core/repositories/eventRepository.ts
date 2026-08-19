@@ -17,6 +17,17 @@ export interface IEventRepository {
    * would hide the event you are trying to switch to.
    */
   listAll(): Promise<Event[]>;
+  /**
+   * Every event including tombstoned ones.
+   *
+   * Only import needs this, and it needs it badly: restoring a bundle whose
+   * event was deleted locally is a resurrection, and §0.1 makes a tombstone a
+   * record rather than an absence. Reading through `listAll` would report the
+   * slot as empty and bring the event back without ever saying so.
+   *
+   * Not for display — everything on screen reads the live list.
+   */
+  listAllIncludingDeleted(): Promise<Event[]>;
   get(id: EventId): Promise<Event | null>;
   save(event: Event): Promise<void>;
   softDelete(id: EventId, at?: string): Promise<void>;
