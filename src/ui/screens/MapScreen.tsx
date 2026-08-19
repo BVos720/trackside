@@ -362,20 +362,20 @@ export default function MapScreen({
           <Layer
             id="spot-halo"
             type="circle"
-            style={{
-              circleRadius: 12,
-              circleColor: color.accent,
-              circleOpacity: 0.22,
+            paint={{
+              'circle-radius': 12,
+              'circle-color': color.accent,
+              'circle-opacity': 0.22,
             }}
           />
           <Layer
             id="spot-pin"
             type="circle"
-            style={{
-              circleRadius: 6,
-              circleColor: color.accent,
-              circleStrokeColor: color.background,
-              circleStrokeWidth: 2,
+            paint={{
+              'circle-radius': 6,
+              'circle-color': color.accent,
+              'circle-stroke-color': color.background,
+              'circle-stroke-width': 2,
             }}
           />
         </GeoJSONSource>
@@ -392,24 +392,28 @@ export default function MapScreen({
               id="nav-route-network"
               type="line"
               filter={['==', ['get', 'kind'], 'network'] as never}
-              style={{
-                lineColor: color.accent,
-                lineWidth: 5,
-                lineOpacity: 0.9,
-                lineCap: 'round',
-                lineJoin: 'round',
+              layout={{
+                'line-cap': 'round',
+                'line-join': 'round',
+              }}
+              paint={{
+                'line-color': color.accent,
+                'line-width': 5,
+                'line-opacity': 0.9,
               }}
             />
             <Layer
               id="nav-route-direct"
               type="line"
               filter={['==', ['get', 'kind'], 'direct'] as never}
-              style={{
-                lineColor: color.accent,
-                lineWidth: 4,
-                lineOpacity: 0.8,
-                lineDasharray: [1.5, 1.5],
-                lineCap: 'round',
+              layout={{
+                'line-cap': 'round',
+              }}
+              paint={{
+                'line-color': color.accent,
+                'line-width': 4,
+                'line-opacity': 0.8,
+                'line-dasharray': [1.5, 1.5],
               }}
             />
           </GeoJSONSource>
@@ -445,27 +449,29 @@ export default function MapScreen({
               <Layer
                 id="nav-here-cone"
                 type="symbol"
-                style={{
-                  iconImage: 'heading',
+                layout={{
+                  'icon-image': 'heading',
                   // The sprite points up, and icon-rotate is clockwise from
                   // north, so the compass bearing goes in unmodified.
-                  iconRotate: ['get', 'heading'] as never,
-                  iconRotationAlignment: 'map',
-                  iconAllowOverlap: true,
-                  iconIgnorePlacement: true,
-                  iconSize: 0.6,
-                  iconOpacity: 0.55,
+                  'icon-rotate': ['get', 'heading'] as never,
+                  'icon-rotation-alignment': 'map',
+                  'icon-allow-overlap': true,
+                  'icon-ignore-placement': true,
+                  'icon-size': 0.6,
+                }}
+                paint={{
+                  'icon-opacity': 0.55,
                 }}
               />
             )}
             <Layer
               id="nav-here-dot"
               type="circle"
-              style={{
-                circleRadius: 7,
-                circleColor: color.text,
-                circleStrokeColor: color.accent,
-                circleStrokeWidth: 3,
+              paint={{
+                'circle-radius': 7,
+                'circle-color': color.text,
+                'circle-stroke-color': color.accent,
+                'circle-stroke-width': 3,
               }}
             />
           </GeoJSONSource>
