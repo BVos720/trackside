@@ -30,10 +30,9 @@ GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
 /** Rows within this many points of each other are the same visual line. */
 const ROW_TOLERANCE = 2;
 
-export async function extractPdfLines(file: Blob): Promise<string[]> {
-  const buffer = await file.arrayBuffer();
+export async function extractPdfLines(bytes: Uint8Array): Promise<string[]> {
   const doc = await getDocument({
-    data: new Uint8Array(buffer),
+    data: bytes,
     useSystemFonts: true,
     // Never fetch anything: a timetable is a local file and this must work
     // offline (§1.4).

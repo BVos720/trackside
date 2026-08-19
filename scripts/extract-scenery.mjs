@@ -54,10 +54,10 @@ const METRES_PER_LEVEL = 3;
  * and a phone rendering terrain plus extrusions has a budget. 14k is dense
  * enough to read as woodland rather than as scattered markers.
  */
-const MAX_TREES = 14000;
+const MAX_TREES = 7000;
 
 /** Nominal spacing of the scatter grid, metres. */
-const TREE_SPACING_M = 26;
+const TREE_SPACING_M = 37;
 
 /**
  * Field scatter — grass tufts and low plants in meadow and grassland.

@@ -17,7 +17,7 @@
  * MapLibre RN ships native code, so this screen cannot run in Expo Go. See
  * EAS.md.
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -27,17 +27,29 @@ import {
   View,
 } from 'react-native';
 import { Asset } from 'expo-asset';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   Camera,
+  type CameraRef,
   GeoJSONSource,
+  Images,
   Layer,
   Map,
   ViewAnnotation,
 } from '@maplibre/maplibre-react-native';
 
-import { color, radius, space, type, weight } from '../theme';
+import {
+  MENU_HEIGHT,
+  MENU_TOP,
+  color,
+  radius,
+  space,
+  type,
+  weight,
+} from '../theme';
 import CircuitRuler from '../map/CircuitRuler';
 import {
+  SCENERY_SPRITES,
   SPOTS_SOURCE,
   VENUE_VIEW,
   type VenueKey,
@@ -58,6 +70,8 @@ const TILE_ASSETS: Record<VenueKey, number> = {
   zolder: require('../../../assets/tiles/zolder.pmtiles'),
   'spa-francorchamps': require('../../../assets/tiles/spa-francorchamps.pmtiles'),
   zandvoort: require('../../../assets/tiles/zandvoort.pmtiles'),
+  suzuka: require('../../../assets/tiles/suzuka.pmtiles'),
+  fuji: require('../../../assets/tiles/fuji.pmtiles'),
 };
 
 /** Matches the web screen — below this, callouts would overlap unreadably. */
@@ -78,6 +92,8 @@ export default function MapScreen({
   placing = false,
   route,
   here,
+  heading = null,
+  controlsTop = 0,
 }: {
   venue?: VenueKey;
   spots?: unknown;
@@ -92,12 +108,26 @@ export default function MapScreen({
    * straight line across ground we have no path for.
    */
   route?: unknown;
-  /** Live position, when navigating. */
+  /** Live position, whenever there is a fix. */
   here?: { latitude: number; longitude: number } | null;
+  /** Compass bearing in degrees from north, or null when unknown. */
+  heading?: number | null;
+  /**
+   * Extra space above the map's own controls.
+   *
+   * The shell stacks its navigation down the left edge — menu trigger, then the
+   * back-to-event button when an event is open — and the mode toggle has to
+   * start below whatever is there. The shell owns that stack, so it passes the
+   * height rather than the map guessing at it.
+   */
+  controlsTop?: number;
 }) {
   const [tilesUri, setTilesUri] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [zoom, setZoom] = useState(VENUE_VIEW[venue].zoom);
+  const [is3D, setIs3D] = useState(false);
+  const insets = useSafeAreaInsets();
+  const cameraRef = useRef<CameraRef>(null);
 
   /**
    * Resolve the bundled archive to a local file URI.
@@ -160,8 +190,9 @@ export default function MapScreen({
             venue,
             undefined,
             true,
+            is3D,
           ) as never),
-    [tilesUri, venue],
+    [tilesUri, venue, is3D],
   );
 
   if (error !== null) {
@@ -193,32 +224,93 @@ export default function MapScreen({
       <Map
         style={styles.map}
         mapStyle={mapStyle}
-        // MapLibre's own attribution control satisfies the visible-attribution
-        // obligation in spec §8 without hand-rolling one.
+        /*
+         * MapLibre's own attribution control satisfies §8 — but only where it
+         * can actually be seen. Its default bottom-right corner is where the
+         * "+ Spot" button lives, and a covered attribution is not attribution:
+         * ODbL asks for it to be visible, not merely present in the tree.
+         *
+         * Tucked directly under the site ruler's bottom corner, on the right —
+         * the one part of the screen nothing else claims. 140dp is just past
+         * the ruler's own extent (safe-area top, 12dp gap, then the card), so
+         * it reads as attached to the ruler rather than floating.
+         */
         attribution
+        attributionPosition={{ top: 140, right: 8 }}
         logo={false}
-        // Milestone 1 is flat 2D (spec §6). Rotation and pitch belong to the
-        // §5.10 camera modes, and leaving them on now means a gloved hand can
-        // knock the map into a tilted state with no way back.
-        touchRotate={false}
-        touchPitch={false}
+        /*
+         * Rotation and pitch only exist in 3D.
+         *
+         * In 2D a gloved hand knocks the map into a tilted state with no
+         * obvious way back, which is why these stay off until 3D is asked for
+         * — and why leaving 3D snaps the camera flat rather than leaving you
+         * somewhere you cannot undo.
+         */
+        touchRotate={is3D}
+        touchPitch={is3D}
         onPress={(e) => {
           if (!placing) return;
-          const c = (e.nativeEvent as { coordinates?: [number, number] })
-            .coordinates;
-          if (!c) return;
+          /*
+           * `lngLat`, not `coordinates`.
+           *
+           * This read `e.nativeEvent.coordinates` — a field MapLibre RN has
+           * never emitted — so it was always undefined and every tap returned
+           * early. Placing mode looked live and silently did nothing.
+           *
+           * It typechecked because the event was cast to an invented shape,
+           * which is exactly what a cast does: replaces what the library says
+           * with what the author assumed. The library's own `PressEvent` is
+           * `{ lngLat: [lng, lat], point }`, so it is used unmodified here.
+           */
+          const [longitude, latitude] = e.nativeEvent.lngLat;
           // Snapping to the verge happens in the shell, which owns the circuit
           // geometry — the same path the web screen takes.
-          onMapTap?.({ longitude: c[0], latitude: c[1] });
+          onMapTap?.({ longitude, latitude });
         }}
         // Fires once the camera settles. Zoom gates the callouts, and reading
         // it on every intermediate frame would re-render the whole set mid-pan.
+        /*
+         * Frame the circuit once the map actually has a size.
+         *
+         * `initialViewState` is applied at mount, when the view is often still
+         * zero-sized, so the bounds fit against nothing and the circuit ends up
+         * off-centre and clipped — which is exactly how it first rendered on a
+         * 1280x2856 phone. Re-fitting on load costs one camera move and makes
+         * the framing correct on any aspect ratio.
+         */
+        onDidFinishLoadingMap={() => {
+          cameraRef.current?.fitBounds(
+            [
+              view.circuitBounds[0][0],
+              view.circuitBounds[0][1],
+              view.circuitBounds[1][0],
+              view.circuitBounds[1][1],
+            ],
+            {
+              // Asymmetric on purpose: the menu sits over the top and the two
+              // controls over the bottom, so an evenly padded fit puts the
+              // circuit's ends underneath them.
+              padding: { top: 96, right: 24, bottom: 140, left: 24 },
+              duration: 0,
+            },
+          );
+        }}
         onRegionDidChange={(e) => {
           const z = e.nativeEvent?.zoom;
           if (typeof z === 'number') setZoom(z);
         }}
       >
+        {/*
+          The scatter's icons.
+
+          A symbol layer whose `icon-image` is not registered renders nothing
+          and reports nothing — which is exactly how the trees went missing on
+          device while the same style drew them on web.
+        */}
+        <Images images={SCENERY_SPRITES} />
+
         <Camera
+          ref={cameraRef}
           initialViewState={{
             bounds: [
               view.circuitBounds[0][0],
@@ -247,7 +339,9 @@ export default function MapScreen({
           id={SPOTS_SOURCE}
           data={shape as never}
           onPress={(e) => {
-            const f = (e as { features?: SpotFeature[] }).features?.[0];
+            // Same mistake as the map tap: features arrive on `nativeEvent`,
+            // not on the event object, so tapping a pin never opened it.
+            const f = e.nativeEvent.features?.[0] as SpotFeature | undefined;
             const id = f?.properties?.id;
             if (typeof id === 'string') onSpotTap?.(id);
           }}
@@ -308,6 +402,13 @@ export default function MapScreen({
           </GeoJSONSource>
         )}
 
+        {/*
+          You are here, and which way you are facing.
+
+          The cone is drawn under the dot and only when a compass reading
+          exists — an arrow pointing nowhere in particular is worse than no
+          arrow, because it still looks like an assertion.
+        */}
         {here && (
           <GeoJSONSource
             id="nav-here"
@@ -317,7 +418,7 @@ export default function MapScreen({
                 features: [
                   {
                     type: 'Feature',
-                    properties: {},
+                    properties: { heading: heading ?? 0 },
                     geometry: {
                       type: 'Point',
                       coordinates: [here.longitude, here.latitude],
@@ -327,6 +428,23 @@ export default function MapScreen({
               } as never
             }
           >
+            {heading !== null && (
+              <Layer
+                id="nav-here-cone"
+                type="symbol"
+                style={{
+                  iconImage: 'heading',
+                  // The sprite points up, and icon-rotate is clockwise from
+                  // north, so the compass bearing goes in unmodified.
+                  iconRotate: ['get', 'heading'] as never,
+                  iconRotationAlignment: 'map',
+                  iconAllowOverlap: true,
+                  iconIgnorePlacement: true,
+                  iconSize: 0.6,
+                  iconOpacity: 0.55,
+                }}
+              />
+            )}
             <Layer
               id="nav-here-dot"
               type="circle"
@@ -384,7 +502,57 @@ export default function MapScreen({
           })}
       </Map>
 
-      <CircuitRuler venue={venue} />
+      {/*
+        2D ⇄ 3D — spec §5.10, §5.11.
+
+        Leaving 3D returns the camera to flat *and* north-up. Pitch and bearing
+        are only reachable by gesture while tilted, so without the reset you can
+        land back in 2D rotated 40° with no control that puts it straight.
+      */}
+      <Pressable
+        onPress={() => {
+          const next = !is3D;
+          setIs3D(next);
+          cameraRef.current?.easeTo({
+            center: view.centre,
+            // 60, not MapLibre's 85: past roughly 70 with terrain on, the
+            // camera ends up looking through a hillside rather than over it.
+            pitch: next ? 60 : 0,
+            bearing: next ? undefined : 0,
+            duration: next ? 900 : 700,
+          });
+        }}
+        style={({ pressed }) => [
+          styles.modeButton,
+          // Beneath the menu, sharing its left edge: both are things you press
+          // deliberately, and the right side belongs to the ruler. controlsTop
+          // pushes it further down when the shell has stacked something else
+          // there, such as the back-to-event button.
+          { top: insets.top + MENU_TOP + MENU_HEIGHT + 8 + controlsTop },
+          is3D && styles.modeButtonActive,
+          pressed && styles.pressed,
+        ]}
+      >
+        <Text style={[styles.modeLabel, is3D && styles.modeLabelActive]}>
+          {is3D ? '3D' : '2D'}
+        </Text>
+      </Pressable>
+
+      {is3D && (
+        <View
+          style={[
+            styles.terrainNote,
+            { top: insets.top + MENU_TOP + MENU_HEIGHT + 8 + controlsTop + 64 },
+          ]}
+          pointerEvents="none"
+        >
+          <Text style={styles.terrainNoteText}>
+            Terrain streams over the network — not available offline yet
+          </Text>
+        </View>
+      )}
+
+      <CircuitRuler venue={venue} top={insets.top + MENU_TOP} />
 
       {/* No venue badge: the top-left menu trigger carries the circuit and
           active event, and both sat in the same corner. */}
@@ -394,6 +562,42 @@ export default function MapScreen({
 }
 
 const styles = StyleSheet.create({
+  modeButton: {
+    position: 'absolute',
+    left: space.md,
+    width: 56,
+    height: 56,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radius.md,
+    backgroundColor: 'rgba(11,13,16,0.92)',
+    borderWidth: 1,
+    borderColor: color.border,
+  },
+  modeButtonActive: { backgroundColor: color.accent, borderColor: color.accent },
+  pressed: { opacity: 0.7 },
+  modeLabel: { color: color.text, fontSize: type.body, fontWeight: weight.bold },
+  modeLabelActive: { color: color.onAccent },
+
+  /**
+   * The one honest caveat on this screen.
+   *
+   * Everything else works with no signal; the DEM does not. Saying so where the
+   * feature is used beats discovering it in the Eifel, which is exactly where
+   * there is no coverage and exactly where the relief matters most.
+   */
+  terrainNote: {
+    position: 'absolute',
+    left: space.md,
+    maxWidth: 190,
+    padding: space.sm,
+    borderRadius: radius.md,
+    backgroundColor: 'rgba(11,13,16,0.92)',
+    borderWidth: 1,
+    borderColor: color.border,
+  },
+  terrainNoteText: { color: color.textMuted, fontSize: 10, lineHeight: 14 },
+
   root: { flex: 1, backgroundColor: color.background },
   map: { flex: 1 },
 

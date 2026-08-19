@@ -103,3 +103,36 @@ export function compassPoint(degrees: number): string {
   const index = Math.round(normaliseBearing(degrees) / 22.5) % 16;
   return points[index] ?? UNKNOWN_COMPASS_POINT;
 }
+
+/**
+ * Is this position inside a venue's bounding box?
+ *
+ * Used to decide whether "add my current location" makes sense. At home in
+ * Breda that button would drop a spot two hundred kilometres from the circuit
+ * you are looking at, so it only appears when you are actually there.
+ *
+ * ── Deliberately a box, not the corridor ──────────────────────────────────
+ * The tighter test would be the 300m corridor the map already draws. This uses
+ * the wider extract bounds on purpose: the car park, the campsite and the walk
+ * in are all outside the corridor and all places you would legitimately mark a
+ * spot from. Being generous here costs a spot you can move; being strict costs
+ * the feature exactly when it is useful.
+ *
+ * `bounds` is [[west, south], [east, north]] — the same order the venue table
+ * and `pmtiles extract` use, so no axis juggling at the call site.
+ */
+export function withinBounds(
+  point: LatLon,
+  bounds: readonly [readonly [number, number], readonly [number, number]],
+): boolean {
+  const { latitude, longitude } = point;
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return false;
+
+  const [[west, south], [east, north]] = bounds;
+  return (
+    longitude >= west &&
+    longitude <= east &&
+    latitude >= south &&
+    latitude <= north
+  );
+}

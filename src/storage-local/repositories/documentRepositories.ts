@@ -67,6 +67,56 @@ async function writeAll<T>(key: string, rows: T[]): Promise<void> {
   await kv.set(key, JSON.stringify(rows));
 }
 
+/**
+ * One in-flight mutation per collection.
+ *
+ * ── The bug this exists to prevent ─────────────────────────────────────────
+ * Every mutation here is read-modify-write over a whole collection: read the
+ * JSON blob, change one row, write it all back. There is an `await` between the
+ * read and the write, so two overlapping mutations both read the *same* array
+ * and the second write silently discards the first's change.
+ *
+ * The UI fires these without awaiting — `void addStop(...)`, a text field
+ * committing on blur while a reload is in flight — so overlapping is the normal
+ * case, not a rare race. Adding two planned stops and giving them times made
+ * three or four such writes overlap, and stops appeared to save and then vanish.
+ *
+ * Chaining per key serialises them: each mutation waits for the previous one on
+ * that collection, so every read sees the last write. Per key rather than
+ * globally, because a spot edit has no reason to wait behind a timetable
+ * import.
+ *
+ * This is not a substitute for real transactions. It is what makes a document
+ * store safe to write from an event-driven UI, and it stops being needed when
+ * the repositories move onto Drizzle rows.
+ */
+const writeQueues = new Map<string, Promise<unknown>>();
+
+/**
+ * Read a collection, change it, write it back — atomically for that key.
+ *
+ * The only safe way to mutate a document collection here. Anything that reads
+ * and then writes without going through this can lose a concurrent change.
+ */
+function update<T>(key: string, change: (rows: T[]) => T[]): Promise<void> {
+  return mutate(key, async () => {
+    const rows = await readAll<T>(key);
+    await writeAll(key, change(rows));
+  });
+}
+
+function mutate<R>(key: string, work: () => Promise<R>): Promise<R> {
+  const previous = writeQueues.get(key) ?? Promise.resolve();
+  // Swallow the predecessor's failure: one bad write must not wedge the queue
+  // for the rest of the session.
+  const next = previous.then(work, work);
+  writeQueues.set(
+    key,
+    next.catch(() => undefined),
+  );
+  return next;
+}
+
 /** Replace by id, or append when absent. */
 function upsert<T extends { id: string }>(rows: T[], row: T): T[] {
   const i = rows.findIndex((r) => r.id === row.id);
@@ -153,14 +203,11 @@ class SpotRepository implements ISpotRepository {
   }
 
   async save(spot: Spot): Promise<void> {
-    const rows = await readAll<Spot>(SPOTS_KEY);
-    await writeAll(SPOTS_KEY, upsert(rows, spot));
+    await update<Spot>(SPOTS_KEY, (rows) => upsert(rows, spot));
   }
 
   async softDelete(id: SpotId, at: string = nowUtc()): Promise<void> {
-    const rows = await readAll<Spot>(SPOTS_KEY);
-    await writeAll(
-      SPOTS_KEY,
+    await update<Spot>(SPOTS_KEY, (rows) =>
       rows.map((s) =>
         s.id === id ? { ...s, deletedAt: at as Utc, updatedAt: at as Utc } : s,
       ),
@@ -168,9 +215,7 @@ class SpotRepository implements ISpotRepository {
 
     // Tombstone attached media alongside it, or a deleted spot leaves its
     // reference photos behind as orphans in any gallery view.
-    const media = await readAll<Media>(MEDIA_KEY);
-    await writeAll(
-      MEDIA_KEY,
+    await update<Media>(MEDIA_KEY, (media) =>
       media.map((m) =>
         m.spotId === id && m.deletedAt === null
           ? { ...m, deletedAt: at as Utc, updatedAt: at as Utc }
@@ -181,14 +226,10 @@ class SpotRepository implements ISpotRepository {
 
   async restore(id: SpotId): Promise<void> {
     const at = nowUtc();
-    const rows = await readAll<Spot>(SPOTS_KEY);
-    await writeAll(
-      SPOTS_KEY,
+    await update<Spot>(SPOTS_KEY, (rows) =>
       rows.map((s) => (s.id === id ? { ...s, deletedAt: null, updatedAt: at } : s)),
     );
-    const media = await readAll<Media>(MEDIA_KEY);
-    await writeAll(
-      MEDIA_KEY,
+    await update<Media>(MEDIA_KEY, (media) =>
       media.map((m) => (m.spotId === id ? { ...m, deletedAt: null } : m)),
     );
   }
@@ -208,14 +249,11 @@ class MediaRepository implements IMediaRepository {
   }
 
   async save(media: Media): Promise<void> {
-    const rows = await readAll<Media>(MEDIA_KEY);
-    await writeAll(MEDIA_KEY, upsert(rows, media));
+    await update<Media>(MEDIA_KEY, (rows) => upsert(rows, media));
   }
 
   async softDelete(id: MediaId, at: string = nowUtc()): Promise<void> {
-    const rows = await readAll<Media>(MEDIA_KEY);
-    await writeAll(
-      MEDIA_KEY,
+    await update<Media>(MEDIA_KEY, (rows) =>
       rows.map((m) =>
         m.id === id ? { ...m, deletedAt: at as Utc, updatedAt: at as Utc } : m,
       ),
@@ -232,14 +270,11 @@ class UserSpotNoteRepository implements IUserSpotNoteRepository {
   }
 
   async save(note: UserSpotNote): Promise<void> {
-    const rows = await readAll<UserSpotNote>(NOTES_KEY);
-    await writeAll(NOTES_KEY, upsert(rows, note));
+    await update<UserSpotNote>(NOTES_KEY, (rows) => upsert(rows, note));
   }
 
   async softDelete(id: string, at: string = nowUtc()): Promise<void> {
-    const rows = await readAll<UserSpotNote>(NOTES_KEY);
-    await writeAll(
-      NOTES_KEY,
+    await update<UserSpotNote>(NOTES_KEY, (rows) =>
       rows.map((n) =>
         n.id === id ? { ...n, deletedAt: at as Utc, updatedAt: at as Utc } : n,
       ),
@@ -262,34 +297,37 @@ class EventDayRepository implements IEventDayRepository {
     label: string | null,
     eventId: EventId | null,
   ): Promise<EventDay> {
-    const rows = await readAll<EventDay>(DAYS_KEY);
-    // Keyed on the event too, so re-importing a revised timetable for one
-    // weekend does not fold into another weekend's day of the same name.
-    const found = live(rows).find(
-      (d) =>
-        d.circuitId === circuitId &&
-        d.date === date &&
-        (d.eventId ?? null) === eventId,
-    );
-    if (found) return found;
+    // Find-or-create has to hold the lock across both halves. Importing a
+    // multi-day timetable calls this once per session, and two calls for the
+    // same day arriving together would each see "not found" and create one.
+    return mutate(DAYS_KEY, async () => {
+      const rows = await readAll<EventDay>(DAYS_KEY);
+      // Keyed on the event too, so re-importing a revised timetable for one
+      // weekend does not fold into another weekend's day of the same name.
+      const found = live(rows).find(
+        (d) =>
+          d.circuitId === circuitId &&
+          d.date === date &&
+          (d.eventId ?? null) === eventId,
+      );
+      if (found) return found;
 
-    const day: EventDay = {
-      id: newId<EventDayId>(),
-      circuitId,
-      eventId,
-      date,
-      sourceDocumentId: null,
-      label,
-      ...newEntityBase(),
-    };
-    await writeAll(DAYS_KEY, [...rows, day]);
-    return day;
+      const day: EventDay = {
+        id: newId<EventDayId>(),
+        circuitId,
+        eventId,
+        date,
+        sourceDocumentId: null,
+        label,
+        ...newEntityBase(),
+      };
+      await writeAll(DAYS_KEY, [...rows, day]);
+      return day;
+    });
   }
 
   async softDelete(id: EventDayId, at: string = nowUtc()): Promise<void> {
-    const rows = await readAll<EventDay>(DAYS_KEY);
-    await writeAll(
-      DAYS_KEY,
+    await update<EventDay>(DAYS_KEY, (rows) =>
       rows.map((d) =>
         d.id === id ? { ...d, deletedAt: at as Utc, updatedAt: at as Utc } : d,
       ),
@@ -330,14 +368,11 @@ class SessionRepository implements ISessionRepository {
   }
 
   async save(session: Session): Promise<void> {
-    const rows = await readAll<Session>(SESSIONS_KEY);
-    await writeAll(SESSIONS_KEY, upsert(rows, session));
+    await update<Session>(SESSIONS_KEY, (rows) => upsert(rows, session));
   }
 
   async softDelete(id: SessionId, at: string = nowUtc()): Promise<void> {
-    const rows = await readAll<Session>(SESSIONS_KEY);
-    await writeAll(
-      SESSIONS_KEY,
+    await update<Session>(SESSIONS_KEY, (rows) =>
       rows.map((s) =>
         s.id === id ? { ...s, deletedAt: at as Utc, updatedAt: at as Utc } : s,
       ),
@@ -365,14 +400,11 @@ class EventRepository implements IEventRepository {
   }
 
   async save(event: Event): Promise<void> {
-    const rows = await readAll<Event>(EVENTS_KEY);
-    await writeAll(EVENTS_KEY, upsert(rows, event));
+    await update<Event>(EVENTS_KEY, (rows) => upsert(rows, event));
   }
 
   async softDelete(id: EventId, at: string = nowUtc()): Promise<void> {
-    const rows = await readAll<Event>(EVENTS_KEY);
-    await writeAll(
-      EVENTS_KEY,
+    await update<Event>(EVENTS_KEY, (rows) =>
       rows.map((e) =>
         e.id === id ? { ...e, deletedAt: at as Utc, updatedAt: at as Utc } : e,
       ),
@@ -386,19 +418,17 @@ class EventRepository implements IEventRepository {
     spotId: SpotId,
     included: boolean,
   ): Promise<void> {
-    const rows = await readAll<Event>(EVENTS_KEY);
     const at = nowUtc();
-    await writeAll(
-      EVENTS_KEY,
+    await update<Event>(EVENTS_KEY, (rows) =>
       rows.map((e) => {
         if (e.id !== id) return e;
-        const has = e.spotIds.includes(spotId);
+        const has = (e.spotIds ?? []).includes(spotId);
         if (has === included) return e;
         return {
           ...e,
           spotIds: included
-            ? [...e.spotIds, spotId]
-            : e.spotIds.filter((x) => x !== spotId),
+            ? [...(e.spotIds ?? []), spotId]
+            : (e.spotIds ?? []).filter((x) => x !== spotId),
           updatedAt: at,
         };
       }),
@@ -410,10 +440,8 @@ class EventRepository implements IEventRepository {
     id: EventId,
     change: (stops: readonly PlanStop[]) => readonly PlanStop[],
   ): Promise<void> {
-    const rows = await readAll<Event>(EVENTS_KEY);
     const at = nowUtc();
-    await writeAll(
-      EVENTS_KEY,
+    await update<Event>(EVENTS_KEY, (rows) =>
       rows.map((raw) => {
         if (raw.id !== id) return raw;
         const e = normaliseEvent(raw);

@@ -82,6 +82,7 @@ export default function MapScreen({
   placing = false,
   route,
   here,
+  heading = null,
 }: {
   venue?: VenueKey;
   /** GeoJSON for the spots source; re-applied when it changes. */
@@ -100,8 +101,12 @@ export default function MapScreen({
    * differently on purpose — see core/logic/route.ts.
    */
   route?: unknown;
-  /** Live position, when navigating. */
+  /** Live position, whenever there is a fix. */
   here?: { latitude: number; longitude: number } | null;
+  /** Compass bearing in degrees from north, or null when unknown. */
+  heading?: number | null;
+  /** Accepted for parity with native; the web chrome does not stack. */
+  controlsTop?: number;
 }) {
   /**
    * The spot singled out from a stack.
@@ -204,14 +209,21 @@ export default function MapScreen({
      */
     map.on('styleimagemissing', (e: { id: string }) => {
       const src = SCENERY_SPRITES[e.id];
-      if (!src || map.hasImage(e.id)) return;
-      //  rather than : React Native's
-      // Image component is imported above and shadows the DOM constructor.
-      const img = document.createElement('img');
+      if (src === undefined) return;
+
+      // `Image` in this file is React Native's component; the DOM constructor
+      // that MapLibre wants lives on `window`.
+      const img = new window.Image();
       img.onload = () => {
         if (!map.hasImage(e.id)) map.addImage(e.id, img);
       };
-      img.src = src;
+      /*
+       * Metro turns a `require()`d asset into a module id on native and a URL
+       * on web. `Image.resolveAssetSource` normalises both, so a single sprite
+       * table serves each platform — which is the point of rasterising them to
+       * PNG rather than leaving SVG only the browser could read.
+       */
+      img.src = Image.resolveAssetSource(src).uri;
     });
 
     // Dev-only handle. Styling a vector basemap means inspecting what is
@@ -348,7 +360,7 @@ export default function MapScreen({
           features: [
             {
               type: 'Feature',
-              properties: {},
+              properties: { heading: heading ?? 0, hasHeading: heading !== null },
               geometry: {
                 type: 'Point',
                 coordinates: [here.longitude, here.latitude],
@@ -401,6 +413,23 @@ export default function MapScreen({
       },
     } as never);
 
+    // Facing cone under the dot; hidden when there is no compass reading.
+    map.addLayer({
+      id: 'nav-here-cone',
+      type: 'symbol',
+      source: 'nav-here',
+      filter: ['==', ['get', 'hasHeading'], true],
+      layout: {
+        'icon-image': 'heading',
+        'icon-rotate': ['get', 'heading'],
+        'icon-rotation-alignment': 'map',
+        'icon-allow-overlap': true,
+        'icon-ignore-placement': true,
+        'icon-size': 0.6,
+      },
+      paint: { 'icon-opacity': 0.55 },
+    } as never);
+
     map.addLayer({
       id: 'nav-here',
       type: 'circle',
@@ -412,7 +441,7 @@ export default function MapScreen({
         'circle-stroke-color': '#2E7DF6',
       },
     } as never);
-  }, [route, here, ready]);
+  }, [route, here, heading, ready]);
 
   /**
    * 2D ⇄ 3D — spec §5.10, §5.11.

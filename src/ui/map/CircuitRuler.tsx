@@ -28,7 +28,14 @@ function distance(metres: number): string {
     : `${(metres / 1000).toFixed(2)} km`;
 }
 
-export default function CircuitRuler({ venue }: { venue: VenueKey }) {
+export default function CircuitRuler({
+  venue,
+  /** Distance from the top of the screen, already clear of the status bar. */
+  top,
+}: {
+  venue: VenueKey;
+  top?: number;
+}) {
   const m = circuitMetricsFor(venue);
   if (!m) return null;
 
@@ -37,7 +44,10 @@ export default function CircuitRuler({ venue }: { venue: VenueKey }) {
   const longest = Math.max(m.widthMetres, m.heightMetres, 1);
 
   return (
-    <View style={styles.root} pointerEvents="none">
+    <View
+      style={[styles.root, top === undefined ? null : { top }]}
+      pointerEvents="none"
+    >
       <Text style={styles.title}>SITE</Text>
 
       <Bar label="W" metres={m.widthMetres} fraction={m.widthMetres / longest} />
@@ -81,8 +91,9 @@ const styles = StyleSheet.create({
   root: {
     position: 'absolute',
     right: space.md,
-    // Clears the 2D/3D toggle, which sits at the same right edge.
-    top: space.md + 72,
+    // Web default; native passes a safe-area offset. The 2D/3D toggle moved
+    // to the left edge, so nothing competes for this corner any more.
+    top: space.md,
     width: 148,
     padding: space.sm,
     borderRadius: radius.md,

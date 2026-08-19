@@ -49,6 +49,7 @@ export default function NavigatorPanel({
   stop,
   spot,
   network,
+  barriers = [],
   fix,
   status,
   now,
@@ -57,6 +58,8 @@ export default function NavigatorPanel({
   stop: PlanStop;
   spot: Spot | null;
   network: WalkNetwork;
+  /** Lines a walk may not cross — the racing surface. */
+  barriers?: readonly (readonly (readonly [number, number])[])[];
   fix: Fix | null;
   status: PositionStatus;
   /** Passed in rather than read here, so the whole panel re-renders on a tick. */
@@ -64,8 +67,17 @@ export default function NavigatorPanel({
   onClose: () => void;
 }) {
   const route: Route | null = useMemo(
-    () => (fix && spot ? routeBetween(network, fix.position, spot.position) : null),
-    [fix, spot, network],
+    () =>
+      fix && spot
+        ? routeBetween(
+            network,
+            fix.position,
+            spot.position,
+            barriers,
+            fix.accuracyMetres ?? 0,
+          )
+        : null,
+    [fix, spot, network, barriers],
   );
 
   const walk = useMemo(
@@ -170,12 +182,52 @@ export default function NavigatorPanel({
             />
           </View>
 
-          {route.offNetworkMetres > 20 && (
+          {/*
+            Blocked is a "keep looking" state, not a dead end.
+
+            The route is recomputed on every fix, so walking a few metres —
+            towards a tunnel, or simply away from the trackside where the fix
+            was ambiguous — often finds one. Saying that is more use than an
+            error, and it is why no line is drawn on the map meanwhile.
+          */}
+          {route.blocked && (
+            <View style={styles.blockedBox}>
+              <Text style={styles.blocked}>
+                No way there yet without crossing the circuit.
+              </Text>
+              <Text style={styles.blockedBody}>
+                Nothing is drawn on the map, because the only line found runs
+                across the track. Keep walking — this rechecks every time your
+                position updates, and usually finds a route once you are clear
+                of the trackside or nearer a crossing.
+              </Text>
+              <Text style={styles.blockedBody}>
+                Head {bearing === null ? 'towards the spot' : compassPoint(bearing)}{' '}
+                and look for a bridge, tunnel or marked spectator crossing.
+              </Text>
+            </View>
+          )}
+
+          {route.offNetworkMetres > 20 && !route.blocked && (
             <Text style={styles.offPath}>
               {Math.round(route.offNetworkMetres)} m of this has no path —
               straight-line only. Check the ground before you commit to it.
             </Text>
           )}
+
+          {/*
+            The one thing that is true regardless of what the route says.
+
+            Every line on this screen comes from OSM ways and a GPS fix, neither
+            of which knows where a marshal is standing or whether a session is
+            running. Shown always, not only when blocked, because the dangerous
+            moment is the one where the app looks confident.
+          */}
+          <Text style={styles.standingWarning}>
+            Never cross or enter the circuit, even if a route appears to go
+            that way. Use marked spectator crossings only — if there is not one,
+            go the long way round.
+          </Text>
 
           {fix?.accuracyMetres !== null &&
             fix?.accuracyMetres !== undefined &&
@@ -275,6 +327,39 @@ const styles = StyleSheet.create({
     fontVariant: ['tabular-nums'],
   },
 
+  /**
+   * The one message on this panel that is a warning rather than information.
+   *
+   * Coloured as danger because the failure it prevents is not a missed photo.
+   */
+  blockedBox: {
+    marginTop: space.sm,
+    padding: space.sm,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: color.danger,
+    backgroundColor: color.surface,
+  },
+  blockedBody: {
+    color: color.textMuted,
+    fontSize: type.label,
+    lineHeight: 17,
+    marginTop: space.xs,
+  },
+  /** Quiet but always there; the loud styling belongs to the blocked box. */
+  standingWarning: {
+    color: color.undocumented,
+    fontSize: 11,
+    lineHeight: 15,
+    marginTop: space.sm,
+  },
+  blocked: {
+    color: color.danger,
+    fontSize: type.label,
+    fontWeight: weight.bold,
+    marginTop: space.sm,
+    lineHeight: 17,
+  },
   offPath: {
     color: color.undocumented,
     fontSize: type.label,

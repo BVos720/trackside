@@ -7,6 +7,7 @@ import {
   haversineMetres,
   normaliseBearing,
   normaliseSigned,
+  withinBounds,
 } from './geo';
 
 describe('normaliseBearing', () => {
@@ -139,5 +140,40 @@ describe('compassPoint', () => {
       expect(label).toBeTruthy();
       expect(label).not.toBe(UNKNOWN_COMPASS_POINT);
     }
+  });
+});
+
+describe('withinBounds', () => {
+  /** The Nürburgring extract, [[west, south], [east, north]]. */
+  const RING = [
+    [6.88, 50.3],
+    [7.04, 50.41],
+  ] as const;
+
+  const at = (latitude: number, longitude: number) => ({ latitude, longitude });
+
+  it('accepts a position inside the box', () => {
+    expect(withinBounds(at(50.3523, 6.9628), RING)).toBe(true);
+  });
+
+  it('rejects a position outside it', () => {
+    // Breda — where the planning happens, not the shooting.
+    expect(withinBounds(at(51.5719, 4.7683), RING)).toBe(false);
+  });
+
+  it('accepts the edges, so a spot on the boundary is not lost', () => {
+    expect(withinBounds(at(50.3, 6.88), RING)).toBe(true);
+    expect(withinBounds(at(50.41, 7.04), RING)).toBe(true);
+  });
+
+  it('rejects a position just outside an edge', () => {
+    expect(withinBounds(at(50.2999, 6.9), RING)).toBe(false);
+    expect(withinBounds(at(50.35, 7.0401), RING)).toBe(false);
+  });
+
+  it('rejects non-finite coordinates rather than treating them as inside', () => {
+    // A GPS fix can arrive as NaN; that must never enable "add here".
+    expect(withinBounds(at(Number.NaN, 6.96), RING)).toBe(false);
+    expect(withinBounds(at(50.35, Number.POSITIVE_INFINITY), RING)).toBe(false);
   });
 });

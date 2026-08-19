@@ -46,6 +46,20 @@ import zolderBuildings from '../../../assets/circuits/zolder.buildings.json';
 import zolderTrees from '../../../assets/circuits/zolder.trees.json';
 import zolderPaths from '../../../assets/circuits/zolder.paths.json';
 
+import suzukaCircuit from '../../../assets/circuits/suzuka.json';
+import suzukaMask from '../../../assets/circuits/suzuka.mask.json';
+import suzukaKerbs from '../../../assets/circuits/suzuka.kerbs.json';
+import suzukaBuildings from '../../../assets/circuits/suzuka.buildings.json';
+import suzukaTrees from '../../../assets/circuits/suzuka.trees.json';
+import suzukaPaths from '../../../assets/circuits/suzuka.paths.json';
+
+import fujiCircuit from '../../../assets/circuits/fuji.json';
+import fujiMask from '../../../assets/circuits/fuji.mask.json';
+import fujiKerbs from '../../../assets/circuits/fuji.kerbs.json';
+import fujiBuildings from '../../../assets/circuits/fuji.buildings.json';
+import fujiTrees from '../../../assets/circuits/fuji.trees.json';
+import fujiPaths from '../../../assets/circuits/fuji.paths.json';
+
 /** Logical name of the vector source. Referenced by the generated layers. */
 export const BASEMAP_SOURCE = 'protomaps';
 
@@ -120,6 +134,18 @@ export const DEFAULT_ILLUMINATION = 315;
 export const TERRAIN_EXAGGERATION = 1.4;
 
 /** Layers that only make sense once the camera is tilted. */
+/**
+ * Visibility for a layer that only exists in 3D.
+ *
+ * The web screen flips these imperatively with `setLayoutProperty` once
+ * terrain is on. MapLibre React Native has no equivalent, so native bakes the
+ * answer into the style — and both need the *same* four layers, or 3D means
+ * something different on each platform. That is why this is one helper rather
+ * than a literal repeated at each layer.
+ */
+export const threeDVisibility = (on: boolean) =>
+  ({ visibility: on ? ('visible' as const) : ('none' as const) });
+
 export const THREE_D_LAYERS = [
   'terrain-hillshade',
   'buildings-3d',
@@ -188,6 +214,8 @@ const CIRCUIT_GEOJSON = {
   zandvoort: zandvoortCircuit,
   'le-mans': leMansCircuit,
   zolder: zolderCircuit,
+  suzuka: suzukaCircuit,
+  fuji: fujiCircuit,
 } as const;
 
 /**
@@ -203,6 +231,8 @@ const PATHS_GEOJSON = {
   zandvoort: zandvoortPaths,
   'le-mans': leMansPaths,
   zolder: zolderPaths,
+  suzuka: suzukaPaths,
+  fuji: fujiPaths,
 } as const;
 
 const MASK_GEOJSON = {
@@ -211,6 +241,8 @@ const MASK_GEOJSON = {
   zandvoort: zandvoortMask,
   'le-mans': leMansMask,
   zolder: zolderMask,
+  suzuka: suzukaMask,
+  fuji: fujiMask,
 } as const;
 
 /** OSM building footprints inside the corridor, with real heights where known. */
@@ -220,6 +252,8 @@ const BUILDINGS_GEOJSON = {
   zandvoort: zandvoortBuildings,
   'le-mans': leMansBuildings,
   zolder: zolderBuildings,
+  suzuka: suzukaBuildings,
+  fuji: fujiBuildings,
 } as const;
 
 /** Generated scatter inside real OSM woodland. Decorative, not surveyed. */
@@ -229,6 +263,8 @@ const TREES_GEOJSON = {
   zandvoort: zandvoortTrees,
   'le-mans': leMansTrees,
   zolder: zolderTrees,
+  suzuka: suzukaTrees,
+  fuji: fujiTrees,
 } as const;
 
 /**
@@ -245,6 +281,8 @@ const KERBS_GEOJSON = {
   zandvoort: zandvoortKerbs,
   'le-mans': leMansKerbs,
   zolder: zolderKerbs,
+  suzuka: suzukaKerbs,
+  fuji: fujiKerbs,
 } as const;
 
 /**
@@ -256,13 +294,17 @@ const KERBS_GEOJSON = {
  */
 export const TREE_ICON = 'tree';
 
-const svg = (w: number, h: number, body: string) =>
-  'data:image/svg+xml;charset=utf-8,' +
-  encodeURIComponent(
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">${body}</svg>`,
-  );
-
 /**
+ * Scenery sprites, as bundled PNGs.
+ *
+ * These were SVG data URIs, which the browser decodes happily and Android
+ * cannot decode at all — so the woodland scatter drew nothing on device while
+ * looking right in the preview. `npm run sprites` rasterises them from the
+ * shapes in scripts/build-sprites.mjs, and both platforms now load the same
+ * bitmap rather than each interpreting its own source.
+ *
+ * Original note follows.
+ *
  * Scenery sprites.
  *
  * Only `tree` is currently drawn. The shrub, grass and rock sprites were used
@@ -277,33 +319,11 @@ const svg = (w: number, h: number, body: string) =>
  * the phone. MapLibre has no 3D model primitive and the React Native binding
  * has no custom-layer API, so instanced meshes could never reach the device.
  */
-export const SCENERY_SPRITES: Record<string, string> = {
-  tree: svg(
-    24,
-    36,
-    `<path d="M12 1 L18 13 L14.5 13 L20 24 L4 24 L9.5 13 L6 13 Z" fill="#26543A"/>` +
-      `<path d="M12 1 L18 13 L14.5 13 L20 24 L12 24 Z" fill="#1B3E2A"/>` +
-      `<rect x="10.5" y="24" width="3" height="10" fill="#3A2A1E"/>`,
-  ),
-  shrub: svg(
-    20,
-    16,
-    `<ellipse cx="7" cy="10" rx="6" ry="5.5" fill="#2E5B3C"/>` +
-      `<ellipse cx="13" cy="9" rx="6.5" ry="6" fill="#24492F"/>` +
-      `<rect x="9" y="13" width="2" height="3" fill="#3A2A1E"/>`,
-  ),
-  grass: svg(
-    16,
-    12,
-    `<path d="M3 12 C3 7 4 4 5 1 M7 12 C7 6 8 3 9 0 M11 12 C11 7 12 5 13 2" ` +
-      `stroke="#3E6B45" stroke-width="1.6" fill="none" stroke-linecap="round"/>`,
-  ),
-  rock: svg(
-    18,
-    12,
-    `<path d="M2 11 L5 4 L10 2 L15 5 L16 11 Z" fill="#5A6069"/>` +
-      `<path d="M10 2 L15 5 L16 11 L10 11 Z" fill="#464C55"/>`,
-  ),
+export const SCENERY_SPRITES: Record<string, number> = {
+  tree: require('../../../assets/sprites/tree.png'),
+  shrub: require('../../../assets/sprites/shrub.png'),
+  grass: require('../../../assets/sprites/grass.png'),
+  rock: require('../../../assets/sprites/rock.png'),
 };
 
 /** Sprite ids, used to register images and to filter the layers. */
@@ -422,6 +442,19 @@ export function buildMapStyle(
    * every rename reload the map.
    */
   omitSpots = false,
+  /**
+   * Bake 3D terrain into the style document.
+   *
+   * The web screen turns terrain on imperatively with `map.setTerrain()`,
+   * because maplibre-gl exposes it. MapLibre React Native does not — the only
+   * way in is the style's own `terrain` key, so native rebuilds the style when
+   * the user toggles 3D.
+   *
+   * That rebuild is not free: the document carries up to 14k tree points. It is
+   * acceptable here only because toggling 3D is a deliberate, occasional act,
+   * unlike renaming a spot — which is why `omitSpots` exists directly above.
+   */
+  terrain3d = false,
 ): unknown {
   const generated = layers(BASEMAP_SOURCE, namedFlavor('dark'), {
     lang: 'en',
@@ -452,7 +485,9 @@ export function buildMapStyle(
     id: 'terrain-hillshade',
     type: 'hillshade',
     source: TERRAIN_SOURCE,
-    layout: { visibility: 'none' },
+    // Hidden in 2D: relief shading on a flat map reads as smudged texture and
+    // costs DEM tiles nobody asked for.
+    layout: threeDVisibility(terrain3d),
     paint: {
       'hillshade-exaggeration': 0.55,
       'hillshade-shadow-color': '#05070A',
@@ -475,7 +510,7 @@ export function buildMapStyle(
     id: 'buildings-3d',
     type: 'fill-extrusion',
     source: BUILDINGS_SOURCE,
-    layout: { visibility: 'none' },
+    layout: threeDVisibility(terrain3d),
     paint: {
       'fill-extrusion-color': '#2C333C',
       'fill-extrusion-height': ['coalesce', ['get', 'heightMetres'], 6],
@@ -581,12 +616,14 @@ export function buildMapStyle(
     id: 'trees',
     type: 'symbol',
     source: TREES_SOURCE,
-    minzoom: 13,
+    // Zoom-gated as well as mode-gated: 14k billboards at lap-overview zoom is
+    // a green smear that costs frames and says nothing.
+    minzoom: 14,
     layout: {
-      visibility: 'none',
+      ...threeDVisibility(terrain3d),
       ...billboard,
       'icon-image': TREE_ICON,
-      'icon-size': ['interpolate', ['linear'], ['zoom'], 13, 0.25, 16, 0.7, 18, 1.2],
+      'icon-size': ['interpolate', ['linear'], ['zoom'], 14, 0.18, 16, 0.42, 18, 0.72],
     },
   };
 
@@ -610,7 +647,7 @@ export function buildMapStyle(
     minzoom: 15,
     filter: ['!=', ['coalesce', ['get', 'kind'], 'tree'], 'tree'] as unknown,
     layout: {
-      visibility: 'none',
+      ...threeDVisibility(terrain3d),
       ...billboard,
       'icon-image': ['coalesce', ['get', 'kind'], 'grass'],
       'icon-size': ['interpolate', ['linear'], ['zoom'], 15, 0.3, 18, 0.85],
@@ -767,6 +804,17 @@ export function buildMapStyle(
         ],
       },
     },
+    /**
+     * 3D terrain, when asked for.
+     *
+     * Exaggeration is deliberately mild. The Eifel's real relief is what makes
+     * a spot work or not — a corner that looks flat on the map but sits below
+     * an embankment — so overstating it would turn a planning tool into a
+     * cartoon and make sightline judgements worse, not better.
+     */
+    ...(terrain3d
+      ? { terrain: { source: TERRAIN_SOURCE, exaggeration: 1.2 } }
+      : {}),
     layers: [
       ...keep,
       hillshade,
@@ -797,6 +845,34 @@ export function buildMapStyle(
  * Same shape and axis order as `trackLinesFor` — [lon, lat] — so both feed
  * `buildWalkNetwork` without a transform that could silently swap them.
  */
+/**
+ * Walkable ways with their OSM classification.
+ *
+ * The router weights a metre of secondary road far worse than a metre of
+ * footpath (see core/logic/route.ts), which it can only do if the class comes
+ * along with the geometry. `pathLinesFor` remains for callers that only need
+ * the shapes.
+ */
+export function pathWaysFor(
+  venue: VenueKey,
+): { coordinates: [number, number][]; highway?: string }[] {
+  const fc = PATHS_GEOJSON[venue] as {
+    features?: {
+      properties?: { highway?: string };
+      geometry?: { type?: string; coordinates?: unknown };
+    }[];
+  };
+  const out: { coordinates: [number, number][]; highway?: string }[] = [];
+  for (const feat of fc.features ?? []) {
+    if (feat.geometry?.type !== 'LineString') continue;
+    out.push({
+      coordinates: feat.geometry.coordinates as [number, number][],
+      highway: feat.properties?.highway,
+    });
+  }
+  return out;
+}
+
 export function pathLinesFor(
   venue: VenueKey,
 ): readonly (readonly (readonly [number, number])[])[] {
@@ -832,6 +908,8 @@ export const WEB_TILES = {
   zandvoort: '/tiles/zandvoort.pmtiles',
   'le-mans': '/tiles/le-mans.pmtiles',
   zolder: '/tiles/zolder.pmtiles',
+  suzuka: '/tiles/suzuka.pmtiles',
+  fuji: '/tiles/fuji.pmtiles',
 } as const;
 
 export type VenueKey = keyof typeof WEB_TILES;
@@ -974,6 +1052,40 @@ export const VENUE_VIEW: Record<VenueKey, VenueView> = {
       [5.2657, 50.9963],
     ],
     minZoom: 13.4,
+    maxZoom: 18,
+  },
+  suzuka: {
+    label: 'Suzuka',
+    country: 'JP',
+    centre: [136.5327, 34.8438],
+    zoom: 14.2,
+    bounds: [
+      [136.515, 34.828],
+      [136.56, 34.865],
+    ],
+    // Measured from the extracted geometry: 68 raceway ways, 1337 points.
+    circuitBounds: [
+      [136.5219, 34.839],
+      [136.5434, 34.8485],
+    ],
+    minZoom: 13.2,
+    maxZoom: 18,
+  },
+  fuji: {
+    label: 'Fuji Speedway',
+    country: 'JP',
+    centre: [138.9294, 35.3712],
+    zoom: 14.2,
+    bounds: [
+      [138.905, 35.355],
+      [138.95, 35.39],
+    ],
+    // Measured from the extracted geometry: 16 raceway ways, 623 points.
+    circuitBounds: [
+      [138.92, 35.3647],
+      [138.9387, 35.3777],
+    ],
+    minZoom: 13.2,
     maxZoom: 18,
   },
 };

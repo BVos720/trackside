@@ -99,5 +99,15 @@ export const lightQualityColor = {
   dark: '#121722',
 } as const;
 
+/**
+ * The floating menu trigger's size and offset from the safe area.
+ *
+ * Shared because three files stack against it — the map's mode toggle, the
+ * back-to-event button and the map screen's own column all sit below it. Magic
+ * numbers repeated in each would drift the moment the trigger changed height.
+ */
+export const MENU_TOP = 12;
+export const MENU_HEIGHT = 56;
+
 /** Minimum touch target. Assume gloves (§5.14). */
 export const HIT_SIZE = 56;

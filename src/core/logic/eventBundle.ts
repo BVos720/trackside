@@ -1,0 +1,151 @@
+/**
+ * An event and everything belonging to it, as one file.
+ *
+ * The KV store already persists this data; a bundle exists for the things a
+ * database inside an app sandbox cannot do. It is something you can copy off
+ * the phone, keep after a reinstall, hand to someone else, or read in a text
+ * editor when the app is the thing that is broken.
+ *
+ * ── Self-contained, on purpose ─────────────────────────────────────────────
+ * The bundle carries the event's *own* spots, not references to a spot table.
+ * That is only possible because an event owns copies (see cloneSpots.ts), and
+ * it is what makes the file mean something on its own: opened on another
+ * device, or in two years, it still describes a complete weekend rather than a
+ * list of ids pointing at rows that are not there.
+ *
+ * ── Versioned from the first write ────────────────────────────────────────
+ * `format` is checked on read and refused if unknown. A file written today has
+ * to still open after the schema moves, and the only way to migrate something
+ * is to know what it is. Guessing from shape is how importers end up silently
+ * mangling old data.
+ */
+import type { Event } from '../domain/event';
+import type { Session } from '../domain/planning';
+import type { Spot } from '../domain/spot';
+
+export const BUNDLE_FORMAT = 'trackside.event.v1';
+
+export interface EventBundle {
+  readonly format: typeof BUNDLE_FORMAT;
+  /** When the file was written, ISO 8601. Informational only. */
+  readonly exportedAt: string;
+  readonly event: Event;
+  /** The event's own spots — copies, complete with position and notes. */
+  readonly spots: readonly Spot[];
+  /** The event's timetable. */
+  readonly sessions: readonly Session[];
+  /**
+   * Day headings the sessions hang off, as `{ id, date, label }`.
+   *
+   * Carried because a session's `eventDayId` is meaningless without them, and
+   * the heading is often the only honest record of the day — a published
+   * timetable says "SATURDAY" and not everything can be resolved to a date.
+   */
+  readonly days: readonly { id: string; date: string; label: string | null }[];
+}
+
+export function buildEventBundle(input: {
+  event: Event;
+  spots: readonly Spot[];
+  sessions: readonly Session[];
+  days: readonly { id: string; date: string; label: string | null }[];
+  at?: Date;
+}): EventBundle {
+  return {
+    format: BUNDLE_FORMAT,
+    exportedAt: (input.at ?? new Date()).toISOString(),
+    event: input.event,
+    spots: input.spots,
+    sessions: input.sessions,
+    days: input.days,
+  };
+}
+
+/**
+ * A stable, human-readable file name.
+ *
+ * The id is the part that guarantees uniqueness, but a directory of
+ * `01a0167c….json` is unusable by a person — and being able to find the right
+ * file in a file manager is most of why bundles exist. The name leads, the id
+ * disambiguates.
+ *
+ * Restricted to characters every filesystem accepts: a circuit name can carry
+ * accents, slashes and colons, and Android's storage is not forgiving.
+ */
+export function bundleFileName(event: Event): string {
+  const slug = event.name
+    .normalize('NFD')
+    // Strip combining marks so "Nürburgring" becomes "Nurburgring" rather than
+    // losing the letter entirely.
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-zA-Z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 48)
+    .toLowerCase();
+
+  const short = event.id.slice(0, 8);
+  return `${slug === '' ? 'event' : slug}-${short}.json`;
+}
+
+export interface BundleReadResult {
+  readonly bundle: EventBundle | null;
+  /** Why it could not be read, for showing the user. Null on success. */
+  readonly error: string | null;
+}
+
+/**
+ * Parse a bundle, refusing anything it does not recognise.
+ *
+ * Returns a result rather than throwing: a bad file is an ordinary thing to
+ * find in a folder people can put files in, and the caller needs to say which
+ * file failed and why rather than crash an import of twelve.
+ */
+export function readEventBundle(text: string): BundleReadResult {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return { bundle: null, error: 'Not valid JSON.' };
+  }
+
+  if (typeof parsed !== 'object' || parsed === null) {
+    return { bundle: null, error: 'Not an object.' };
+  }
+
+  const doc = parsed as Partial<EventBundle>;
+
+  if (doc.format !== BUNDLE_FORMAT) {
+    return {
+      bundle: null,
+      error: `Unknown format ${String(doc.format ?? 'missing')} — expected ${BUNDLE_FORMAT}.`,
+    };
+  }
+  if (typeof doc.event !== 'object' || doc.event === null || !doc.event.id) {
+    return { bundle: null, error: 'No event in the file.' };
+  }
+
+  // Arrays are defaulted rather than rejected: an event with no spots yet is a
+  // real thing to have saved, and so is one saved before sessions existed.
+  return {
+    bundle: {
+      format: BUNDLE_FORMAT,
+      exportedAt:
+        typeof doc.exportedAt === 'string' ? doc.exportedAt : 'unknown',
+      event: doc.event as Event,
+      spots: Array.isArray(doc.spots) ? doc.spots : [],
+      sessions: Array.isArray(doc.sessions) ? doc.sessions : [],
+      days: Array.isArray(doc.days) ? doc.days : [],
+    },
+    error: null,
+  };
+}
+
+/** One-line summary for a file listing. */
+export function describeBundle(bundle: EventBundle): string {
+  const parts = [
+    `${bundle.spots.length} spot${bundle.spots.length === 1 ? '' : 's'}`,
+    `${bundle.sessions.length} session${bundle.sessions.length === 1 ? '' : 's'}`,
+    `${bundle.event.stops.length} planned`,
+  ];
+  return parts.join(' · ');
+}

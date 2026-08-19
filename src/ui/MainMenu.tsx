@@ -11,9 +11,10 @@
  * about, and getting them wrong wastes a day.
  */
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { VENUE_VIEW, type VenueKey } from './map/style';
-import { color, radius, space, type, weight } from './theme';
+import { MENU_HEIGHT, MENU_TOP, color, radius, space, type, weight } from './theme';
 
 export type Destination =
   | 'map'
@@ -67,6 +68,8 @@ export default function MainMenu({
   counts: { spots: number; sessions: number; events: number; stops: number };
   onNavigate: (to: Destination) => void;
 }) {
+  const insets = useSafeAreaInsets();
+
   const badge = (key: Destination): string | null => {
     if (key === 'list' || key === 'map') return counts.spots ? String(counts.spots) : null;
     if (key === 'times') return counts.sessions ? String(counts.sessions) : null;
@@ -79,7 +82,12 @@ export default function MainMenu({
     <>
       <Pressable
         onPress={() => onOpenChange(true)}
-        style={({ pressed }) => [styles.trigger, pressed && styles.pressed]}
+        style={({ pressed }) => [
+          styles.trigger,
+          // Below the status bar, not under the clock.
+          { top: insets.top + MENU_TOP },
+          pressed && styles.pressed,
+        ]}
       >
         <Text style={styles.glyph}>☰</Text>
         <View style={styles.triggerText}>
@@ -140,7 +148,6 @@ export default function MainMenu({
 const styles = StyleSheet.create({
   trigger: {
     position: 'absolute',
-    top: space.md,
     left: space.md,
     flexDirection: 'row',
     alignItems: 'center',
@@ -149,7 +156,7 @@ const styles = StyleSheet.create({
     paddingLeft: space.md,
     paddingRight: space.lg,
     // Gloves are the normal operating condition (§5.14).
-    height: 56,
+    height: MENU_HEIGHT,
     borderRadius: radius.md,
     backgroundColor: 'rgba(11,13,16,0.92)',
     borderWidth: 1,

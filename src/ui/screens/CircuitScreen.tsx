@@ -18,6 +18,7 @@ const COUNTRY_NAME: Record<string, string> = {
   BE: 'Belgium',
   NL: 'Netherlands',
   FR: 'France',
+  JP: 'Japan',
 };
 
 export default function CircuitScreen({

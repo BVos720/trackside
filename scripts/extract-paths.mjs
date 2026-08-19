@@ -201,6 +201,44 @@ function trackIndex(trackPoints) {
  * Iterative rather than recursive: a 4000-point way would blow the stack, and
  * Le Mans has several.
  */
+/**
+ * Simplify a way without ever deleting a junction.
+ *
+ * ── The bug this exists to prevent ─────────────────────────────────────────
+ * Plain Douglas–Peucker keeps a way's endpoints and its sharpest bends, and
+ * throws away everything else. In OSM a junction is a *shared node*: a footpath
+ * that joins a road halfway along ends on a node that is interior to the road's
+ * geometry. Simplification saw no bend there and deleted the road's copy of it.
+ *
+ * The router keys graph nodes on coordinates, so the footpath's endpoint no
+ * longer matched anything on the road and the two stopped being connected. At
+ * Spa that shattered 427 ways into 180 disconnected islands, and every route
+ * quietly degraded to a straight line — the network was there, and nothing
+ * could cross it.
+ *
+ * So junctions are computed across all ways *before* simplifying, and each way
+ * is simplified in runs between them. Bends still collapse; connections cannot.
+ */
+function simplifyPreserving(coords, toleranceM, isJunction) {
+  if (coords.length < 3) return coords;
+
+  // Indices that must survive: the ends, and every shared node.
+  const anchors = [0];
+  for (let i = 1; i < coords.length - 1; i++) {
+    if (isJunction(coords[i])) anchors.push(i);
+  }
+  anchors.push(coords.length - 1);
+
+  const out = [coords[0]];
+  for (let a = 0; a < anchors.length - 1; a++) {
+    const run = coords.slice(anchors[a], anchors[a + 1] + 1);
+    const thinned = simplify(run, toleranceM);
+    // Drop the first point of each run: it is the previous run's last.
+    for (let i = 1; i < thinned.length; i++) out.push(thinned[i]);
+  }
+  return out;
+}
+
 function simplify(coords, toleranceM) {
   if (coords.length < 3) return coords;
 
@@ -312,6 +350,17 @@ for (const key of keys) {
   let pointsBefore = 0;
   let pointsAfter = 0;
 
+  /**
+   * How many ways touch each coordinate.
+   *
+   * Counted over the ways we are actually keeping, at the same 6-decimal
+   * rounding the output uses, so a node shared in OSM is shared here too.
+   * Anything touched twice is a junction and is protected from simplification.
+   */
+  const nodeUses = new Map();
+  const nodeKey = ([lon, lat]) => `${lon},${lat}`;
+
+  const kept = [];
   for (const el of elements) {
     if (el.type !== 'way' || !Array.isArray(el.geometry)) continue;
     if (!isWalkable(el.tags)) {
@@ -344,8 +393,25 @@ for (const key of keys) {
       }
     }
 
+    kept.push({ tags: el.tags, coords });
+
+    // Count each coordinate once per way, so a way that doubles back on itself
+    // does not mark its own point as a junction with nothing.
+    const seen = new Set();
+    for (const c of coords) {
+      const key = nodeKey(c);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      nodeUses.set(key, (nodeUses.get(key) ?? 0) + 1);
+    }
+  }
+
+  const isJunction = (c) => (nodeUses.get(nodeKey(c)) ?? 0) > 1;
+
+  for (const el of kept) {
+    const coords = el.coords;
     pointsBefore += coords.length;
-    const simplified = simplify(coords, SIMPLIFY_M);
+    const simplified = simplifyPreserving(coords, SIMPLIFY_M, isJunction);
     pointsAfter += simplified.length;
 
     features.push({

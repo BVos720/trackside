@@ -66,6 +66,7 @@ export default function PlannerScreen({
   event,
   spots,
   network,
+  barriers = [],
   onAddStop,
   onUpdateStop,
   onRemoveStop,
@@ -78,6 +79,8 @@ export default function PlannerScreen({
   /** Every spot at this circuit, for the picker. */
   spots: Spot[];
   network: WalkNetwork;
+  /** Lines a walk may not cross — the racing surface. */
+  barriers?: readonly (readonly (readonly [number, number])[])[];
   sessions?: readonly {
     id: string;
     title: string;
@@ -133,7 +136,12 @@ export default function PlannerScreen({
       let route: Route | null = null;
       let walk: WalkEstimate | null = null;
       if (spot && prevSpot) {
-        route = routeBetween(network, prevSpot.position, spot.position);
+        route = routeBetween(
+          network,
+          prevSpot.position,
+          spot.position,
+          barriers,
+        );
         walk = walkEstimate({
           metres: route.metres,
           offNetworkMetres: route.offNetworkMetres,
@@ -155,7 +163,7 @@ export default function PlannerScreen({
     });
 
     return out;
-  }, [stopsForDay, spotById, network]);
+  }, [stopsForDay, spotById, network, barriers]);
 
   const unplanned = useMemo(
     () => spots.filter((s) => !event.stops.some((st) => st.spotId === s.id)),
@@ -239,7 +247,12 @@ export default function PlannerScreen({
                 <Text style={styles.legText}>
                   about {p.walk.minutes} min · {Math.round(p.walk.metres)} m
                 </Text>
-                {p.walk.mostlyOffNetwork && (
+                {p.route?.blocked && (
+                  <Text style={styles.legBad}>
+                    crosses the track — no mapped way round
+                  </Text>
+                )}
+                {p.walk.mostlyOffNetwork && !p.route?.blocked && (
                   <Text style={styles.legWarn}>
                     mostly off-path — no route data for this stretch
                   </Text>

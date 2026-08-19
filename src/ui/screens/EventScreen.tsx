@@ -35,6 +35,7 @@ export default function EventScreen({
   circuitLabel,
   spots,
   network,
+  barriers,
   sessions,
   onCommitSessions,
   onRemoveSession,
@@ -52,6 +53,7 @@ export default function EventScreen({
   circuitLabel: string;
   spots: Spot[];
   network: WalkNetwork;
+  barriers?: readonly (readonly (readonly [number, number])[])[];
   sessions: SavedSessionRow[];
   onCommitSessions: (rows: PendingSession[]) => void;
   onRemoveSession: (id: string) => void;
@@ -132,6 +134,7 @@ export default function EventScreen({
           event={event}
           spots={spots}
           network={network}
+          barriers={barriers}
           sessions={sessions}
           onAddStop={onAddStop}
           onUpdateStop={onUpdateStop}

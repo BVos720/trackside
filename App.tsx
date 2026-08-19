@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import {
+  SafeAreaProvider,
+  useSafeAreaInsets,
+} from 'react-native-safe-area-context';
 
 import LightScreen from './src/ui/screens/LightScreen';
 import MapScreen from './src/ui/screens/MapScreen';
@@ -20,10 +24,11 @@ import EventsScreen from './src/ui/screens/EventsScreen';
 import { useEvents } from './src/ui/state/useEvents';
 import { eventDays } from './src/core/domain/event';
 import { spotsForContext } from './src/core/logic/cloneSpots';
+import { withinBounds } from './src/core/logic/geo';
 import { repositories } from './src/storage-local/repositories/documentRepositories';
 import {
   VENUE_VIEW,
-  pathLinesFor,
+  pathWaysFor,
   trackLinesFor,
   type VenueKey,
 } from './src/ui/map/style';
@@ -39,7 +44,15 @@ import {
   type SpotId,
 } from './src/core/domain/ids';
 import type { ReferenceKind } from './src/core/domain/media';
-import { color, radius, space, type, weight } from './src/ui/theme';
+import {
+  MENU_HEIGHT,
+  MENU_TOP,
+  color,
+  radius,
+  space,
+  type,
+  weight,
+} from './src/ui/theme';
 
 
 
@@ -74,6 +87,8 @@ const CIRCUIT_IDS: Record<VenueKey, CircuitId> = {
   zandvoort: asId<CircuitId>('01920000-0000-7000-8000-000000000003'),
   'le-mans': asId<CircuitId>('01920000-0000-7000-8000-000000000004'),
   zolder: asId<CircuitId>('01920000-0000-7000-8000-000000000005'),
+  suzuka: asId<CircuitId>('01920000-0000-7000-8000-000000000006'),
+  fuji: asId<CircuitId>('01920000-0000-7000-8000-000000000007'),
 };
 
 /** Reverse of CIRCUIT_IDS, so an event's circuit can select its venue. */
@@ -87,7 +102,29 @@ const CIRCUIT_CHOICES = (Object.keys(CIRCUIT_IDS) as VenueKey[]).map((v) => ({
   label: VENUE_VIEW[v].label,
 }));
 
+/**
+ * The map runs edge to edge; only the controls step around the system UI.
+ *
+ * React Native's own `SafeAreaView` was doing this job and does nothing at all
+ * on Android — which is why the menu sat under the clock and the 2D toggle
+ * under the battery icon. `react-native-safe-area-context` reports real insets
+ * on both platforms.
+ *
+ * Insetting the whole app would be the easy fix and the wrong one: it would
+ * letterbox the map behind black bars, and on a phone at a circuit the map is
+ * the thing you want every pixel of. So the container stays full-bleed and each
+ * floating control offsets itself.
+ */
 export default function App() {
+  return (
+    <SafeAreaProvider>
+      <AppShell />
+    </SafeAreaProvider>
+  );
+}
+
+function AppShell() {
+  const insets = useSafeAreaInsets();
   // Map is home; everything else is a destination reached from the menu.
   const [where, setWhere] = useState<Destination>('map');
   const [menuOpen, setMenuOpen] = useState(false);
@@ -164,7 +201,7 @@ export default function App() {
     [spotCounts],
   );
 
-  const walkNetwork = useMemo(() => buildWalkNetwork(pathLinesFor(venue)), [venue]);
+  const walkNetwork = useMemo(() => buildWalkNetwork(pathWaysFor(venue)), [venue]);
 
   /** The active event's days, so imported headings resolve to real dates. */
   const activeEventDays = useMemo(
@@ -217,9 +254,28 @@ export default function App() {
     [spots, navStop],
   );
 
-  // Location is only watched while actually navigating: a GPS fix every three
-  // seconds for a whole race weekend is a flat battery by lunchtime.
-  const { status: positionStatus, fix } = usePosition(navStop !== null);
+  /**
+   * Watched while the map is on screen, not only while navigating.
+   *
+   * Showing where you are and which way you face is most of the value at a
+   * circuit, and it has to be there before you start navigating — you use it to
+   * decide *whether* to move. It still stops the moment you leave the map, so a
+   * weekend of reading the timetable is not a weekend of GPS.
+   */
+  const { status: positionStatus, fix, heading } = usePosition(where === 'map');
+
+  /**
+   * Is the fix actually at this circuit?
+   *
+   * "Add my current location" is nonsense from home — it would drop a spot in
+   * Breda on a map of the Eifel. The check is against the venue's extract
+   * bounds rather than the 300m corridor, so the car park and the walk in still
+   * count (see core/logic/geo.ts).
+   */
+  const atVenue = useMemo(
+    () => (fix ? withinBounds(fix.position, VENUE_VIEW[venue].bounds) : false),
+    [fix, venue],
+  );
 
   /**
    * A clock that ticks while navigating.
@@ -287,7 +343,28 @@ export default function App() {
     const from = fix?.position ?? null;
     if (!from) return null;
 
-    const route = routeBetween(walkNetwork, from, navSpot.position);
+    // The racing surface is a barrier, not scenery: a straight line across it
+    // is never a suggestion worth drawing (core/logic/route.ts).
+    const route = routeBetween(
+      walkNetwork,
+      from,
+      navSpot.position,
+      trackLinesFor(venue),
+      // GPS is good to 5-25 m and a circuit is about 12 m wide, so the fix
+      // routinely lands on the racing surface. Passing the accuracy lets the
+      // router decline to assert which side you are on.
+      fix?.accuracyMetres ?? 0,
+    );
+    /*
+     * A blocked route is drawn as nothing at all.
+     *
+     * When the only line we have crosses the circuit, putting it on the map is
+     * worse than putting nothing there: it is an instruction to walk onto a
+     * live track, drawn in the same blue as every route that is safe. The panel
+     * explains instead, and keeps looking as the fix moves.
+     */
+    if (route.blocked) return null;
+
     return {
       type: 'FeatureCollection' as const,
       features: route.legs.map((leg) => ({
@@ -386,7 +463,7 @@ export default function App() {
   );
 
   return (
-    <SafeAreaView style={styles.root}>
+    <View style={styles.root}>
       <StatusBar style="light" />
 
       <View style={styles.body}>
@@ -398,6 +475,10 @@ export default function App() {
               spots={visibleGeoJson}
               route={routeGeoJson}
               here={fix?.position ?? null}
+              heading={heading}
+              // The back-to-event button occupies the row under the menu, so
+              // the mode toggle starts below it.
+              controlsTop={activeEvent ? 48 : 0}
               mediaUris={mediaUris}
               placing={where === 'map' && (placing || moving !== null)}
               onMapTap={(at) => {
@@ -421,43 +502,109 @@ export default function App() {
             />
 
             {/*
+              Back to the event you came from.
+
+              The map reached from an event is a *view of that event*, not the
+              home map, and the menu trigger leads outward rather than back —
+              without this the only way back to the timetable and plan is
+              through Events and re-opening the event you never left.
+            */}
+            {where === 'map' && !sheetOpen && !navStop && activeEvent && (
+              <Pressable
+                onPress={() => setWhere('event')}
+                style={({ pressed }) => [
+                  styles.backToEvent,
+                  { top: insets.top + MENU_TOP + MENU_HEIGHT + 8 },
+                  pressed && styles.pressed,
+                ]}
+              >
+                <Text style={styles.backToEventLabel} numberOfLines={1}>
+                  ‹ {activeEvent.name}
+                </Text>
+              </Pressable>
+            )}
+
+            {/*
               The spot list opens from the map, not the menu: it answers "what
               is that pin", which is a question you only have while looking at
               the map.
             */}
             {where === 'map' && !sheetOpen && !navStop && (
-              <Pressable
-                onPress={() => {
-                  setWhere('list');
-                  setPlacing(false);
-                }}
-                style={({ pressed }) => [
-                  styles.listButton,
-                  pressed && styles.pressed,
-                ]}
+              /*
+               * One row, not three floating buttons.
+               *
+               * Even spacing has to come from layout: absolutely positioned
+               * siblings sit wherever their own widths put them, so "Spots · 1"
+               * being narrow and "Tap the map" being wide left the middle
+               * button crowded against the right. A flex row with
+               * space-between spaces them by construction, and keeps doing so
+               * when the middle one appears and disappears.
+               */
+              <View
+                style={[styles.bottomBar, { bottom: insets.bottom + space.md }]}
+                pointerEvents="box-none"
               >
-                <Text style={styles.listButtonLabel}>
-                  Spots
-                  {visibleSpots.length > 0 ? ` · ${visibleSpots.length}` : ''}
-                </Text>
-              </Pressable>
-            )}
-
-            {where === 'map' && !sheetOpen && !navStop && (
-              <Pressable
-                onPress={() => setPlacing((p) => !p)}
-                style={({ pressed }) => [
-                  styles.addButton,
-                  placing && styles.addButtonActive,
-                  pressed && styles.pressed,
-                ]}
-              >
-                <Text
-                  style={[styles.addLabel, placing && styles.addLabelActive]}
+                <Pressable
+                  onPress={() => {
+                    setWhere('list');
+                    setPlacing(false);
+                  }}
+                  style={({ pressed }) => [
+                    styles.listButton,
+                    pressed && styles.pressed,
+                  ]}
                 >
-                  {moving ? 'Tap to move' : placing ? 'Tap the map' : '+ Spot'}
-                </Text>
-              </Pressable>
+                  <Text style={styles.listButtonLabel}>
+                    Spots
+                    {visibleSpots.length > 0 ? ` · ${visibleSpots.length}` : ''}
+                  </Text>
+                </Pressable>
+
+                {/*
+                  Drop a spot where you are standing.
+
+                  Only while placing, and only when the fix is actually at this
+                  circuit — the whole point is that you are there, looking at
+                  the thing you want to remember.
+                */}
+                {placing && atVenue && fix && (
+                  <Pressable
+                    onPress={() => {
+                      const snapped =
+                        snapBesideTrack(fix.position, trackLinesFor(venue))
+                          ?.position ?? fix.position;
+                      setSheet({ kind: 'creating', at: snapped });
+                      setPlacing(false);
+                    }}
+                    style={({ pressed }) => [
+                      styles.hereButton,
+                      pressed && styles.pressed,
+                    ]}
+                  >
+                    <Text style={styles.hereLabel}>Add here</Text>
+                    <Text style={styles.hereHint}>
+                      {fix.accuracyMetres === null
+                        ? 'Uses your position'
+                        : `Accurate to about ${Math.round(fix.accuracyMetres)} m`}
+                    </Text>
+                  </Pressable>
+                )}
+
+                <Pressable
+                  onPress={() => setPlacing((p) => !p)}
+                  style={({ pressed }) => [
+                    styles.addButton,
+                    placing && styles.addButtonActive,
+                    pressed && styles.pressed,
+                  ]}
+                >
+                  <Text
+                    style={[styles.addLabel, placing && styles.addLabelActive]}
+                  >
+                    {moving ? 'Tap to move' : placing ? 'Tap the map' : '+ Spot'}
+                  </Text>
+                </Pressable>
+              </View>
             )}
 
             {sheet.kind === 'overview' && activeSpot && (
@@ -510,6 +657,7 @@ export default function App() {
                 stop={navStop}
                 spot={navSpot}
                 network={walkNetwork}
+                barriers={trackLinesFor(venue)}
                 fix={fix}
                 status={positionStatus}
                 now={now}
@@ -625,6 +773,7 @@ export default function App() {
               circuitLabel={VENUE_VIEW[venue].label}
               spots={visibleSpots}
               network={walkNetwork}
+              barriers={trackLinesFor(venue)}
               sessions={sessionRows}
               onCommitSessions={(pending) =>
                 void addMany(
@@ -696,6 +845,7 @@ export default function App() {
               event={activeEvent}
               spots={spots}
               network={walkNetwork}
+              barriers={trackLinesFor(venue)}
               onAddStop={(spotId, day) => void addStop({ spotId, day })}
               onUpdateStop={(stopId, patch) => void updateStop(stopId, patch)}
               onRemoveStop={(stopId) => void removeStop(stopId)}
@@ -753,7 +903,7 @@ export default function App() {
           onNavigate={setWhere}
         />
       )}
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -762,12 +912,23 @@ const styles = StyleSheet.create({
   body: { flex: 1 },
   pressed: { opacity: 0.7 },
 
-  addButton: {
+  /**
+   * The row every map control sits in.
+   *
+   * `box-none` so the gaps between buttons stay map, not a transparent bar
+   * swallowing taps and pans across the bottom of the screen.
+   */
+  bottomBar: {
     position: 'absolute',
-    // Bottom right: the menu owns the top left, and this is the one control
-    // reached one-handed while holding a camera.
+    left: space.md,
     right: space.md,
-    bottom: space.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: space.sm,
+  },
+
+  addButton: {
     height: 52,
     paddingHorizontal: space.lg,
     alignItems: 'center',
@@ -779,10 +940,62 @@ const styles = StyleSheet.create({
   },
   addButtonActive: { backgroundColor: color.accent, borderColor: color.accent },
 
-  listButton: {
+  /**
+   * Sits under the menu trigger rather than beside the map's other controls.
+   *
+   * It is navigation, not a map tool, so it belongs with the thing that says
+   * where you are — and the bottom corners are already spoken for by the two
+   * controls you use with a camera in one hand.
+   */
+  backToEvent: {
     position: 'absolute',
+    top: space.md + 64,
     left: space.md,
-    bottom: space.md,
+    maxWidth: 240,
+    height: 40,
+    paddingHorizontal: space.md,
+    justifyContent: 'center',
+    borderRadius: radius.md,
+    backgroundColor: 'rgba(11,13,16,0.92)',
+    borderWidth: 1,
+    borderColor: color.accent,
+  },
+  backToEventLabel: {
+    color: color.accent,
+    fontSize: type.label,
+    fontWeight: weight.bold,
+  },
+
+  /**
+   * Centred, because it is the one control you use without looking.
+   *
+   * Sized well past the 56pt glove minimum (§5.14): it appears only in the
+   * moment you have decided to save where you are standing, and a miss there
+   * costs the spot.
+   */
+  /**
+   * The bottom row's middle slot, between Spots and the placing button.
+   *
+   * It belongs with the other two rather than floating over the map: all three
+   * are the same kind of thing — what you can do right now — and a control in
+   * the middle of the map covers the ground you are trying to look at.
+   */
+  hereButton: {
+    minHeight: 52,
+    paddingHorizontal: space.md,
+    justifyContent: 'center',
+    borderRadius: radius.md,
+    backgroundColor: color.accent,
+    alignItems: 'center',
+  },
+  hereLabel: {
+    color: color.onAccent,
+    fontSize: type.body,
+    fontWeight: weight.bold,
+  },
+  hereHint: { color: color.onAccent, fontSize: 10, opacity: 0.85 },
+
+  listButton: {
     height: 52,
     paddingHorizontal: space.lg,
     alignItems: 'center',

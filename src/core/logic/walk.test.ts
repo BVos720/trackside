@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   OFF_NETWORK_PENALTY,
   PATH_METRES_PER_MINUTE,
+  SAFETY_MARGIN_MINUTES,
   SETUP_MINUTES,
   departureMinute,
   formatClock,
@@ -14,15 +15,28 @@ import {
 } from './walk';
 
 describe('walkEstimate', () => {
-  it('adds setup time even for a distance of zero', () => {
-    // Being "already there" still means finding the gap and mounting the lens.
-    expect(walkEstimate({ metres: 0 }).minutes).toBe(SETUP_MINUTES);
+  it('adds setup time and slack even for a distance of zero', () => {
+    // Being "already there" still means finding the gap and mounting the lens,
+    // and the margin is deliberately unconditional.
+    expect(walkEstimate({ metres: 0 }).minutes).toBe(
+      SETUP_MINUTES + SAFETY_MARGIN_MINUTES,
+    );
+  });
+
+  it('never returns an estimate shorter than the walk plus the margin', () => {
+    // The whole point of the margin: it is impossible to be told you have more
+    // time than the raw walk allows.
+    const raw = walkEstimate({ metres: 900, setupMinutes: 0, marginMinutes: 0 });
+    const real = walkEstimate({ metres: 900 });
+    expect(real.minutes).toBeGreaterThanOrEqual(
+      raw.minutes + SAFETY_MARGIN_MINUTES,
+    );
   });
 
   it('rounds up, never down', () => {
     // 76m is 1.01 minutes of walking. Rounding to nearest gives 1; the extra
     // 45 seconds is exactly the margin that matters.
-    const e = walkEstimate({ metres: 76, setupMinutes: 0 });
+    const e = walkEstimate({ metres: 76, setupMinutes: 0, marginMinutes: 0 });
     expect(e.minutes).toBe(2);
   });
 
@@ -30,12 +44,12 @@ describe('walkEstimate', () => {
     const onPath = walkEstimate({
       metres: 600,
       offNetworkMetres: 0,
-      setupMinutes: 0,
+      setupMinutes: 0, marginMinutes: 0,
     });
     const offPath = walkEstimate({
       metres: 600,
       offNetworkMetres: 600,
-      setupMinutes: 0,
+      setupMinutes: 0, marginMinutes: 0,
     });
     expect(offPath.minutes).toBe(
       Math.ceil((600 * OFF_NETWORK_PENALTY) / PATH_METRES_PER_MINUTE),
@@ -47,7 +61,7 @@ describe('walkEstimate', () => {
     // A caller summing legs could overshoot; the estimate must not blow up.
     const e = walkEstimate({ metres: 100, offNetworkMetres: 5000 });
     expect(e.metres).toBe(100);
-    expect(e.minutes).toBeLessThan(20);
+    expect(e.minutes).toBeLessThan(25);
   });
 
   it('flags a journey that is mostly across open ground', () => {

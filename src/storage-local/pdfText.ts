@@ -1,19 +1,22 @@
 /**
  * PDF text extraction — native.
  *
- * Deliberately unimplemented. pdfjs needs a DOM and a worker bundle that Metro
- * does not produce for React Native, and shipping a stub that silently returned
- * no lines would look identical to "this timetable has no sessions in it".
+ * The *picker* works on device (see pickPdf.ts); pulling text out of the file
+ * does not. pdfjs needs a DOM and a worker bundle Metro does not produce for
+ * React Native, and a stub that returned no lines would be indistinguishable
+ * from "this timetable has no sessions in it" — which is why this throws
+ * instead.
  *
- * Pasting the text works on device today, which covers the case that matters:
- * §5.14 puts document import in planning mode at a desk, not trackside.
+ * Pasting the text works on device today, and `core/logic/timetableText.ts`
+ * parses it identically however it arrived, so nothing downstream cares.
  *
- * If on-device PDF import is wanted later, `react-native-pdf-lib` or a native
- * text-extraction module is the route — not pdfjs.
+ * If on-device PDF import is wanted, the route is a native text-extraction
+ * module — not pdfjs.
  */
-export async function extractPdfLines(_file: Blob): Promise<string[]> {
+export async function extractPdfLines(_bytes: Uint8Array): Promise<string[]> {
   throw new Error(
-    'PDF import is not available on device yet — paste the timetable text instead.',
+    'Reading PDFs on the phone is not supported yet. Open the PDF, copy the ' +
+      'text, and use “Read pasted text” — it goes through the same parser.',
   );
 }
 

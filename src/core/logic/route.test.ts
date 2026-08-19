@@ -126,7 +126,10 @@ describe('routeBetween', () => {
     expect(r.legs[0]!.kind).toBe('direct');
   });
 
-  it('degrades to direct when the two ends are on unconnected networks', () => {
+  it('ignores a network it would barely touch', () => {
+    // Routing picks the island that serves both ends best, so it always finds
+    // one. When the destination is far off any of them, the path leg is noise
+    // bolted onto a long cross-country walk — a bearing is the honest answer.
     const island: [number, number][] = [
       [7.0500, 50.4500],
       [7.0510, 50.4500],
@@ -160,5 +163,216 @@ describe('routeThrough', () => {
     const n = buildWalkNetwork([PATH]);
     expect(routeThrough(n, []).metres).toBe(0);
     expect(routeThrough(n, [at(6.95, 50.35)]).legs).toHaveLength(0);
+  });
+});
+
+/**
+ * The racing surface, as a barrier.
+ *
+ * A straight north–south line at lon 6.9515, which the east–west PATH crosses.
+ * Standing either side of it, the only lawful way over is a mapped crossing.
+ */
+const TRACK: [number, number][] = [
+  [6.9515, 50.3400],
+  [6.9515, 50.3600],
+];
+
+describe('routeBetween with barriers', () => {
+  it('ignores barriers when none are given', () => {
+    const r = routeBetween(EMPTY_NETWORK, at(6.9500, 50.35), at(6.9530, 50.35));
+    expect(r.legs[0]!.kind).toBe('direct');
+    expect(r.blocked).toBe(false);
+  });
+
+  it('flags a straight line that crosses the track', () => {
+    // Nothing to route over, so it still returns the bearing — but says so.
+    const r = routeBetween(
+      EMPTY_NETWORK,
+      at(6.9500, 50.35),
+      at(6.9530, 50.35),
+      [TRACK],
+    );
+    expect(r.legs[0]!.kind).toBe('direct');
+    expect(r.blocked).toBe(true);
+  });
+
+  it('does not flag a route that stays on one side', () => {
+    const r = routeBetween(
+      EMPTY_NETWORK,
+      at(6.9500, 50.35),
+      at(6.9510, 50.351),
+      [TRACK],
+    );
+    expect(r.blocked).toBe(false);
+  });
+
+  it('takes a long way round rather than crossing the track', () => {
+    /*
+     * The case from the field: an underpass far to the south. Following it is
+     * many times the straight-line distance, so MAX_DETOUR_RATIO would normally
+     * reject it and draw a line straight over the circuit. With the track as a
+     * barrier the detour is the only option, and must win.
+     */
+    const underpass: [number, number][] = [
+      [6.9500, 50.3500],
+      [6.9500, 50.3300],
+      [6.9530, 50.3300],
+      [6.9530, 50.3500],
+    ];
+    const n = buildWalkNetwork([underpass]);
+
+    const withoutBarrier = routeBetween(n, at(6.95, 50.35), at(6.953, 50.35));
+    expect(withoutBarrier.legs).toHaveLength(1);
+    expect(withoutBarrier.legs[0]!.kind).toBe('direct');
+
+    const withBarrier = routeBetween(
+      n,
+      at(6.95, 50.35),
+      at(6.953, 50.35),
+      [TRACK],
+    );
+    expect(withBarrier.legs.some((l) => l.kind === 'network')).toBe(true);
+    expect(withBarrier.blocked).toBe(false);
+    expect(withBarrier.metres).toBeGreaterThan(withoutBarrier.metres * 2.2);
+  });
+
+  it('reports blocked when even the network route has to cross', () => {
+    // A network on the far side only: joining it still means crossing.
+    const farSide: [number, number][] = [
+      [6.9530, 50.3500],
+      [6.9540, 50.3500],
+    ];
+    const n = buildWalkNetwork([farSide]);
+    const r = routeBetween(n, at(6.9500, 50.35), at(6.9535, 50.35), [TRACK]);
+    expect(r.blocked).toBe(true);
+  });
+
+  it('allows a network leg to cross — that is what a tunnel is', () => {
+    // The crossing way itself passes over the barrier. Network legs are real
+    // mapped ways, so this is legitimate and must not be flagged.
+    const n = buildWalkNetwork([PATH]);
+    const r = routeBetween(n, at(6.9500, 50.35), at(6.9530, 50.35), [TRACK]);
+    expect(r.legs.every((l) => l.kind === 'network')).toBe(true);
+    expect(r.blocked).toBe(false);
+  });
+
+  it('does not treat touching the barrier as crossing it', () => {
+    // A spot on the verge sits right at the track edge; that is where spots go.
+    const r = routeBetween(
+      EMPTY_NETWORK,
+      at(6.9500, 50.35),
+      at(6.9515, 50.35),
+      [TRACK],
+    );
+    expect(r.blocked).toBe(false);
+  });
+});
+
+describe('an uncertain fix near the track', () => {
+  /**
+   * A path on each side, joined by a tunnel under the barrier.
+   *
+   * The barrier runs north–south at lon 6.9515; the tunnel is the only mapped
+   * way across.
+   */
+  const westPath: [number, number][] = [
+    [6.9490, 50.3500],
+    [6.9510, 50.3500],
+  ];
+  const tunnel: [number, number][] = [
+    [6.9510, 50.3500],
+    [6.9520, 50.3500],
+  ];
+  const eastPath: [number, number][] = [
+    [6.9520, 50.3500],
+    [6.9540, 50.3500],
+  ];
+  const net = buildWalkNetwork([westPath, tunnel, eastPath]);
+
+  it('still routes when the fix has landed on the racing surface', () => {
+    /*
+     * The real failure: GPS is good to 5-25 m and a circuit is about 12 m wide,
+     * so a position taken on the verge is reported *on the track*. Judging the
+     * side strictly then makes every route unreachable and the app refuses to
+     * navigate — a refusal caused by measurement error, not by the ground.
+     */
+    const onTrack = at(6.9515, 50.35);
+    const destination = at(6.9535, 50.35);
+
+    const r = routeBetween(net, onTrack, destination, [TRACK], 15);
+    expect(r.legs.some((l) => l.kind === 'network')).toBe(true);
+    expect(r.blocked).toBe(false);
+  });
+
+  it('still trusts a confident fix well clear of the track', () => {
+    // 200 m west: no ambiguity, so the side is asserted and honoured.
+    const clear = at(6.9490, 50.35);
+    const r = routeBetween(net, clear, at(6.9540, 50.35), [TRACK], 5);
+    expect(r.legs.some((l) => l.kind === 'network')).toBe(true);
+  });
+
+  it('widens the doubt when the fix says it is poor', () => {
+    // Same position, but the phone admits to 60 m of error: the side cannot be
+    // asserted, so the join is allowed on either side rather than refused.
+    const nearish = at(6.95125, 50.35);
+    const poor = routeBetween(net, nearish, at(6.9535, 50.35), [TRACK], 60);
+    expect(poor.blocked).toBe(false);
+  });
+});
+
+describe('preferring paths over roads', () => {
+  /**
+   * Two ways between the same points: a straight fast road, and a footpath that
+   * bows north and is genuinely longer on the ground.
+   *
+   * This is the Nordschleife's infield in miniature — public Eifel roads thread
+   * right through it, and the shortest line between two spots is often along
+   * one.
+   */
+  const road: [number, number][] = [
+    [6.9500, 50.3500],
+    [6.9560, 50.3500],
+  ];
+  const footpath: [number, number][] = [
+    [6.9500, 50.3500],
+    [6.9520, 50.3512],
+    [6.9540, 50.3512],
+    [6.9560, 50.3500],
+  ];
+
+  it('takes the longer footpath over a fast road', () => {
+    const n = buildWalkNetwork([
+      { coordinates: road, highway: 'secondary' },
+      { coordinates: footpath, highway: 'footway' },
+    ]);
+    const r = routeBetween(n, at(6.95, 50.35), at(6.956, 50.35));
+
+    const leg = r.legs.find((l) => l.kind === 'network');
+    expect(leg).toBeDefined();
+    // Bowing north means passing through the footpath's middle points.
+    expect(leg!.coordinates.some((c) => c.latitude > 50.3505)).toBe(true);
+  });
+
+  it('reports the real distance walked, not the weighted cost', () => {
+    // Weighting is how the search chooses; telling someone a 400 m road walk is
+    // 1.3 km would be a lie in the units that matter.
+    const n = buildWalkNetwork([{ coordinates: road, highway: 'secondary' }]);
+    const r = routeBetween(n, at(6.95, 50.35), at(6.956, 50.35));
+    // ~430 m at this latitude; nowhere near the 3.2x weighted figure.
+    expect(r.metres).toBeLessThan(600);
+    expect(r.metres).toBeGreaterThan(300);
+  });
+
+  it('still uses a road when it is the only way', () => {
+    // A preference, not a prohibition.
+    const n = buildWalkNetwork([{ coordinates: road, highway: 'secondary' }]);
+    const r = routeBetween(n, at(6.95, 50.35), at(6.956, 50.35));
+    expect(r.legs.some((l) => l.kind === 'network')).toBe(true);
+  });
+
+  it('treats untyped ways as neutral, so plain geometry still routes', () => {
+    const n = buildWalkNetwork([road]);
+    const r = routeBetween(n, at(6.95, 50.35), at(6.956, 50.35));
+    expect(r.legs.some((l) => l.kind === 'network')).toBe(true);
   });
 });

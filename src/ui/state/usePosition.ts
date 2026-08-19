@@ -42,17 +42,35 @@ export interface Fix {
 export function usePosition(enabled: boolean) {
   const [status, setStatus] = useState<PositionStatus>('idle');
   const [fix, setFix] = useState<Fix | null>(null);
+  /**
+   * Compass bearing, degrees clockwise from true north.
+   *
+   * Separate from `fix` because it is a different sensor answering a different
+   * question. `coords.heading` is course over ground — it only exists while
+   * you are moving, and it is meaningless standing at a corner waiting for the
+   * cars. The magnetometer works stationary, which is the whole point: you want
+   * to know which way you are facing while deciding where to stand.
+   *
+   * It also updates far more often than position does, so keeping them apart
+   * stops every compass wobble invalidating the position and re-running the
+   * router.
+   */
+  const [heading, setHeading] = useState<number | null>(null);
   const subscription = useRef<Location.LocationSubscription | null>(null);
+  const headingSub = useRef<Location.LocationSubscription | null>(null);
 
   const stop = useCallback(() => {
     subscription.current?.remove();
     subscription.current = null;
+    headingSub.current?.remove();
+    headingSub.current = null;
   }, []);
 
   useEffect(() => {
     if (!enabled) {
       stop();
       setStatus('idle');
+      setHeading(null);
       return;
     }
 
@@ -67,6 +85,21 @@ export function usePosition(enabled: boolean) {
           setStatus('denied');
           return;
         }
+
+        /*
+         * The compass, watched alongside position.
+         *
+         * `trueHeading` is -1 until the platform has a geomagnetic model for
+         * where you are; `magHeading` is always available and is within a
+         * couple of degrees in western Europe. Falling back to it beats showing
+         * no facing at all, and the cone is a rough indicator by design.
+         */
+        headingSub.current = await Location.watchHeadingAsync((reading) => {
+          if (cancelled) return;
+          const degrees =
+            reading.trueHeading >= 0 ? reading.trueHeading : reading.magHeading;
+          setHeading(Number.isFinite(degrees) ? degrees : null);
+        });
 
         subscription.current = await Location.watchPositionAsync(
           {
@@ -110,5 +143,5 @@ export function usePosition(enabled: boolean) {
     };
   }, [enabled, stop]);
 
-  return { status, fix };
+  return { status, fix, heading };
 }

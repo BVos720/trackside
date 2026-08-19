@@ -37,10 +37,25 @@ export const OFF_NETWORK_PENALTY = 2;
 /**
  * Fixed overhead per stop.
  *
- * Finding the gap in the fence, working out where the marshals will let you
+ * Finding the gap in the fence, working out where you are actually allowed to
  * stand, getting the lens on. Never zero, even for a spot ten metres away.
  */
 export const SETUP_MINUTES = 3;
+
+/**
+ * Slack on every journey, on top of the walk and the setup.
+ *
+ * Kept separate from SETUP_MINUTES because it answers a different question.
+ * Setup is work you will certainly do — finding the gap, getting the lens on.
+ * This is the admission that the estimate itself can be wrong: the path is
+ * muddier than the map says, a gate is shut, the crossing is further than it
+ * looked, you stop to talk to someone.
+ *
+ * Five minutes early costs five minutes of standing. Five minutes late costs
+ * the session you came for, and there is no way to get it back — so the error
+ * is deliberately one-sided.
+ */
+export const SAFETY_MARGIN_MINUTES = 5;
 
 export interface WalkEstimate {
   readonly minutes: number;
@@ -60,15 +75,18 @@ export function walkEstimate(input: {
   offNetworkMetres?: number;
   metresPerMinute?: number;
   setupMinutes?: number;
+  /** Slack on top. Defaults to SAFETY_MARGIN_MINUTES; zero to measure raw. */
+  marginMinutes?: number;
 }): WalkEstimate {
   const metres = Math.max(0, input.metres);
   const off = Math.min(metres, Math.max(0, input.offNetworkMetres ?? 0));
   const onPath = metres - off;
   const speed = input.metresPerMinute ?? PATH_METRES_PER_MINUTE;
   const setup = input.setupMinutes ?? SETUP_MINUTES;
+  const margin = input.marginMinutes ?? SAFETY_MARGIN_MINUTES;
 
   const effective = onPath + off * OFF_NETWORK_PENALTY;
-  const minutes = Math.ceil(effective / speed) + setup;
+  const minutes = Math.ceil(effective / speed) + setup + margin;
 
   return {
     minutes,

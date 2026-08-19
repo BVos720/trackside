@@ -68,6 +68,28 @@
         51.005
       ],
       "verified": true
+    },
+    "suzuka": {
+      "label": "Suzuka International Racing Course",
+      "_note": "Figure-of-eight, so the bbox has to cover the crossover as well as both loops. Padded well past the lap: a snug box leaves the camera unable to frame the whole circuit on a tall phone.",
+      "bbox": [
+        136.515,
+        34.828,
+        136.56,
+        34.865
+      ],
+      "verified": false
+    },
+    "fuji": {
+      "label": "Fuji Speedway",
+      "_note": "Dominated by the 1.475 km main straight running north-south, so the box is taller than it is wide.",
+      "bbox": [
+        138.905,
+        35.355,
+        138.95,
+        35.39
+      ],
+      "verified": false
     }
   }
 }

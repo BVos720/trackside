@@ -26,7 +26,13 @@
     "plugins": [
       "expo-sqlite",
       "@maplibre/maplibre-react-native",
-      "expo-asset"
+      "expo-asset",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Trackside uses your location to show where you are at the circuit and work out when to leave for your next spot."
+        }
+      ]
     ]
   }
 }

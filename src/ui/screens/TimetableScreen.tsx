@@ -26,6 +26,7 @@ import {
   type TextSession,
 } from '../../core/logic/timetableText';
 import { extractPdfLines, PDF_SUPPORTED } from '../../storage-local/pdfText';
+import { pickPdf } from '../../storage-local/pickPdf';
 import { color, radius, space, type, weight } from '../theme';
 
 export interface PendingSession {
@@ -132,27 +133,34 @@ export default function TimetableScreen({
     applyParse(lines, 'Pasted text');
   };
 
+  /**
+   * Open the system file picker.
+   *
+   * Both platforms go through `pickPdf`, which returns bytes — the screen used
+   * to build an `<input type="file">` directly, which meant the button did
+   * nothing at all on a phone because there is no DOM to build it in.
+   */
   const onPickPdf = () => {
-    const doc = (globalThis as { document?: Document }).document;
-    if (!doc || !PDF_SUPPORTED) {
-      setStatus('PDF import is not available here — paste the text instead.');
-      return;
-    }
-    const input = doc.createElement('input');
-    input.type = 'file';
-    input.accept = 'application/pdf';
-    input.onchange = async () => {
-      const file = input.files?.[0];
-      if (!file) return;
+    void (async () => {
+      const picked = await pickPdf();
+      // Null is a cancelled dialog, which is not worth a status message.
+      if (!picked) return;
+
+      if (!PDF_SUPPORTED) {
+        setStatus(
+          `Picked ${picked.name}, but reading PDFs on the phone is not ` +
+            'supported yet — copy the text and use “Read pasted text”.',
+        );
+        return;
+      }
+
       setStatus('Reading PDF…');
       try {
-        const lines = await extractPdfLines(file);
-        applyParse(lines, file.name);
+        applyParse(await extractPdfLines(picked.bytes), picked.name);
       } catch (e) {
         setStatus(e instanceof Error ? e.message : String(e));
       }
-    };
-    input.click();
+    })();
   };
 
   const toggle = (key: string) =>
