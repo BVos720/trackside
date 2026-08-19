@@ -13,12 +13,13 @@
  */
 import { ScrollView, StyleSheet, Text, View, Pressable } from 'react-native';
 
-import type { Event, PlanStop } from '../../core/domain/event';
+import { type Event, type PlanStop, eventDays } from '../../core/domain/event';
 import type { SpotId } from '../../core/domain/ids';
 import type { Spot } from '../../core/domain/spot';
 import type { WalkNetwork } from '../../core/logic/route';
 import { formatDateRange } from '../DateRangePicker';
 import { color, radius, space, type, weight } from '../theme';
+import Collapsible from '../Collapsible';
 import PlannerScreen from './PlannerScreen';
 import TimetableScreen, { type PendingSession } from './TimetableScreen';
 
@@ -79,6 +80,7 @@ export default function EventScreen({
   onDelete: () => void;
 }) {
   const range = formatDateRange(event.startDate, event.endDate);
+  const dayOptions = eventDays(event);
 
   return (
     <ScrollView style={styles.root} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
@@ -120,23 +122,38 @@ export default function EventScreen({
         </Pressable>
       </View>
 
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Timetable</Text>
+      <Collapsible
+        title="Timetable"
+        badge={sessions.length || null}
+        hint={
+          sessions.length === 0
+            ? 'Nothing yet — import or add sessions'
+            : 'What is running, and when'
+        }
+      >
         <TimetableScreen
           embedded
           circuitLabel={circuitLabel}
           eventName={event.name}
           eventDates={range}
+          eventDayOptions={dayOptions}
           savedCount={sessions.length}
           sessions={sessions}
           onRemoveSession={onRemoveSession}
           onCommit={onCommitSessions}
           onBack={onBack}
         />
-      </View>
+      </Collapsible>
 
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Plan</Text>
+      <Collapsible
+        title="Plan"
+        badge={event.stops.length || null}
+        hint={
+          event.stops.length === 0
+            ? 'No stops yet — where you will be, and when'
+            : 'Route, times and when to leave'
+        }
+      >
         <PlannerScreen
           embedded
           event={event}
@@ -150,7 +167,7 @@ export default function EventScreen({
           onMoveStop={onMoveStop}
           onNavigate={onNavigate}
         />
-      </View>
+      </Collapsible>
 
       {/*
         Where this event lives on disk.
@@ -159,8 +176,10 @@ export default function EventScreen({
         anyone can check, and being able to go and find the file is most of the
         reason bundles exist at all.
       */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Backup</Text>
+      <Collapsible
+        title="Backup"
+        hint={savedTo === null ? 'Not saved yet' : 'Saved to your files'}
+      >
         <Text style={styles.fileHint}>
           {filesFolder === null
             ? 'This build has no app storage, so nothing is saved automatically. Download a copy to keep it.'
@@ -183,14 +202,21 @@ export default function EventScreen({
             </Text>
           </Pressable>
         )}
-      </View>
+      </Collapsible>
 
+      {/*
+        Delete is folded away too — it is the one action on this page you can
+        reach by accident and cannot undo, so it should take a deliberate tap
+        to even see.
+      */}
+      <Collapsible title="Danger zone" hint="Delete this event">
       <Pressable onPress={onDelete} hitSlop={8}>
         <Text style={styles.delete}>Delete this event</Text>
       </Pressable>
       <Text style={styles.deleteHint}>
         Its own copies of the spots go with it. Your main map is untouched.
       </Text>
+      </Collapsible>
     </ScrollView>
   );
 }

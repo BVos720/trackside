@@ -14,32 +14,11 @@
  * closes.
  */
 import * as DocumentPicker from 'expo-document-picker';
-import * as FileSystem from 'expo-file-system';
+import { File } from 'expo-file-system';
 
 export interface PickedPdf {
   readonly name: string;
   readonly bytes: Uint8Array;
-}
-
-/** Base64 → bytes, without pulling in a polyfill for `atob`. */
-function decodeBase64(input: string): Uint8Array {
-  const alphabet =
-    'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
-  const clean = input.replace(/[^A-Za-z0-9+/]/g, '');
-  const out = new Uint8Array((clean.length * 3) >> 2);
-
-  let bits = 0;
-  let value = 0;
-  let index = 0;
-  for (const ch of clean) {
-    value = (value << 6) | alphabet.indexOf(ch);
-    bits += 6;
-    if (bits >= 8) {
-      bits -= 8;
-      out[index++] = (value >> bits) & 0xff;
-    }
-  }
-  return out.subarray(0, index);
 }
 
 /** Null when the user backed out of the picker. */
@@ -56,11 +35,18 @@ export async function pickPdf(): Promise<PickedPdf | null> {
   const asset = result.assets?.[0];
   if (!asset) return null;
 
-  const base64 = await FileSystem.readAsStringAsync(asset.uri, {
-    encoding: 'base64',
-  });
+  /*
+   * `File.bytes()`, not `readAsStringAsync`.
+   *
+   * expo-file-system 57 does not merely deprecate the legacy reader — importing
+   * it from the package root gives a shim that *throws*, so picking a PDF on
+   * device failed with "Method readAsStringAsync is deprecated" rather than
+   * doing anything. It also returns bytes directly, which removes the base64
+   * round trip and the decoder that went with it.
+   */
+  const bytes = await new File(asset.uri).bytes();
 
-  return { name: asset.name ?? 'timetable.pdf', bytes: decodeBase64(base64) };
+  return { name: asset.name ?? 'timetable.pdf', bytes };
 }
 
 export const PICKER_SUPPORTED = true;
