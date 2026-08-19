@@ -86,7 +86,8 @@ const STEPS: { key: string; title: string; hint: string }[] = [
   { key: 'basics', title: 'What', hint: 'Name, and what it is good for' },
   { key: 'access', title: 'Access', hint: 'Whether you may stand here' },
   { key: 'when', title: 'When', hint: 'Times and what the position is like' },
-  { key: 'detail', title: 'Detail', hint: 'Settings, notes and pictures' },
+  { key: 'detail', title: 'Detail', hint: 'Camera settings and notes' },
+  { key: 'photos', title: 'Photos', hint: 'Reference shots — where to stand' },
 ];
 
 const ACCESS_OPTIONS: {
@@ -160,6 +161,7 @@ export default function SpotSheet({
   draftPosition,
   media,
   mediaUris,
+  pendingPhotos = [],
   onSave,
   onCancel,
   onPickPhoto,
@@ -169,6 +171,17 @@ export default function SpotSheet({
   draftPosition: { latitude: number; longitude: number } | null;
   media: Media[];
   mediaUris: Record<string, string>;
+  /**
+   * Photos picked before the spot exists, held until it is saved.
+   *
+   * Empty when editing, because those attach immediately — there is already an
+   * id to hang them on.
+   */
+  pendingPhotos?: readonly {
+    kind: ReferenceKind | null;
+    isKey: boolean;
+    previewUri: string | null;
+  }[];
   onSave: (draft: SpotDraft) => void;
   onCancel: () => void;
   /** `isKey` marks the portfolio hero shot rather than a reference image. */
@@ -326,6 +339,11 @@ export default function SpotSheet({
   const keyImage = media.find((m) => m.isKeyImage) ?? null;
   const keyUri = keyImage?.storageKey ? mediaUris[keyImage.storageKey] : undefined;
   const references = media.filter((m) => !m.isKeyImage);
+
+  /** Chosen while creating, not yet written — see the Photos step below. */
+  const pendingKey = pendingPhotos.find((p) => p.isKey) ?? null;
+  const pendingReferences = pendingPhotos.filter((p) => !p.isKey);
+  const pendingCount = pendingPhotos.length;
 
   return (
     <View style={styles.sheet}>
@@ -712,11 +730,24 @@ export default function SpotSheet({
           style={[styles.input, styles.inputMulti]}
         />
 
-        {spot === null ? (
-          <Text style={styles.help}>
-            Save the spot first to attach photos.
-          </Text>
-        ) : (
+          </>
+        )}
+
+        {/*
+          Photos last, and reachable while creating.
+
+          They used to be refused until the spot had been saved, on the honest
+          grounds that media attaches to a spot id. But the id is an internal
+          detail, and "save, find it again, reopen it, add the picture" is three
+          steps to do the thing you were already doing. `pendingPhotos` in
+          App.tsx has always held them for exactly this — the sheet simply never
+          offered the picker, so the mechanism sat unused.
+
+          Last because it is the step most likely to be skipped in the moment:
+          you mark the spot as the cars come past and photograph it afterwards.
+          Anything ahead of it would be blocked by a step people walk away from.
+        */}
+        {step === 4 && (
           <>
             <Text style={styles.label}>KEY PICTURE</Text>
             <Text style={styles.help}>
@@ -726,8 +757,11 @@ export default function SpotSheet({
               onPress={() => onPickPhoto(null, true)}
               style={({ pressed }) => [styles.keySlot, pressed && styles.pressed]}
             >
-              {keyUri ? (
-                <Image source={{ uri: keyUri }} style={styles.keyImage} />
+              {keyUri ?? pendingKey?.previewUri ? (
+                <Image
+                  source={{ uri: (keyUri ?? pendingKey?.previewUri) as string }}
+                  style={styles.keyImage}
+                />
               ) : (
                 <View style={[styles.keyImage, styles.keyEmpty]}>
                   <Text style={styles.keyEmptyText}>+ Add key picture</Text>
@@ -790,11 +824,43 @@ export default function SpotSheet({
                 );
               })}
             </View>
+            {/*
+              Photos chosen before the spot exists.
+
+              Shown separately and labelled as not yet saved, rather than mixed
+              in with the real ones: they are held in memory until the spot is
+              created, and presenting them identically would imply they had
+              survived something they have not.
+            */}
+            {pendingReferences.length > 0 && (
+              <>
+                <View style={styles.thumbRow}>
+                  {pendingReferences.map((p, i) => (
+                    <View key={`${p.kind ?? 'photo'}-${i}`} style={styles.thumb}>
+                      {p.previewUri ? (
+                        <Image
+                          source={{ uri: p.previewUri }}
+                          style={styles.thumbImage}
+                        />
+                      ) : (
+                        <View style={[styles.thumbImage, styles.thumbMissing]}>
+                          <Text style={styles.thumbMissingText}>no preview</Text>
+                        </View>
+                      )}
+                      <Text style={styles.thumbKind}>{p.kind ?? 'photo'}</Text>
+                    </View>
+                  ))}
+                </View>
+                <Text style={styles.help}>
+                  {pendingCount} photo{pendingCount === 1 ? '' : 's'} will be
+                  attached when you save.
+                </Text>
+              </>
+            )}
+
             {references.length > 0 && (
               <Text style={styles.help}>Long-press a photo to remove it.</Text>
             )}
-          </>
-        )}
           </>
         )}
       </ScrollView>
