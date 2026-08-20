@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { nowUtc } from '../domain/common';
+import { newEntry, type Entry } from '../domain/entry';
 import { newEvent, newPlanStop, type Event } from '../domain/event';
 import {
   asId,
@@ -336,6 +337,136 @@ describe('describeImport', () => {
 
     expect(describeImport(planImport(truncated, EMPTY, 'copy'))).toBe(
       '1 spot, 1 session, 1 planned stop.',
+    );
+  });
+});
+
+/**
+ * Entry lists through an import.
+ *
+ * The same reference-rewriting problem as the spots and sessions above: an
+ * entry belongs to exactly one event, so a copy that keeps the original
+ * `eventId` produces a list attached to the event it was copied from —
+ * ticking a car in one would tick it in both, and neither would look wrong.
+ */
+describe('entries', () => {
+  const anEntry = (eventId: EventId, number: string, photographed = false): Entry => ({
+    ...newEntry({ eventId, number, team: 'Toyota Gazoo Racing' }),
+    photographed,
+    photographedAt: photographed ? nowUtc() : null,
+  });
+
+  function withEntries(photographed = false) {
+    const { bundle, event } = aBundle();
+    return {
+      event,
+      bundle: {
+        ...bundle,
+        entries: [
+          anEntry(event.id, '7', photographed),
+          anEntry(event.id, '8'),
+        ],
+      } satisfies EventBundle,
+    };
+  }
+
+  it('restores them as themselves', () => {
+    const { bundle } = withEntries();
+    const plan = planImport(bundle, EMPTY, 'restore');
+
+    expect(plan.entries.map((e) => e.id)).toEqual(bundle.entries.map((e) => e.id));
+    expect(plan.entries.map((e) => e.eventId)).toEqual([
+      bundle.event.id,
+      bundle.event.id,
+    ]);
+  });
+
+  it('restores the ticks, which is most of the point of a backup', () => {
+    const { bundle } = withEntries(true);
+    const plan = planImport(bundle, EMPTY, 'restore');
+
+    expect(plan.entries.find((e) => e.number === '7')!.photographed).toBe(true);
+  });
+
+  it('remints every id on a copy', () => {
+    const { bundle } = withEntries();
+    const plan = planImport(bundle, EMPTY, 'copy');
+    const old = new Set(bundle.entries.map((e) => e.id as string));
+
+    expect(plan.entries).toHaveLength(2);
+    for (const entry of plan.entries) {
+      expect(old.has(entry.id as string)).toBe(false);
+    }
+  });
+
+  it('points a copy at its own event, not the one it came from', () => {
+    // The failure this prevents: two events sharing an entry list, where
+    // ticking a car in one silently ticks it in the other.
+    const { bundle } = withEntries();
+    const plan = planImport(bundle, EMPTY, 'copy');
+
+    expect(plan.event.id).not.toBe(bundle.event.id);
+    for (const entry of plan.entries) {
+      expect(entry.eventId).toBe(plan.event.id);
+    }
+  });
+
+  it('carries the ticks on a copy and says so', () => {
+    // Copy is as often "keep both versions" of your own event as it is "open
+    // someone else's", and clearing would destroy a weekend's count to tidy up
+    // a cosmetic wrongness. Carried, and named in the warnings.
+    const { bundle } = withEntries(true);
+    const plan = planImport(bundle, EMPTY, 'copy');
+
+    expect(plan.entries.find((e) => e.number === '7')!.photographed).toBe(true);
+    expect(plan.warnings.join(' ')).toMatch(/already marked as photographed/i);
+  });
+
+  it('does not warn about ticks when there are none', () => {
+    const { bundle } = withEntries(false);
+    expect(planImport(bundle, EMPTY, 'copy').warnings).toEqual([]);
+  });
+
+  it('carries no tombstone onto a copy', () => {
+    const { bundle, event } = withEntries();
+    const deleted: EventBundle = {
+      ...bundle,
+      entries: [{ ...anEntry(event.id, '9'), deletedAt: nowUtc() }],
+    };
+
+    expect(planImport(deleted, EMPTY, 'copy').entries[0]!.deletedAt).toBeNull();
+  });
+
+  it('keeps a tombstone on a restore', () => {
+    // A restore reproduces the state the file recorded, deletions included —
+    // the same rule the spots follow.
+    const { bundle, event } = withEntries();
+    const deleted: EventBundle = {
+      ...bundle,
+      entries: [{ ...anEntry(event.id, '9'), deletedAt: nowUtc() }],
+    };
+
+    expect(planImport(deleted, EMPTY, 'restore').entries[0]!.deletedAt).not.toBeNull();
+  });
+
+  it('opens a bundle written before entry lists existed', () => {
+    const { bundle } = aBundle();
+    // Destructured away rather than deleted: the field is readonly, and the
+    // case being tested is a file that never had the key, not one whose key
+    // was removed.
+    const { entries: _absent, ...old } = bundle;
+
+    const plan = planImport(old as EventBundle, EMPTY, 'copy');
+    expect(plan.entries).toEqual([]);
+  });
+
+  it('names them in the summary, and only when there are some', () => {
+    const { bundle } = withEntries();
+    expect(describeImport(planImport(bundle, EMPTY, 'copy'))).toBe(
+      '2 spots, 1 session, 2 planned stops, 2 entries.',
+    );
+    expect(describeImport(planImport(aBundle().bundle, EMPTY, 'copy'))).toBe(
+      '2 spots, 1 session, 2 planned stops.',
     );
   });
 });

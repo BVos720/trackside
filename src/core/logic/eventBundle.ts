@@ -19,6 +19,7 @@
  * is to know what it is. Guessing from shape is how importers end up silently
  * mangling old data.
  */
+import type { Entry } from '../domain/entry';
 import type { Event } from '../domain/event';
 import type { Session } from '../domain/planning';
 import type { Spot } from '../domain/spot';
@@ -35,6 +36,15 @@ export interface EventBundle {
   /** The event's timetable. */
   readonly sessions: readonly Session[];
   /**
+   * The entry list, ticks included.
+   *
+   * `photographed` is the part worth backing up. The list itself can be pasted
+   * again from the series' website in a minute; which forty of the sixty cars
+   * you have already got cannot be reconstructed from anything, and losing it
+   * mid-weekend means starting the count again.
+   */
+  readonly entries: readonly Entry[];
+  /**
    * Day headings the sessions hang off, as `{ id, date, label }`.
    *
    * Carried because a session's `eventDayId` is meaningless without them, and
@@ -49,6 +59,8 @@ export function buildEventBundle(input: {
   spots: readonly Spot[];
   sessions: readonly Session[];
   days: readonly { id: string; date: string; label: string | null }[];
+  /** Optional: an event that never had a list pasted into it has none. */
+  entries?: readonly Entry[];
   at?: Date;
 }): EventBundle {
   return {
@@ -57,6 +69,7 @@ export function buildEventBundle(input: {
     event: input.event,
     spots: input.spots,
     sessions: input.sessions,
+    entries: input.entries ?? [],
     days: input.days,
   };
 }
@@ -144,6 +157,9 @@ export function readEventBundle(text: string): BundleReadResult {
       event: doc.event as Event,
       spots: Array.isArray(doc.spots) ? doc.spots : [],
       sessions: Array.isArray(doc.sessions) ? doc.sessions : [],
+      // Defaulted, not rejected: every bundle written before entry lists
+      // existed has no such key, and those files must still open.
+      entries: Array.isArray(doc.entries) ? doc.entries : [],
       days: Array.isArray(doc.days) ? doc.days : [],
     },
     error: null,
@@ -157,5 +173,12 @@ export function describeBundle(bundle: EventBundle): string {
     `${bundle.sessions.length} session${bundle.sessions.length === 1 ? '' : 's'}`,
     `${bundle.event.stops.length} planned`,
   ];
+  // Named only when there are some. Most events never paste a list, and a
+  // permanent "0 entries" on every file listing is noise rather than honesty.
+  if (bundle.entries.length > 0) {
+    parts.push(
+      `${bundle.entries.length} entr${bundle.entries.length === 1 ? 'y' : 'ies'}`,
+    );
+  }
   return parts.join(' · ');
 }

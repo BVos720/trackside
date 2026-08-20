@@ -37,8 +37,23 @@ vi.mock('../kv', () => {
 });
 
 import { newEvent } from '../../core/domain/event';
+import {
+  MediaSource,
+  MediaType,
+  type Media,
+  type ReferenceKind,
+} from '../../core/domain/media';
 import { spotsForContext } from '../../core/logic/cloneSpots';
-import { asId, type CircuitId, type EventId, type UserId } from '../../core/domain/ids';
+import {
+  asId,
+  newId,
+  type CircuitId,
+  type EventId,
+  type MediaId,
+  type SpotId,
+  type UserId,
+} from '../../core/domain/ids';
+import { Visibility, nowUtc } from '../../core/domain/common';
 import { AccessClassification, newSpot, type Spot } from '../../core/domain/spot';
 import { events, repositories } from './documentRepositories';
 import { kv } from '../kv';
@@ -67,6 +82,37 @@ async function aSpot(name: string, eventId: EventId | null = null) {
   });
   await repositories.spots.save(spot);
   return spot;
+}
+
+/** A reference photo on a spot, shaped as `addPhoto` writes them. */
+async function aPhoto(
+  spotId: SpotId | null,
+  referenceKind: ReferenceKind | null = null,
+) {
+  const at = nowUtc();
+  const row: Media = {
+    id: newId<MediaId>(),
+    ownerId: USER,
+    spotId,
+    type: MediaType.Photo,
+    source: MediaSource.Uploaded,
+    storageKey: 'media/local/1',
+    externalUrl: null,
+    referenceKind,
+    isKeyImage: false,
+    sortOrder: 0,
+    capturedAt: null,
+    capturedBearing: null,
+    capturedPitch: null,
+    visibility: Visibility.Private,
+    metadataStripped: false,
+    createdAt: at,
+    updatedAt: at,
+    deletedAt: null,
+    syncState: 'local',
+  };
+  await repositories.media.save(row);
+  return row;
 }
 
 /** Every stored row, tombstones included — what actually accumulates. */
@@ -153,5 +199,63 @@ describe('deleting an event', () => {
     await events.softDelete(event.id);
 
     expect((await stored()).get('legacy')!.deletedAt).toBeNull();
+  });
+});
+
+/**
+ * Media hangs off spots, so the cascade has to reach one level further.
+ *
+ * `listBySpot` is the only route to a media row, and no screen asks a deleted
+ * spot for its gallery. A photo left live under a tombstoned copy is therefore
+ * exactly the orphan the spot cascade exists to stop, one level down.
+ */
+describe('deleting an event, and the photos on its spots', () => {
+  it("tombstones photos attached to the event's own copies", async () => {
+    const event = await anEvent('NLS10');
+    const copy = await aSpot('event copy', event.id);
+    const photo = await aPhoto(copy.id);
+
+    await events.softDelete(event.id);
+
+    expect((await repositories.media.get(photo.id))!.deletedAt).not.toBeNull();
+    expect(await repositories.media.listBySpot(copy.id)).toEqual([]);
+  });
+
+  it('leaves photos on the home map alone', async () => {
+    const event = await anEvent('NLS10');
+    const home = await aSpot('home spot');
+    const homePhoto = await aPhoto(home.id);
+    const copy = await aSpot('event copy', event.id);
+    await aPhoto(copy.id);
+
+    await events.softDelete(event.id);
+
+    expect((await repositories.media.get(homePhoto.id))!.deletedAt).toBeNull();
+    expect(await repositories.media.listBySpot(home.id)).toHaveLength(1);
+  });
+
+  it('stamps the photos with the same timestamp as the event', async () => {
+    const event = await anEvent('NLS10');
+    const copy = await aSpot('event copy', event.id);
+    const photo = await aPhoto(copy.id);
+    const at = '2026-08-19T09:30:00.000Z';
+
+    await events.softDelete(event.id, at);
+
+    const saved = (await repositories.media.get(photo.id))!;
+    expect(saved.deletedAt).toBe(at);
+    expect(saved.updatedAt).toBe(at);
+  });
+
+  it('does not touch a photo that belongs to no spot', async () => {
+    // `Media.spotId` is nullable, and a null must not be swept up by an
+    // ownership test it can never legitimately answer.
+    const event = await anEvent('NLS10');
+    await aSpot('event copy', event.id);
+    const loose = await aPhoto(null);
+
+    await events.softDelete(event.id);
+
+    expect((await repositories.media.get(loose.id))!.deletedAt).toBeNull();
   });
 });

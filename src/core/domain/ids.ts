@@ -38,6 +38,7 @@ export type WalkEdgeId = Branded<'WalkEdgeId'>;
 export type SessionId = Branded<'SessionId'>;
 export type EventDayId = Branded<'EventDayId'>;
 export type EventId = Branded<'EventId'>;
+export type EntryId = Branded<'EntryId'>;
 export type PlanId = Branded<'PlanId'>;
 export type PlanStopId = Branded<'PlanStopId'>;
 export type UserGearItemId = Branded<'UserGearItemId'>;
@@ -55,6 +56,7 @@ export type EntityId =
   | SessionId
   | EventDayId
   | EventId
+  | EntryId
   | PlanId
   | PlanStopId
   | UserGearItemId

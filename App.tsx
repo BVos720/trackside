@@ -62,6 +62,7 @@ import {
   type VenueKey,
 } from './src/ui/map/style';
 import { useSessions } from './src/ui/state/useSessions';
+import { useEntries } from './src/ui/state/useEntries';
 import { snapBesideTrack } from './src/core/logic/track';
 import { useSpots, type SpotDraft } from './src/ui/state/useSpots';
 import { mediaStore } from './src/storage-local/mediaStore';
@@ -290,6 +291,28 @@ function AppShell() {
     reload: reloadSessions,
   } = useSessions(circuitId, activeEventDays, activeEventId);
 
+  const {
+    entries: fieldEntries,
+    addParsed: addParsedEntries,
+    setPhotographed: setEntryPhotographed,
+    remove: removeEntry,
+    reload: reloadEntries,
+  } = useEntries(activeEventId);
+
+  /** The field as the entry-list screen displays it — Entry, minus the parts it does not need. */
+  const entryRows = useMemo(
+    () =>
+      fieldEntries.map((e) => ({
+        id: e.id,
+        number: e.number,
+        className: e.className,
+        team: e.team,
+        drivers: e.drivers,
+        photographed: e.photographed,
+      })),
+    [fieldEntries],
+  );
+
   /**
    * Sessions as the timetable displays them.
    *
@@ -380,10 +403,25 @@ function AppShell() {
       file: Blob;
       kind: ReferenceKind | null;
       isKey: boolean;
+      /** For showing it before it is written. Revoked once the spot is saved. */
       previewUri: string | null;
     }[]
   >([]);
   const [mediaUris, setMediaUris] = useState<Record<string, string>>({});
+
+  /**
+   * Release preview handles for photos that were never saved.
+   *
+   * Only meaningful on web, where a preview is an object URL held by the
+   * document until it is revoked. Abandoning a half-filled spot is the common
+   * case — you mark one, think better of it, and cancel — so this is the path
+   * that leaks if it is forgotten.
+   */
+  const revokePendingPreviews = useCallback(() => {
+    for (const p of pendingPhotos) {
+      if (p.previewUri?.startsWith('blob:')) URL.revokeObjectURL(p.previewUri);
+    }
+  }, [pendingPhotos]);
 
   /**
    * The map shows the active event's selection, or everything when there is
@@ -502,6 +540,7 @@ function AppShell() {
             event: activeEvent,
             spots: visibleSpots,
             sessions: savedSessions,
+            entries: fieldEntries,
             days: Object.entries(sessionDayLabels).map(([id, label]) => ({
               id,
               date: label,
@@ -518,7 +557,7 @@ function AppShell() {
     }, 1500);
 
     return () => clearTimeout(timer);
-  }, [activeEvent, visibleSpots, savedSessions, sessionDayLabels]);
+  }, [activeEvent, visibleSpots, savedSessions, fieldEntries, sessionDayLabels]);
 
   /*
    * ── Reading an event back in ──────────────────────────────────────────────
@@ -580,11 +619,24 @@ function AppShell() {
       const key = VENUE_FOR_CIRCUIT[plan.event.circuitId];
       if (key && key !== venue) setVenue(key);
 
-      await Promise.all([reloadEvents(), reloadSpots(), reloadSessions()]);
+      await Promise.all([
+        reloadEvents(),
+        reloadSpots(),
+        reloadSessions(),
+        reloadEntries(),
+      ]);
       activate(plan.event.id);
       setWhere('event');
     },
-    [pendingBundle, venue, reloadEvents, reloadSpots, reloadSessions, activate],
+    [
+      pendingBundle,
+      venue,
+      reloadEvents,
+      reloadSpots,
+      reloadSessions,
+      reloadEntries,
+      activate,
+    ],
   );
 
   /** Both outcomes, described, so each button can show its own consequences. */
@@ -650,6 +702,9 @@ function AppShell() {
       if (activeEventId) await setSpotIncluded(spot.id, true);
       for (const p of pendingPhotos) {
         await addPhoto(spot.id, p.file, p.kind, p.isKey);
+        // The preview was only ever a handle on a blob in memory; the bytes
+        // now live in the media store under the spot's own id.
+        if (p.previewUri?.startsWith('blob:')) URL.revokeObjectURL(p.previewUri);
       }
       setPendingPhotos([]);
     }
@@ -862,7 +917,7 @@ function AppShell() {
                   // rather than dumping you back to a bare map.
                   sheet.kind === 'edit'
                     ? setSheet({ kind: 'overview', id: sheet.id })
-                    : (setPendingPhotos([]), closeSheet())
+                    : (revokePendingPreviews(), setPendingPhotos([]), closeSheet())
                 }
                 onPickPhoto={onPickPhoto}
                 onRemovePhoto={(id) => void removePhoto(asId<MediaId>(id))}
@@ -1039,6 +1094,12 @@ function AppShell() {
                 )
               }
               onRemoveSession={(id) => void removeSession(asId(id))}
+              entries={entryRows}
+              onCommitEntries={(rows) => void addParsedEntries(rows)}
+              onTogglePhotographed={(id, photographed) =>
+                void setEntryPhotographed(asId(id), photographed)
+              }
+              onRemoveEntry={(id) => void removeEntry(asId(id))}
               onAddStop={(spotId, day) => void addStop({ spotId, day })}
               onUpdateStop={(stopId, patch) => void updateStop(stopId, patch)}
               onRemoveStop={(stopId) => void removeStop(stopId)}
@@ -1078,6 +1139,7 @@ function AppShell() {
                     event: activeEvent,
                     spots: visibleSpots,
                     sessions: savedSessions,
+                    entries: fieldEntries,
                     days: Object.entries(sessionDayLabels).map(
                       ([id, label]) => ({ id, date: label, label }),
                     ),

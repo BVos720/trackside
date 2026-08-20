@@ -12,16 +12,19 @@
  * while you enter it.
  */
 import { ScrollView, StyleSheet, Text, View, Pressable } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { type Event, type PlanStop, eventDays } from '../../core/domain/event';
 import type { SpotId } from '../../core/domain/ids';
 import type { Spot } from '../../core/domain/spot';
 import type { WalkNetwork } from '../../core/logic/route';
 import { formatDateRange } from '../DateRangePicker';
-import { color, radius, space, type, weight } from '../theme';
+import { MENU_CLEARANCE, color, radius, space, type, weight } from '../theme';
 import Collapsible from '../Collapsible';
+import EntryListScreen, { type SavedEntryRow } from './EntryListScreen';
 import PlannerScreen from './PlannerScreen';
 import TimetableScreen, { type PendingSession } from './TimetableScreen';
+import type { TextEntry } from '../../core/logic/entryList';
 
 export interface SavedSessionRow {
   id: string;
@@ -40,6 +43,10 @@ export default function EventScreen({
   sessions,
   onCommitSessions,
   onRemoveSession,
+  entries,
+  onCommitEntries,
+  onTogglePhotographed,
+  onRemoveEntry,
   onAddStop,
   onUpdateStop,
   onRemoveStop,
@@ -61,6 +68,10 @@ export default function EventScreen({
   sessions: SavedSessionRow[];
   onCommitSessions: (rows: PendingSession[]) => void;
   onRemoveSession: (id: string) => void;
+  entries: readonly SavedEntryRow[];
+  onCommitEntries: (rows: TextEntry[]) => void;
+  onTogglePhotographed: (id: string, photographed: boolean) => void;
+  onRemoveEntry: (id: string) => void;
   onAddStop: (spotId: SpotId, day: string | null) => void;
   onUpdateStop: (
     stopId: string,
@@ -79,11 +90,21 @@ export default function EventScreen({
   onBack: () => void;
   onDelete: () => void;
 }) {
+  const insets = useSafeAreaInsets();
   const range = formatDateRange(event.startDate, event.endDate);
   const dayOptions = eventDays(event);
 
   return (
-    <ScrollView style={styles.root} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+    <ScrollView
+      style={styles.root}
+      // Clears the floating menu trigger. The back link is the first row, so
+      // getting this wrong hides the way out behind the menu.
+      contentContainerStyle={[
+        styles.content,
+        { paddingTop: insets.top + MENU_CLEARANCE },
+      ]}
+      keyboardShouldPersistTaps="handled"
+    >
       <Pressable
         onPress={onBack}
         hitSlop={8}
@@ -142,6 +163,23 @@ export default function EventScreen({
           onRemoveSession={onRemoveSession}
           onCommit={onCommitSessions}
           onBack={onBack}
+        />
+      </Collapsible>
+
+      <Collapsible
+        title="Entry list"
+        badge={entries.length > 0 ? `${entries.filter((e) => e.photographed).length}/${entries.length}` : null}
+        hint={
+          entries.length === 0
+            ? 'Nothing yet — paste the entry list'
+            : 'Which cars are running, and which you have shot'
+        }
+      >
+        <EntryListScreen
+          entries={entries}
+          onCommit={onCommitEntries}
+          onTogglePhotographed={onTogglePhotographed}
+          onRemoveEntry={onRemoveEntry}
         />
       </Collapsible>
 
@@ -223,7 +261,7 @@ export default function EventScreen({
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: color.background },
-  content: { padding: space.md, paddingTop: 96, paddingBottom: space.xxl },
+  content: { padding: space.md, paddingBottom: space.xxl },
   pressed: { opacity: 0.7 },
 
   back: {

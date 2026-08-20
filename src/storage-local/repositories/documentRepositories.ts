@@ -13,11 +13,14 @@
  * it. Reads filter tombstones out; nothing erases them.
  */
 import { nowUtc, type Utc } from '../../core/domain/common';
+import type { Entry } from '../../core/domain/entry';
+import { setPhotographed as tick } from '../../core/domain/entry';
 import type { Media } from '../../core/domain/media';
 import type { Spot } from '../../core/domain/spot';
 import type { UserSpotNote } from '../../core/domain/userSpotNote';
 import {
   type CircuitId,
+  type EntryId,
   type EventDayId,
   type EventId,
   type MediaId,
@@ -29,6 +32,7 @@ import {
 import { newEntityBase } from '../../core/domain/common';
 import type { EventDay, Session } from '../../core/domain/planning';
 import type { Event, PlanStop } from '../../core/domain/event';
+import type { IEntryRepository } from '../../core/repositories/entryRepository';
 import type { IEventRepository } from '../../core/repositories/eventRepository';
 import type {
   IEventDayRepository,
@@ -48,6 +52,7 @@ const NOTES_KEY = 'trackside.notes.v1';
 const DAYS_KEY = 'trackside.eventdays.v1';
 const SESSIONS_KEY = 'trackside.sessions.v1';
 const EVENTS_KEY = 'trackside.events.v1';
+const ENTRIES_KEY = 'trackside.entries.v1';
 
 /** Read a whole collection. Missing or corrupt data yields an empty set. */
 async function readAll<T>(key: string): Promise<T[]> {
@@ -390,6 +395,52 @@ class SessionRepository implements ISessionRepository {
   }
 }
 
+class EntryRepository implements IEntryRepository {
+  async listByEvent(eventId: EventId): Promise<Entry[]> {
+    const rows = await readAll<Entry>(ENTRIES_KEY);
+    // Insertion order — see the note on the interface. The entry list is read
+    // in the order it was published, which is by class, not by number.
+    return live(rows).filter((e) => e.eventId === eventId);
+  }
+
+  async get(id: EntryId): Promise<Entry | null> {
+    const rows = await readAll<Entry>(ENTRIES_KEY);
+    return rows.find((e) => e.id === id) ?? null;
+  }
+
+  async save(entry: Entry): Promise<void> {
+    await update<Entry>(ENTRIES_KEY, (rows) => upsert(rows, entry));
+  }
+
+  async saveMany(entries: readonly Entry[]): Promise<void> {
+    if (entries.length === 0) return;
+    await update<Entry>(ENTRIES_KEY, (rows) =>
+      entries.reduce((acc, entry) => upsert(acc, entry), rows),
+    );
+  }
+
+  async setPhotographed(
+    id: EntryId,
+    photographed: boolean,
+    at: string = nowUtc(),
+  ): Promise<void> {
+    // Read and write inside one queued mutation: this is tapped repeatedly
+    // between sessions, often faster than a reload settles, and a caller
+    // holding a row it fetched a moment ago would write back a stale one.
+    await update<Entry>(ENTRIES_KEY, (rows) =>
+      rows.map((e) => (e.id === id ? tick(e, photographed, at as Utc) : e)),
+    );
+  }
+
+  async softDelete(id: EntryId, at: string = nowUtc()): Promise<void> {
+    await update<Entry>(ENTRIES_KEY, (rows) =>
+      rows.map((e) =>
+        e.id === id ? { ...e, deletedAt: at as Utc, updatedAt: at as Utc } : e,
+      ),
+    );
+  }
+}
+
 class EventRepository implements IEventRepository {
   async listByCircuit(circuitId: CircuitId): Promise<Event[]> {
     const rows = (await readAll<Event>(EVENTS_KEY)).map(normaliseEvent);
@@ -443,11 +494,57 @@ class EventRepository implements IEventRepository {
      * the original rule with its actual reason intact: the home map is the
      * permanent collection, and no event may delete from it.
      */
+    const owned = new Set<string>();
     await update<Spot>(SPOTS_KEY, (rows) =>
-      rows.map((s) =>
-        (s.eventId ?? null) === id && s.deletedAt === null
+      rows.map((s) => {
+        if ((s.eventId ?? null) !== id) return s;
+        owned.add(s.id);
+        return s.deletedAt === null
           ? { ...s, deletedAt: at as Utc, updatedAt: at as Utc }
-          : s,
+          : s;
+      }),
+    );
+
+    /*
+     * Photos attached to those copies go with them.
+     *
+     * The same cascade `SpotRepository.softDelete` runs, for the same reason.
+     * Cloning does not duplicate media (cloneSpots.ts), so a copy starts with
+     * none — but anything shot and attached during the weekend hangs off the
+     * copy, and `listBySpot` is the only route to a media row. Left live under
+     * a tombstoned spot it is reachable from nowhere, which is the orphan this
+     * whole cascade exists to stop, one level down.
+     *
+     * The ids come from the write above rather than a second read, so they are
+     * exactly the rows tombstoned there and a concurrent spot write cannot
+     * slip in between. Spots already tombstoned are included too: their media
+     * was tombstoned with them, and `m.deletedAt === null` makes re-covering
+     * them cost nothing.
+     */
+    if (owned.size > 0) {
+      await update<Media>(MEDIA_KEY, (media) =>
+        media.map((m) =>
+          m.spotId !== null && owned.has(m.spotId) && m.deletedAt === null
+            ? { ...m, deletedAt: at as Utc, updatedAt: at as Utc }
+            : m,
+        ),
+      );
+    }
+
+    /*
+     * The entry list goes too.
+     *
+     * An entry has no meaning outside its event — it is a car in a particular
+     * race, and `Entry.eventId` has no null case for that reason. There is no
+     * equivalent of the home map to protect here: every row carrying this id
+     * belongs to the weekend being deleted, so unlike the spots above there is
+     * nothing to spare.
+     */
+    await update<Entry>(ENTRIES_KEY, (rows) =>
+      rows.map((e) =>
+        e.eventId === id && e.deletedAt === null
+          ? { ...e, deletedAt: at as Utc, updatedAt: at as Utc }
+          : e,
       ),
     );
   }
@@ -527,6 +624,7 @@ class EventRepository implements IEventRepository {
 }
 
 export const events: IEventRepository = new EventRepository();
+export const entries: IEntryRepository = new EntryRepository();
 export const eventDays: IEventDayRepository = new EventDayRepository();
 export const sessions: ISessionRepository = new SessionRepository();
 

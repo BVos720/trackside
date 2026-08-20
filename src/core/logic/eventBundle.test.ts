@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest';
 
+import { newEntry } from '../domain/entry';
 import { newEvent, newPlanStop } from '../domain/event';
-import { asId, newId, type CircuitId, type SpotId, type UserId } from '../domain/ids';
+import {
+  asId,
+  newId,
+  type CircuitId,
+  type EventId,
+  type SpotId,
+  type UserId,
+} from '../domain/ids';
 import { AccessClassification, newSpot } from '../domain/spot';
 import {
   BUNDLE_FORMAT,
@@ -155,5 +163,78 @@ describe('describeBundle', () => {
       days: [],
     });
     expect(describeBundle(bundle)).toContain('1 spot ·');
+  });
+});
+
+describe('entries in a bundle', () => {
+  const anEntry = (eventId: EventId, number: string, photographed = false) => ({
+    ...newEntry({ eventId, number, team: 'Toyota Gazoo Racing' }),
+    photographed,
+  });
+
+  it('carries the list and its ticks through JSON', () => {
+    // The ticks are the part worth backing up: the list can be pasted again
+    // from the series' site in a minute, which forty of the sixty cars you
+    // already have cannot be reconstructed from anything.
+    const event = anEvent();
+    const bundle = buildEventBundle({
+      event,
+      spots: [],
+      sessions: [],
+      days: [],
+      entries: [anEntry(event.id, '7', true), anEntry(event.id, '8')],
+    });
+
+    const back = readEventBundle(JSON.stringify(bundle)).bundle!;
+    expect(back.entries).toHaveLength(2);
+    expect(back.entries[0]!.photographed).toBe(true);
+    expect(back.entries[0]!.team).toBe('Toyota Gazoo Racing');
+    expect(back.entries[1]!.photographed).toBe(false);
+  });
+
+  it('defaults to none for an event that never pasted a list', () => {
+    const bundle = buildEventBundle({
+      event: anEvent(),
+      spots: [],
+      sessions: [],
+      days: [],
+    });
+    expect(bundle.entries).toEqual([]);
+  });
+
+  it('opens a file written before entry lists existed', () => {
+    // Every backup on Branco's phone right now is one of these.
+    const bundle = buildEventBundle({
+      event: anEvent(),
+      spots: [],
+      sessions: [],
+      days: [],
+    });
+    const old = JSON.parse(JSON.stringify(bundle)) as Record<string, unknown>;
+    delete old.entries;
+
+    const back = readEventBundle(JSON.stringify(old));
+    expect(back.error).toBeNull();
+    expect(back.bundle!.entries).toEqual([]);
+  });
+
+  it('names them in the summary only when there are some', () => {
+    const event = anEvent();
+    const withList = buildEventBundle({
+      event,
+      spots: [aSpot('a')],
+      sessions: [],
+      days: [],
+      entries: [anEntry(event.id, '7')],
+    });
+    expect(describeBundle(withList)).toBe('1 spot · 0 sessions · 0 planned · 1 entry');
+
+    const without = buildEventBundle({
+      event,
+      spots: [aSpot('a')],
+      sessions: [],
+      days: [],
+    });
+    expect(describeBundle(without)).toBe('1 spot · 0 sessions · 0 planned');
   });
 });

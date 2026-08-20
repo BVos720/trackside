@@ -9,13 +9,15 @@
  * ── Not a transaction, and honest about it ────────────────────────────────
  * The KV store has no multi-key transaction, so a failure partway through
  * leaves some records written. Order is chosen to make that partial state the
- * least harmful one: days, then sessions, then spots, then the event last.
- * Everything before the event is unreachable without it — orphaned rows that
- * the UI never lists — whereas writing the event first would produce a visible
- * event whose spots and timetable had not arrived yet.
+ * least harmful one: days, then sessions, then spots, then entries, then the
+ * event last. Everything before the event is unreachable without it —
+ * orphaned rows that the UI never lists — whereas writing the event first
+ * would produce a visible event whose spots, timetable and field had not
+ * arrived yet.
  */
 import type { ImportPlan, LocalState } from '../core/logic/importBundle';
 import {
+  entries,
   eventDays,
   events,
   repositories,
@@ -45,5 +47,6 @@ export async function applyImport(plan: ImportPlan): Promise<void> {
   for (const day of plan.days) await eventDays.save(day);
   for (const session of plan.sessions) await sessions.save(session);
   for (const spot of plan.spots) await spots.save(spot);
+  await entries.saveMany(plan.entries);
   await events.save(plan.event);
 }

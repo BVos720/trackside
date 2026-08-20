@@ -1,0 +1,53 @@
+Liste des engagés / Entry list
+23 voitures / cars
+V7 21/05/2026
+# Pilot 1 Pilot 2 Car Cat
+Jean-Lou RIHON BMW 635 CSi 1983 Group A1
+2 6
+3 7 David HART Olivier HART BMW M3 E30 1992 Group A2
+4 8 Xavier GALANT Mercedes-Benz 190 E Evo II 1992 Group A2
+5 8 Richard MEINS Rob HUFF Jaguar XJS Serie 1 1985 Group A1
+6 11 Sam ADRIAANS BMW M3 E30 1990 Group A2
+Thierry de LATRE du BOSQUEAU Ford Sierra RS 500 1988 Group A2
+7 14
+8 15 Pierre-Alain FRANCE Erwin FRANCE BMW M3 E30 Evo II 1987 Group A2
+9 16 Rey KING Volvo 240 Turbo 1985 Group A1
+# 17 Mats vd BRAND BMW M3 E30 1992 Group A2
+# 18 Max GOFF Ford Sierra RS 500 1988 Group A2
+# 21 Bas JANSEN Abraham BONTRUP BMW 635 CSi 1985 Group A1
+# 23 Moritz HORN BMW M3 E30 1987 Group A2
+# 33 Maurizio BIANCO Michael KAMMERMANN BMW M3 E30 1991 Group A2
+Christian TRABER Nicolas TRABER BMW 635 CSi 1985 Group A1
+# 35
+# 36 Mark VERHAEGH BMW M3 E30 1992 Group A2
+# 38 James EVERARD BMW Serie 5 E28 528i 1982 Group A1
+# 46 Bill CUTLER BMW M3 E30 Evo I 1987 Group A2
+# 54 Ton VINK Leonard BETENBURG BMW M3 E30 1992 Group A2
+# 91 Alain JADOT Eric VAN DE POELE BMW 635 CSi 1984 Group A1
+# 97 Stephen KEATING Rover Vitesse 1983 Group A1
+# 123 Guy FAWE Christophe VAN RIET Ford Mustang 5.0 GT 1985 Group A1
+Jeanne MILLE BMW 635 CSi 1983 Group A1
+# 150
+# 245 Ola KRYSTAD BMW M3 E30 1987 Group A2
+#
+#
+#
+#
+#
+#
+#
+#
+#
+#
+#
+#
+#
+#
+#
+#
+#
+#
+#
+#
+#
+#

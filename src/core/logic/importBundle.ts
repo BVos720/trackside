@@ -29,9 +29,11 @@
  * an object spread at the call site.
  */
 import { newEntityBase, nowUtc } from '../domain/common';
+import type { Entry } from '../domain/entry';
 import type { Event, PlanStop } from '../domain/event';
 import {
   newId,
+  type EntryId,
   type EventDayId,
   type EventId,
   type SessionId,
@@ -42,6 +44,24 @@ import type { Spot } from '../domain/spot';
 import type { EventBundle } from './eventBundle';
 
 export type ImportMode = 'restore' | 'copy';
+
+/**
+ * The bundle's entries, defaulted at the read boundary.
+ *
+ * `EventBundle.entries` is not optional in the type, but a file written before
+ * entry lists existed has no such key, and `planImport` is reachable with a
+ * bundle that did not come through `readEventBundle`'s defaulting. Reading
+ * `.map` off `undefined` there takes the whole import down on the one file
+ * most likely to be old — a backup from before the feature shipped, which is
+ * exactly when a restore matters.
+ *
+ * Defaulted here rather than at each use, for the reason `normaliseSpot` gives:
+ * a `?? []` at every call site has to be remembered at every new one, and is
+ * only ever noticed once it has already crashed.
+ */
+function entriesOf(bundle: EventBundle): readonly Entry[] {
+  return bundle.entries ?? [];
+}
 
 /**
  * What a restore of this bundle would run into locally.
@@ -69,6 +89,7 @@ export interface ImportPlan {
   readonly spots: readonly Spot[];
   readonly days: readonly EventDay[];
   readonly sessions: readonly Session[];
+  readonly entries: readonly Entry[];
   /**
    * Things the user should be told before committing.
    *
@@ -167,6 +188,14 @@ function planRestore(bundle: EventBundle, local: LocalState): ImportPlan {
       updatedAt: at,
       syncState: 'local' as const,
     })),
+    // Ticks included, and tombstones left as the file recorded them — the same
+    // rule as the spots above. Restoring the list without which cars were
+    // already photographed would hand back a count that has to be redone.
+    entries: entriesOf(bundle).map((e) => ({
+      ...e,
+      updatedAt: at,
+      syncState: 'local' as const,
+    })),
     warnings,
   };
 }
@@ -232,6 +261,14 @@ function planCopy(bundle: EventBundle): ImportPlan {
         `plan had no spot in the file and ${dropped.size === 1 ? 'was' : 'were'} dropped.`,
     );
   }
+  const ticked = entriesOf(bundle).filter((e) => e.photographed).length;
+  if (ticked > 0) {
+    warnings.push(
+      `${ticked} car${ticked === 1 ? '' : 's'} in the entry list ` +
+        `${ticked === 1 ? 'is' : 'are'} already marked as photographed.`,
+    );
+  }
+
   const lostStops = bundle.event.stops.length - stops.length;
   if (lostStops > 0) {
     warnings.push(
@@ -263,6 +300,26 @@ function planCopy(bundle: EventBundle): ImportPlan {
       ...s,
       id: sessionIds.get(s.id as string)!,
       eventDayId: dayIds.get(s.eventDayId as string) ?? ORPHAN_DAY_ID,
+      ...base,
+      deletedAt: null,
+    })),
+    /*
+     * Entries follow the event they were reminted for.
+     *
+     * `eventId` is rewritten like every other reference here; leaving the
+     * original would give the copy an entry list that belongs to the event it
+     * was copied from, and ticking a car in one would tick it in both.
+     *
+     * `photographed` is *carried*, not cleared. Copy mode is as often "keep
+     * both versions" of your own event as it is "open someone else's", and
+     * clearing would silently destroy a weekend's count in the first case to
+     * tidy up a cosmetic wrongness in the second. Carrying it and saying so is
+     * the trade this module makes everywhere else.
+     */
+    entries: entriesOf(bundle).map((e) => ({
+      ...e,
+      id: newId<EntryId>(),
+      eventId,
       ...base,
       deletedAt: null,
     })),
@@ -372,5 +429,13 @@ export function describeImport(plan: ImportPlan): string {
     `${plan.sessions.length} session${plan.sessions.length === 1 ? '' : 's'}`,
     `${plan.event.stops.length} planned stop${plan.event.stops.length === 1 ? '' : 's'}`,
   ];
+  // Only when there are some — but never silently: an import that writes forty
+  // entries the summary did not mention is the failure this module exists to
+  // prevent, and most events have none to mention.
+  if (plan.entries.length > 0) {
+    bits.push(
+      `${plan.entries.length} entr${plan.entries.length === 1 ? 'y' : 'ies'}`,
+    );
+  }
   return `${bits.join(', ')}.`;
 }
