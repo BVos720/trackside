@@ -15,12 +15,15 @@
 import { nowUtc, type Utc } from '../../core/domain/common';
 import type { Entry } from '../../core/domain/entry';
 import { setPhotographed as tick } from '../../core/domain/entry';
+import type { EquipmentItem } from '../../core/domain/equipment';
+import { setPacked as tickPacked } from '../../core/domain/equipment';
 import type { Media } from '../../core/domain/media';
 import type { Spot } from '../../core/domain/spot';
 import type { UserSpotNote } from '../../core/domain/userSpotNote';
 import {
   type CircuitId,
   type EntryId,
+  type EquipmentItemId,
   type EventDayId,
   type EventId,
   type MediaId,
@@ -33,6 +36,7 @@ import { newEntityBase } from '../../core/domain/common';
 import type { EventDay, Session } from '../../core/domain/planning';
 import type { Event, PlanStop } from '../../core/domain/event';
 import type { IEntryRepository } from '../../core/repositories/entryRepository';
+import type { IEquipmentRepository } from '../../core/repositories/equipmentRepository';
 import type { IEventRepository } from '../../core/repositories/eventRepository';
 import type {
   IEventDayRepository,
@@ -53,6 +57,7 @@ const DAYS_KEY = 'trackside.eventdays.v1';
 const SESSIONS_KEY = 'trackside.sessions.v1';
 const EVENTS_KEY = 'trackside.events.v1';
 const ENTRIES_KEY = 'trackside.entries.v1';
+const EQUIPMENT_KEY = 'trackside.equipment.v1';
 
 /** Read a whole collection. Missing or corrupt data yields an empty set. */
 async function readAll<T>(key: string): Promise<T[]> {
@@ -191,6 +196,18 @@ function normaliseEvent(row: Event & { dates?: string | null }): Event {
   };
 }
 
+/**
+ * Bring a stored media row up to the current shape.
+ *
+ * `tag` arrived after photos were already being taken, so a row written
+ * before it existed has no such key. Defaulted to null at the read boundary
+ * for the same reason `normaliseSpot` gives — everything downstream can trust
+ * the field is there rather than `?? null` scattered through the UI.
+ */
+function normaliseMedia(row: Media): Media {
+  return { ...row, tag: row.tag ?? null };
+}
+
 class SpotRepository implements ISpotRepository {
   async listByCircuit(circuitId: CircuitId): Promise<Spot[]> {
     const rows = (await readAll<Spot>(SPOTS_KEY)).map(normaliseSpot);
@@ -247,7 +264,7 @@ class SpotRepository implements ISpotRepository {
 
 class MediaRepository implements IMediaRepository {
   async listBySpot(spotId: SpotId): Promise<Media[]> {
-    const rows = await readAll<Media>(MEDIA_KEY);
+    const rows = (await readAll<Media>(MEDIA_KEY)).map(normaliseMedia);
     return live(rows)
       .filter((m) => m.spotId === spotId)
       .sort((a, b) => a.sortOrder - b.sortOrder);
@@ -255,7 +272,8 @@ class MediaRepository implements IMediaRepository {
 
   async get(id: MediaId): Promise<Media | null> {
     const rows = await readAll<Media>(MEDIA_KEY);
-    return rows.find((m) => m.id === id) ?? null;
+    const row = rows.find((m) => m.id === id);
+    return row ? normaliseMedia(row) : null;
   }
 
   async save(media: Media): Promise<void> {
@@ -441,6 +459,51 @@ class EntryRepository implements IEntryRepository {
   }
 }
 
+class EquipmentRepository implements IEquipmentRepository {
+  async listByEvent(eventId: EventId): Promise<EquipmentItem[]> {
+    const rows = await readAll<EquipmentItem>(EQUIPMENT_KEY);
+    // Insertion order — see the note on IEntryRepository.listByEvent, which
+    // this mirrors. Grouped for display by category, then by this order.
+    return live(rows).filter((i) => i.eventId === eventId);
+  }
+
+  async get(id: EquipmentItemId): Promise<EquipmentItem | null> {
+    const rows = await readAll<EquipmentItem>(EQUIPMENT_KEY);
+    return rows.find((i) => i.id === id) ?? null;
+  }
+
+  async save(item: EquipmentItem): Promise<void> {
+    await update<EquipmentItem>(EQUIPMENT_KEY, (rows) => upsert(rows, item));
+  }
+
+  async saveMany(items: readonly EquipmentItem[]): Promise<void> {
+    if (items.length === 0) return;
+    await update<EquipmentItem>(EQUIPMENT_KEY, (rows) =>
+      items.reduce((acc, item) => upsert(acc, item), rows),
+    );
+  }
+
+  async setPacked(
+    id: EquipmentItemId,
+    packed: boolean,
+    at: string = nowUtc(),
+  ): Promise<void> {
+    // Read and write inside one queued mutation — see the note on
+    // EntryRepository.setPhotographed, which this mirrors exactly.
+    await update<EquipmentItem>(EQUIPMENT_KEY, (rows) =>
+      rows.map((i) => (i.id === id ? tickPacked(i, packed, at as Utc) : i)),
+    );
+  }
+
+  async softDelete(id: EquipmentItemId, at: string = nowUtc()): Promise<void> {
+    await update<EquipmentItem>(EQUIPMENT_KEY, (rows) =>
+      rows.map((i) =>
+        i.id === id ? { ...i, deletedAt: at as Utc, updatedAt: at as Utc } : i,
+      ),
+    );
+  }
+}
+
 class EventRepository implements IEventRepository {
   async listByCircuit(circuitId: CircuitId): Promise<Event[]> {
     const rows = (await readAll<Event>(EVENTS_KEY)).map(normaliseEvent);
@@ -547,6 +610,19 @@ class EventRepository implements IEventRepository {
           : e,
       ),
     );
+
+    /*
+     * The equipment checklist goes too, for the same reason the entry list
+     * does: it has no meaning outside its event — `EquipmentItem.eventId` has
+     * no null case, same as `Entry.eventId` — so there is nothing to spare.
+     */
+    await update<EquipmentItem>(EQUIPMENT_KEY, (rows) =>
+      rows.map((i) =>
+        i.eventId === id && i.deletedAt === null
+          ? { ...i, deletedAt: at as Utc, updatedAt: at as Utc }
+          : i,
+      ),
+    );
   }
 
   async setSpotIncluded(
@@ -625,6 +701,7 @@ class EventRepository implements IEventRepository {
 
 export const events: IEventRepository = new EventRepository();
 export const entries: IEntryRepository = new EntryRepository();
+export const equipment: IEquipmentRepository = new EquipmentRepository();
 export const eventDays: IEventDayRepository = new EventDayRepository();
 export const sessions: ISessionRepository = new SessionRepository();
 

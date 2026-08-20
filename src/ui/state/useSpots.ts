@@ -226,6 +226,15 @@ export function useSpots(circuitId: CircuitId) {
       file: Blob,
       referenceKind: ReferenceKind | null,
       isKeyImage = false,
+      /**
+       * The active event's `Event.tag`, or null with none active.
+       *
+       * Copied onto the row at capture time rather than resolved later from
+       * `spotId` — see the note on `Media.tag`. The photo then stays
+       * findable by "which weekend" independent of the event being hidden as
+       * finished or tombstoned afterwards.
+       */
+      tag: string | null = null,
     ) => {
       const key = await mediaStore.put(file, file.type || 'image/jpeg');
       const existing = await repositories.media.listBySpot(spotId);
@@ -246,6 +255,7 @@ export function useSpots(circuitId: CircuitId) {
         id: newId<MediaId>(),
         ownerId: LOCAL_USER_ID,
         spotId,
+        tag,
         type: MediaType.Photo,
         source: MediaSource.Uploaded,
         storageKey: key,

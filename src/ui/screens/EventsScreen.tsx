@@ -39,6 +39,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { Event } from '../../core/domain/event';
 import type { CircuitId, EventId } from '../../core/domain/ids';
 import type { ImportConflict, ImportMode } from '../../core/logic/importBundle';
+import { partitionEventsByFinished } from '../../core/logic/eventLifecycle';
 import Collapsible from '../Collapsible';
 import DateRangePicker, { formatDateRange } from '../DateRangePicker';
 import { MENU_CLEARANCE, color, radius, space, type, weight } from '../theme';
@@ -143,6 +144,19 @@ export default function EventsScreen({
   const [startDate, setStartDate] = useState<string | null>(null);
   const [endDate, setEndDate] = useState<string | null>(null);
   const [forCircuit, setForCircuit] = useState<CircuitId>(circuitId);
+  /**
+   * Finished events start hidden — a weekend that is over is clutter on the
+   * list you actually use to plan the next one. Derived rather than filtered
+   * server-side (see core/logic/eventLifecycle.ts), so flipping this never
+   * touches a row.
+   */
+  const [showFinished, setShowFinished] = useState(false);
+
+  const { active: activeEvents, finished: finishedEvents } = useMemo(
+    () => partitionEventsByFinished(events),
+    [events],
+  );
+  const visibleEventList = showFinished ? events : activeEvents;
 
   const labelFor = useMemo(() => {
     const m = new Map<string, string>();
@@ -153,7 +167,7 @@ export default function EventsScreen({
   /** Events grouped by circuit, the circuit on screen first. */
   const grouped = useMemo(() => {
     const byCircuit = new Map<string, Event[]>();
-    for (const e of events) {
+    for (const e of visibleEventList) {
       const bucket = byCircuit.get(e.circuitId);
       if (bucket) bucket.push(e);
       else byCircuit.set(e.circuitId, [e]);
@@ -163,7 +177,7 @@ export default function EventsScreen({
       if (b === circuitId) return 1;
       return labelFor(a as CircuitId).localeCompare(labelFor(b as CircuitId));
     });
-  }, [events, circuitId, labelFor]);
+  }, [visibleEventList, circuitId, labelFor]);
 
   const seedCount = spotCountFor(forCircuit);
 
@@ -203,6 +217,19 @@ export default function EventsScreen({
         </View>
         {activeId === null && <Text style={styles.tick}>✓</Text>}
       </Pressable>
+
+      {finishedEvents.length > 0 && (
+        <Pressable
+          onPress={() => setShowFinished((v) => !v)}
+          style={({ pressed }) => [styles.finishedToggle, pressed && styles.pressed]}
+        >
+          <Text style={styles.finishedToggleLabel}>
+            {showFinished
+              ? 'Hide finished'
+              : `Show finished (${finishedEvents.length})`}
+          </Text>
+        </Pressable>
+      )}
 
       {grouped.map(([cid, list]) => (
         <View key={cid}>
@@ -482,6 +509,20 @@ const styles = StyleSheet.create({
     fontWeight: weight.bold,
     letterSpacing: 1.5,
     marginTop: space.lg,
+  },
+  finishedToggle: {
+    alignSelf: 'flex-start',
+    height: 36,
+    paddingHorizontal: space.md,
+    justifyContent: 'center',
+    borderRadius: radius.md,
+    backgroundColor: color.surfaceRaised,
+    marginBottom: space.sm,
+  },
+  finishedToggleLabel: {
+    color: color.textMuted,
+    fontSize: type.label,
+    fontWeight: weight.bold,
   },
   groupHeading: {
     color: color.textFaint,

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { newEntry } from '../domain/entry';
+import { newEquipmentItem } from '../domain/equipment';
 import { newEvent, newPlanStop } from '../domain/event';
 import {
   asId,
@@ -228,6 +229,75 @@ describe('entries in a bundle', () => {
       entries: [anEntry(event.id, '7')],
     });
     expect(describeBundle(withList)).toBe('1 spot · 0 sessions · 0 planned · 1 entry');
+
+    const without = buildEventBundle({
+      event,
+      spots: [aSpot('a')],
+      sessions: [],
+      days: [],
+    });
+    expect(describeBundle(without)).toBe('1 spot · 0 sessions · 0 planned');
+  });
+});
+
+describe('equipment in a bundle', () => {
+  it('carries the checklist and its packed state through JSON', () => {
+    const event = anEvent();
+    const bundle = buildEventBundle({
+      event,
+      spots: [],
+      sessions: [],
+      days: [],
+      equipment: [
+        newEquipmentItem({ eventId: event.id, name: 'R5 body', packed: true }),
+        newEquipmentItem({ eventId: event.id, name: '24-70 f/2.8' }),
+      ],
+    });
+
+    const back = readEventBundle(JSON.stringify(bundle)).bundle!;
+    expect(back.equipment).toHaveLength(2);
+    expect(back.equipment[0]!.name).toBe('R5 body');
+    expect(back.equipment[0]!.packed).toBe(true);
+    expect(back.equipment[1]!.packed).toBe(false);
+  });
+
+  it('defaults to none for an event with no checklist yet', () => {
+    const bundle = buildEventBundle({
+      event: anEvent(),
+      spots: [],
+      sessions: [],
+      days: [],
+    });
+    expect(bundle.equipment).toEqual([]);
+  });
+
+  it('opens a file written before the checklist existed', () => {
+    const bundle = buildEventBundle({
+      event: anEvent(),
+      spots: [],
+      sessions: [],
+      days: [],
+    });
+    const old = JSON.parse(JSON.stringify(bundle)) as Record<string, unknown>;
+    delete old.equipment;
+
+    const back = readEventBundle(JSON.stringify(old));
+    expect(back.error).toBeNull();
+    expect(back.bundle!.equipment).toEqual([]);
+  });
+
+  it('names it in the summary only when there is a checklist', () => {
+    const event = anEvent();
+    const withList = buildEventBundle({
+      event,
+      spots: [aSpot('a')],
+      sessions: [],
+      days: [],
+      equipment: [newEquipmentItem({ eventId: event.id, name: 'R5 body' })],
+    });
+    expect(describeBundle(withList)).toBe(
+      '1 spot · 0 sessions · 0 planned · 1 equipment item',
+    );
 
     const without = buildEventBundle({
       event,

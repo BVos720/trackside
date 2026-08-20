@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { nowUtc } from '../domain/common';
 import { newEntry, type Entry } from '../domain/entry';
+import { newEquipmentItem, type EquipmentItem } from '../domain/equipment';
 import { newEvent, newPlanStop, type Event } from '../domain/event';
 import {
   asId,
@@ -464,6 +465,127 @@ describe('entries', () => {
     const { bundle } = withEntries();
     expect(describeImport(planImport(bundle, EMPTY, 'copy'))).toBe(
       '2 spots, 1 session, 2 planned stops, 2 entries.',
+    );
+    expect(describeImport(planImport(aBundle().bundle, EMPTY, 'copy'))).toBe(
+      '2 spots, 1 session, 2 planned stops.',
+    );
+  });
+});
+
+/**
+ * The equipment checklist through an import — the same reference-rewriting
+ * problem as entries just above, and handled identically for the same
+ * reason: an item belongs to exactly one event.
+ */
+describe('equipment', () => {
+  const anItem = (eventId: EventId, name: string, packed = false): EquipmentItem => ({
+    ...newEquipmentItem({ eventId, name }),
+    packed,
+    packedAt: packed ? nowUtc() : null,
+  });
+
+  function withEquipment(packed = false) {
+    const { bundle, event } = aBundle();
+    return {
+      event,
+      bundle: {
+        ...bundle,
+        equipment: [
+          anItem(event.id, 'R5 body', packed),
+          anItem(event.id, '24-70 f/2.8'),
+        ],
+      } satisfies EventBundle,
+    };
+  }
+
+  it('restores them as themselves', () => {
+    const { bundle } = withEquipment();
+    const plan = planImport(bundle, EMPTY, 'restore');
+
+    expect(plan.equipment.map((i) => i.id)).toEqual(
+      bundle.equipment.map((i) => i.id),
+    );
+    expect(plan.equipment.map((i) => i.eventId)).toEqual([
+      bundle.event.id,
+      bundle.event.id,
+    ]);
+  });
+
+  it('restores the packed state, which is most of the point of a backup', () => {
+    const { bundle } = withEquipment(true);
+    const plan = planImport(bundle, EMPTY, 'restore');
+
+    expect(plan.equipment.find((i) => i.name === 'R5 body')!.packed).toBe(true);
+  });
+
+  it('remints every id on a copy', () => {
+    const { bundle } = withEquipment();
+    const plan = planImport(bundle, EMPTY, 'copy');
+    const old = new Set(bundle.equipment.map((i) => i.id as string));
+
+    expect(plan.equipment).toHaveLength(2);
+    for (const item of plan.equipment) {
+      expect(old.has(item.id as string)).toBe(false);
+    }
+  });
+
+  it('points a copy at its own event, not the one it came from', () => {
+    const { bundle } = withEquipment();
+    const plan = planImport(bundle, EMPTY, 'copy');
+
+    expect(plan.event.id).not.toBe(bundle.event.id);
+    for (const item of plan.equipment) {
+      expect(item.eventId).toBe(plan.event.id);
+    }
+  });
+
+  it('carries the packed state on a copy and says so', () => {
+    const { bundle } = withEquipment(true);
+    const plan = planImport(bundle, EMPTY, 'copy');
+
+    expect(plan.equipment.find((i) => i.name === 'R5 body')!.packed).toBe(true);
+    expect(plan.warnings.join(' ')).toMatch(/already marked as packed/i);
+  });
+
+  it('does not warn about packed items when there are none', () => {
+    const { bundle } = withEquipment(false);
+    expect(planImport(bundle, EMPTY, 'copy').warnings).toEqual([]);
+  });
+
+  it('carries no tombstone onto a copy', () => {
+    const { bundle, event } = withEquipment();
+    const deleted: EventBundle = {
+      ...bundle,
+      equipment: [{ ...anItem(event.id, 'spare cards'), deletedAt: nowUtc() }],
+    };
+
+    expect(planImport(deleted, EMPTY, 'copy').equipment[0]!.deletedAt).toBeNull();
+  });
+
+  it('keeps a tombstone on a restore', () => {
+    const { bundle, event } = withEquipment();
+    const deleted: EventBundle = {
+      ...bundle,
+      equipment: [{ ...anItem(event.id, 'spare cards'), deletedAt: nowUtc() }],
+    };
+
+    expect(
+      planImport(deleted, EMPTY, 'restore').equipment[0]!.deletedAt,
+    ).not.toBeNull();
+  });
+
+  it('opens a bundle written before the checklist existed', () => {
+    const { bundle } = aBundle();
+    const { equipment: _absent, ...old } = bundle;
+
+    const plan = planImport(old as EventBundle, EMPTY, 'copy');
+    expect(plan.equipment).toEqual([]);
+  });
+
+  it('names it in the summary, and only when there is some', () => {
+    const { bundle } = withEquipment();
+    expect(describeImport(planImport(bundle, EMPTY, 'copy'))).toBe(
+      '2 spots, 1 session, 2 planned stops, 2 equipment items.',
     );
     expect(describeImport(planImport(aBundle().bundle, EMPTY, 'copy'))).toBe(
       '2 spots, 1 session, 2 planned stops.',
