@@ -65,6 +65,7 @@ import { useSessions } from './src/ui/state/useSessions';
 import { snapBesideTrack } from './src/core/logic/track';
 import { useSpots, type SpotDraft } from './src/ui/state/useSpots';
 import { mediaStore } from './src/storage-local/mediaStore';
+import { pickImage } from './src/storage-local/pickImage';
 import {
   asId,
   type CircuitId,
@@ -375,7 +376,12 @@ function AppShell() {
    * and written once the spot is created.
    */
   const [pendingPhotos, setPendingPhotos] = useState<
-    { file: Blob; kind: ReferenceKind | null; isKey: boolean }[]
+    {
+      file: Blob;
+      kind: ReferenceKind | null;
+      isKey: boolean;
+      previewUri: string | null;
+    }[]
   >([]);
   const [mediaUris, setMediaUris] = useState<Record<string, string>>({});
 
@@ -652,31 +658,27 @@ function AppShell() {
   };
 
   /**
-   * Photo picking, web only for now.
+   * Photo picking.
    *
-   * On device this becomes expo-image-picker plus the §5.1 EXIF path: read
-   * coordinates to help place the pin, keep the original local-only, strip all
-   * metadata before anything leaves the device.
+   * `pickImage()` is the platform picker behind a single shape (native and web
+   * both return `{ blob, contentType, previewUri }`), so this stays ignorant of
+   * where the bytes come from. The 1600px/quality-0.7 downscale for on-device
+   * storage lives in pickImage.ts, not here.
    */
   const onPickPhoto = useCallback(
-    (kind: ReferenceKind | null, isKey: boolean) => {
-      const doc = (globalThis as { document?: Document }).document;
-      if (!doc) return;
+    async (kind: ReferenceKind | null, isKey: boolean) => {
+      const picked = await pickImage();
+      if (!picked) return; // User backed out, or permission was refused.
 
-      const input = doc.createElement('input');
-      input.type = 'file';
-      input.accept = 'image/*';
-      input.onchange = () => {
-        const file = input.files?.[0];
-        if (!file) return;
-        if (activeId) {
-          void addPhoto(activeId, file, kind, isKey);
-        } else {
-          // Creating: hold it until the spot has an id.
-          setPendingPhotos((p) => [...p, { file, kind, isKey }]);
-        }
-      };
-      input.click();
+      if (activeId) {
+        void addPhoto(activeId, picked.blob, kind, isKey);
+      } else {
+        // Creating: hold it until the spot has an id.
+        setPendingPhotos((p) => [
+          ...p,
+          { file: picked.blob, kind, isKey, previewUri: picked.previewUri },
+        ]);
+      }
     },
     [activeId, addPhoto],
   );
@@ -853,6 +855,7 @@ function AppShell() {
                 draftPosition={sheet.kind === 'creating' ? sheet.at : null}
                 media={activeMedia}
                 mediaUris={mediaUris}
+                pendingPhotos={sheet.kind === 'creating' ? pendingPhotos : []}
                 onSave={onSave}
                 onCancel={() =>
                   // Cancelling an edit returns to the overview it came from,
