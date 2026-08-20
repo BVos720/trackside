@@ -1,4 +1,15 @@
 /**
+ * KEEP (as of Job 0, tree-tidy pass, 21 Aug 2026): TASKS-map-sky.md's "State
+ * on disk" section claims App.tsx and MainMenu.tsx no longer reference
+ * LightScreen/the "Light" menu entry — that is not true on this tree.
+ * App.tsx still imports and renders <LightScreen /> (see its `import
+ * LightScreen from './src/ui/screens/LightScreen'`), and MainMenu.tsx still
+ * lists a `{ key: 'light', ... }` destination. Removing those references is
+ * part of objective A's wiring work (map-sky), not Job 0's tree-tidy scope,
+ * so this file stays until that wiring actually happens. Do not delete it
+ * without first removing the App.tsx import/render and the MainMenu.tsx
+ * entry, and confirming nothing else references it.
+ *
  * Light at a spot — the §5.2 differentiator, made visible.
  *
  * Generic sun tools draw a compass overlay and leave the photographer to work
