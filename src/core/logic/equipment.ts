@@ -16,6 +16,9 @@ import { fromUtc, nowUtc, type Utc } from '../domain/common';
 import { newId, type EventId } from '../domain/ids';
 import { parseIsoDate, type Event } from '../domain/event';
 import {
+  EquipmentCategory,
+  EQUIPMENT_CATEGORIES,
+  EQUIPMENT_CATEGORY_LABELS,
   newEquipmentItem,
   packedCount,
   setPacked,
@@ -23,28 +26,22 @@ import {
 } from '../domain/equipment';
 import type { EquipmentItemId } from '../domain/ids';
 
-export { packedCount, setPacked, type EquipmentItem };
-
-/**
- * A starting vocabulary for the category field, not a closed set — see the
- * note on `EquipmentItem.category` in `../domain/equipment.ts`. Offered by
- * the UI as quick-add suggestions (e.g. when there is no previous event to
- * seed from and the list starts genuinely empty); typing anything else is
- * just as valid.
- */
-export const SUGGESTED_EQUIPMENT_CATEGORIES: readonly string[] = [
-  'Bodies',
-  'Lenses',
-  'Batteries',
-  'Cards',
-  'Wet gear',
-  'Ear protection',
-];
+// Re-exported so a caller — the add-item dropdown, in particular — only
+// needs to import this one module for the whole equipment surface: the
+// category values and their labels, the tick/summary helpers, and the type.
+export {
+  EquipmentCategory,
+  EQUIPMENT_CATEGORIES,
+  EQUIPMENT_CATEGORY_LABELS,
+  packedCount,
+  setPacked,
+  type EquipmentItem,
+};
 
 /** One line to add when building a checklist from scratch. */
 export interface NewChecklistItemInput {
   readonly name: string;
-  readonly category?: string | null;
+  readonly category?: EquipmentCategory | null;
 }
 
 /**

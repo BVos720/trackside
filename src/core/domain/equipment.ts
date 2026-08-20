@@ -25,24 +25,53 @@
  * list for one weekend's bag, seeded from the last one so it never starts
  * blank.
  *
- * ── Category is free text, not a fixed enum ─────────────────────────────────
- * "Bodies, lenses, batteries, cards, wet gear, ear protection" is the
- * starting set, but it is not closed the way `ReferenceKind` on `Media` is —
- * that enum is closed because there are exactly three things a reference
- * photo is for and adding a fourth is a rare, deliberate decision. A kit list
- * is the opposite: one photographer packs a drone and ND filters, another
- * packs rain covers and a monopod, and a rigid category enum would mean
- * either rejecting what does not fit or growing a migration every time
- * someone's kit does not match the six categories guessed up front. `Spot.uses`
- * is the closer precedent it should not follow, either — that is a small,
- * closed, safety-adjacent set. `Spot.tags` and `Spot.keyTimes` are the actual
- * precedent: free text, with a suggested vocabulary offered by the UI rather
- * than enforced by the type. `SUGGESTED_EQUIPMENT_CATEGORIES` in
- * `../logic/equipment.ts` is that suggestion list, not a validator.
+ * ── Category is a closed set, not free text ─────────────────────────────────
+ * `EquipmentCategory` below is a fixed union: "Bodies, lenses, batteries,
+ * cards, wet gear, ear protection" from the brief, with room to grow. An
+ * earlier version of this file argued the opposite — free text on the
+ * `Spot.tags` precedent, deliberately *not* following `ReferenceKind` on
+ * `Media` — but that reasoning lost to a concrete requirement: adding an item
+ * happens through a dropdown, and a dropdown has to be populated from a
+ * closed, known set of options, not validate arbitrary typed text after the
+ * fact. If a photographer's kit genuinely needs a category these six do not
+ * cover (a drone, ND filters), the right fix is adding a value to the union —
+ * a deliberate, reviewed change, the same way `ReferenceKind` grows — not
+ * reopening this to a string a picker cannot enumerate.
  */
 import type { EntityBase, Utc } from './common';
 import { newEntityBase, nowUtc } from './common';
 import { type EquipmentItemId, type EventId, newId } from './ids';
+
+export const EquipmentCategory = {
+  Body: 'body',
+  Lens: 'lens',
+  Battery: 'battery',
+  Card: 'card',
+  WetGear: 'wet-gear',
+  EarProtection: 'ear-protection',
+} as const;
+export type EquipmentCategory =
+  (typeof EquipmentCategory)[keyof typeof EquipmentCategory];
+
+/** Every category, in the order an add-item dropdown should list them. */
+export const EQUIPMENT_CATEGORIES: readonly EquipmentCategory[] = [
+  EquipmentCategory.Body,
+  EquipmentCategory.Lens,
+  EquipmentCategory.Battery,
+  EquipmentCategory.Card,
+  EquipmentCategory.WetGear,
+  EquipmentCategory.EarProtection,
+];
+
+/** What the dropdown displays for a category value — not what it stores. */
+export const EQUIPMENT_CATEGORY_LABELS: Record<EquipmentCategory, string> = {
+  [EquipmentCategory.Body]: 'Bodies',
+  [EquipmentCategory.Lens]: 'Lenses',
+  [EquipmentCategory.Battery]: 'Batteries',
+  [EquipmentCategory.Card]: 'Cards',
+  [EquipmentCategory.WetGear]: 'Wet gear',
+  [EquipmentCategory.EarProtection]: 'Ear protection',
+};
 
 export interface EquipmentItem extends EntityBase {
   readonly id: EquipmentItemId;
@@ -50,13 +79,12 @@ export interface EquipmentItem extends EntityBase {
   /** "R5 body", "24-70 f/2.8", "spare batteries (x4)" — as typed. */
   readonly name: string;
   /**
-   * "Bodies", "Lenses", "Batteries", "Cards", "Wet gear", "Ear protection" —
-   * or whatever a photographer's own kit actually breaks into. Free text, not
-   * a fixed enum; see the note at the top of this file. Null when the item
-   * has not been sorted into a group, which groups it under a single
-   * "Uncategorised" bucket in the UI rather than losing it.
+   * One of `EquipmentCategory`, or null when the item has not been sorted
+   * into a group — grouped under a single "Uncategorised" bucket in the UI
+   * rather than losing it. See the note at the top of this file for why this
+   * is a closed set rather than free text.
    */
-  readonly category: string | null;
+  readonly category: EquipmentCategory | null;
   /** Ticked into the bag. The whole reason this entity exists. */
   readonly packed: boolean;
   /**
@@ -75,7 +103,7 @@ export interface EquipmentItem extends EntityBase {
 export function newEquipmentItem(input: {
   eventId: EventId;
   name: string;
-  category?: string | null;
+  category?: EquipmentCategory | null;
   packed?: boolean;
   sortOrder?: number;
   at?: Utc;

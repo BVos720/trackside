@@ -3,9 +3,15 @@ import { describe, expect, it } from 'vitest';
 import { asUtc } from '../domain/common';
 import { asId, newId, type EventId } from '../domain/ids';
 import { newEvent, type Event } from '../domain/event';
-import { newEquipmentItem, setPacked, type EquipmentItem } from '../domain/equipment';
 import {
-  SUGGESTED_EQUIPMENT_CATEGORIES,
+  EquipmentCategory,
+  newEquipmentItem,
+  setPacked,
+  type EquipmentItem,
+} from '../domain/equipment';
+import {
+  EQUIPMENT_CATEGORIES,
+  EQUIPMENT_CATEGORY_LABELS,
   buildChecklistForNewEvent,
   checklistForEvent,
   mostRecentPreviousEvent,
@@ -42,9 +48,9 @@ describe('newChecklist', () => {
   it('builds items in the given order, stamping sortOrder', () => {
     const eventId = newId<EventId>();
     const items = newChecklist(eventId, [
-      { name: 'R5 body', category: 'Bodies' },
-      { name: '24-70 f/2.8', category: 'Lenses' },
-      { name: 'Ear defenders', category: 'Ear protection' },
+      { name: 'R5 body', category: EquipmentCategory.Body },
+      { name: '24-70 f/2.8', category: EquipmentCategory.Lens },
+      { name: 'Ear defenders', category: EquipmentCategory.EarProtection },
     ]);
 
     expect(items.map((i) => i.name)).toEqual(['R5 body', '24-70 f/2.8', 'Ear defenders']);
@@ -136,14 +142,14 @@ describe('seedChecklistFromPrevious', () => {
 
   it('carries names and categories over', () => {
     const previous = [
-      anItem(previousEventId, 'R5 body', { category: 'Bodies', packed: true }),
-      anItem(previousEventId, '24-70 f/2.8', { category: 'Lenses', packed: true }),
+      anItem(previousEventId, 'R5 body', { category: EquipmentCategory.Body, packed: true }),
+      anItem(previousEventId, '24-70 f/2.8', { category: EquipmentCategory.Lens, packed: true }),
     ];
     const seeded = seedChecklistFromPrevious(previous, newEventId);
 
     expect(seeded.map((i) => [i.name, i.category])).toEqual([
-      ['R5 body', 'Bodies'],
-      ['24-70 f/2.8', 'Lenses'],
+      ['R5 body', EquipmentCategory.Body],
+      ['24-70 f/2.8', EquipmentCategory.Lens],
     ]);
   });
 
@@ -196,11 +202,13 @@ describe('buildChecklistForNewEvent', () => {
   it('seeds from the most recent previous event when one exists', () => {
     const previousEvent = anEvent('NLS6', { startDate: '2026-07-01' });
     const targetEvent = anEvent('NLS7', { startDate: '2026-08-20' });
-    const items = [anItem(previousEvent.id, 'R5 body', { category: 'Bodies', packed: true })];
+    const items = [anItem(previousEvent.id, 'R5 body', { category: EquipmentCategory.Body, packed: true })];
 
     const built = buildChecklistForNewEvent([previousEvent], items, targetEvent, targetEvent.id);
 
-    expect(built.map((i) => [i.name, i.category, i.packed])).toEqual([['R5 body', 'Bodies', false]]);
+    expect(built.map((i) => [i.name, i.category, i.packed])).toEqual([
+      ['R5 body', EquipmentCategory.Body, false],
+    ]);
     expect(built.every((i) => i.eventId === targetEvent.id)).toBe(true);
   });
 
@@ -244,10 +252,22 @@ describe('packing state and summary (re-exported from the domain)', () => {
   });
 });
 
-describe('SUGGESTED_EQUIPMENT_CATEGORIES', () => {
-  it('covers the weekend-kit categories the feature was built around', () => {
-    expect(SUGGESTED_EQUIPMENT_CATEGORIES).toEqual(
-      expect.arrayContaining(['Bodies', 'Lenses', 'Batteries', 'Cards', 'Wet gear', 'Ear protection']),
-    );
+describe('EQUIPMENT_CATEGORIES / EQUIPMENT_CATEGORY_LABELS', () => {
+  it('covers exactly the six weekend-kit categories the feature was built around', () => {
+    expect(EQUIPMENT_CATEGORIES).toEqual([
+      EquipmentCategory.Body,
+      EquipmentCategory.Lens,
+      EquipmentCategory.Battery,
+      EquipmentCategory.Card,
+      EquipmentCategory.WetGear,
+      EquipmentCategory.EarProtection,
+    ]);
+  });
+
+  it('has a display label for every category, and only for categories', () => {
+    for (const category of EQUIPMENT_CATEGORIES) {
+      expect(typeof EQUIPMENT_CATEGORY_LABELS[category]).toBe('string');
+    }
+    expect(Object.keys(EQUIPMENT_CATEGORY_LABELS)).toHaveLength(EQUIPMENT_CATEGORIES.length);
   });
 });
