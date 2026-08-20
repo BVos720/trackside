@@ -384,7 +384,7 @@ function keepMainCluster(features, gapMetres = CORRIDOR_METRES * 2) {
  * Nordschleife's long fast curves — Schwedenkreuz, Kesselchen — sit between,
  * which is why the threshold is on turn rate rather than total angle.
  */
-function cornerSegments(features) {
+export function cornerSegments(features) {
   /**
    * Degrees of heading change per metre above which a vertex counts as corner.
    *
@@ -424,15 +424,23 @@ function cornerSegments(features) {
    * along its normal. Where the offset distance exceeds the local radius the
    * offset geometry folds through itself and renders as a tangle of loops
    * spilling outside the track — visible at the Karussell and in the Hatzenbach
-   * esses, both of which are far tighter than the ~19m the offset reaches at
-   * z16.
+   * esses, both of which are far tighter than this.
    *
    * Dropping them is the honest option: a hairpin genuinely is kerbed, but a
    * folded ribbon of red and white sprawling across the map is worse than
    * nothing, and offsetting tight polylines correctly needs proper mitred
    * geometry generated at build time rather than a paint property.
+   *
+   * ── Why 40, not the offset's own reach ─────────────────────────────────────
+   * `kerbOffset` in ui/map/style.ts reaches 29m at z18, the closest zoom the app
+   * allows (VENUE_VIEW maxZoom). A radius floor equal to that reach is not
+   * enough — the fold happens exactly *at* offset == radius, and anything close
+   * to it still renders as a pinched, near-degenerate ribbon rather than a clean
+   * one. 40m keeps offset/radius at 29/40 ≈ 0.73, comfortably inside the safe
+   * side of that ratio, while only dropping the tightest 10–20% of corners per
+   * venue. Re-check this margin if `kerbOffset`'s stops ever change.
    */
-  const MIN_CORNER_RADIUS_M = 28;
+  const MIN_CORNER_RADIUS_M = 40;
   /** Ways shorter than this are connectors and slip roads, not racing line. */
   const MIN_WAY_METRES = 60;
 
