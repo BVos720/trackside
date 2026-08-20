@@ -633,20 +633,25 @@ export function buildMapStyle(
   };
 
   /**
-   * Kerbing is generated but not drawn.
+   * Kerbing is drawn from zoom 14 up — spec §5.14, corner-level detail for
+   * walking a circuit, not lap-overview scale.
    *
-   * `npm run circuits` still emits the corner segments and the layer builders
-   * above still work — the layers are simply not added to the style. Two things
-   * were unresolved when it was switched off: `line-offset` folds through
-   * itself on corners tighter than the offset distance (rejected below 28m
-   * radius, which silently drops hairpins), and the offset is a paint property
-   * in screen pixels rather than real geometry, so it drifts against the
-   * asphalt across zooms.
-   *
-   * Doing it properly means generating mitred offset polygons at build time.
-   * Flip `SHOW_KERBS` to true once that exists.
+   * The original concern was `line-offset` folding through itself on corners
+   * tighter than the offset distance: at z18 (the closest zoom any venue
+   * allows) `kerbOffset` reaches 29m, and a corner near that radius offsets
+   * into a tangle of loops spilling outside the track. `cornerSegments` in
+   * scripts/extract-circuits.mjs now drops any corner under 40m of radius —
+   * comfortable margin over the 29m worst case, not just clearance — which
+   * removes the tightest 10-20% of corners per venue (the Karussell,
+   * Hatzenbach) rather than rendering them broken. The offset is still a paint
+   * property in screen pixels rather than real geometry, so it will drift
+   * against the asphalt at zooms far from where `kerbOffset`'s stops were
+   * tuned; doing that properly means mitred offset polygons generated at build
+   * time. Re-run `npm run circuits` after changing `kerbOffset` or
+   * `MIN_CORNER_RADIUS_M` so the two stay matched — see the margin comment on
+   * the latter.
    */
-  const SHOW_KERBS = false;
+  const SHOW_KERBS = true;
   const kerbLayers = SHOW_KERBS
     ? [...kerbSide('left'), ...kerbSide('right')]
     : [];
