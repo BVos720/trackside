@@ -108,13 +108,35 @@ export type ForecastDisplay =
       readonly fetchedAt: string;
       readonly ageMinutes: number;
       readonly hourly: readonly HourlyForecastPoint[];
+      readonly allHourly: readonly HourlyForecastPoint[];
+      readonly eventDays: readonly string[];
     }
   /** Usable and recent. */
   | {
       readonly state: 'fresh';
       readonly fetchedAt: string;
       readonly ageMinutes: number;
+      /**
+       * The hours falling on the event's own days.
+       *
+       * This is what decides the state — a cache that does not reach the event
+       * at all is `no-data-yet` — and it is what "the weekend" means when the
+       * panel summarises one.
+       */
       readonly hourly: readonly HourlyForecastPoint[];
+      /**
+       * Every hour the cache holds, event days and the rest alike.
+       *
+       * Kept beside `hourly` rather than replacing it because the two answer
+       * different questions. The panel pages through the whole forecast — a
+       * weekend is decided in the days before it, and "is the front arriving
+       * Thursday or Saturday" cannot be read off the event days alone — while
+       * anything that speaks *about the event* keeps using `hourly` and so
+       * cannot accidentally average a Tuesday into it.
+       */
+      readonly allHourly: readonly HourlyForecastPoint[];
+      /** Which of those days are the event's, local `YYYY-MM-DD`, so the panel can mark them. */
+      readonly eventDays: readonly string[];
     };
 
 /** Calendar-day difference between two local-midnight `Date`s, rounded. */
@@ -212,10 +234,213 @@ export function resolveForecastDisplay(input: {
     Math.round((now.getTime() - fetchedAtMs) / 60_000),
   );
 
+  // The event's days, in the order the forecast runs, and only the ones it
+  // actually covers — an event day past the horizon has no tab to offer.
+  const eventDays: string[] = [];
+  for (const point of relevant) {
+    const day = point.time.slice(0, 10);
+    if (eventDays[eventDays.length - 1] !== day) eventDays.push(day);
+  }
+
   return {
     state: ageMinutes <= freshWithinMinutes ? 'fresh' : 'stale',
     fetchedAt: input.cached.fetchedAt,
     ageMinutes,
     hourly: relevant,
+    allHourly: input.cached.hourly,
+    eventDays,
+  };
+}
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * Shaping a forecast for display
+ *
+ * Everything below turns the flat hourly series into the things a panel draws:
+ * days, a per-day summary, and a condition token. It lives here rather than in
+ * the screen for the same reason `resolveForecastDisplay` does — it is a
+ * decision about what the numbers mean, it is pure, and it is worth a test.
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+/** One event day's worth of hours, in the order Open-Meteo returned them. */
+export interface ForecastDay {
+  /** Local `YYYY-MM-DD`. */
+  readonly date: string;
+  readonly points: readonly HourlyForecastPoint[];
+}
+
+/**
+ * Split the hourly series into calendar days.
+ *
+ * An event spans days and a chart of 48 undifferentiated columns says nothing;
+ * a photographer picks a day and reads that day. Order follows the series
+ * rather than being re-sorted: Open-Meteo returns time-ascending, and imposing
+ * a sort here would quietly paper over a response that did not.
+ */
+export function groupForecastByDay(
+  hourly: readonly HourlyForecastPoint[],
+): ForecastDay[] {
+  const days: ForecastDay[] = [];
+  let current: { date: string; points: HourlyForecastPoint[] } | null = null;
+
+  for (const point of hourly) {
+    const date = point.time.slice(0, 10);
+    if (!current || current.date !== date) {
+      current = { date, points: [] };
+      days.push(current);
+    }
+    current.points.push(point);
+  }
+  return days;
+}
+
+/**
+ * What the sky is doing, coarsely.
+ *
+ * Five bands rather than a percentage because the panel draws an icon from
+ * this, and there is no icon for "68%". The cloud thresholds follow the usual
+ * met convention (few / scattered / broken / overcast) collapsed to what
+ * changes a photograph. Rain wins over any cloud band: at 0.2mm/h upwards the
+ * decision being made is about a rain cover, not about light.
+ */
+export type SkyCondition = 'clear' | 'partly' | 'cloudy' | 'overcast' | 'rain';
+
+/** Rain from this many mm in an hour is worth calling rain rather than damp air. */
+export const RAIN_THRESHOLD_MM = 0.2;
+
+export function skyCondition(
+  cloudCoverPercent: number | null,
+  precipitationMm: number | null,
+): SkyCondition {
+  if (precipitationMm !== null && precipitationMm >= RAIN_THRESHOLD_MM) return 'rain';
+  if (cloudCoverPercent === null) return 'cloudy';
+  if (cloudCoverPercent < 15) return 'clear';
+  if (cloudCoverPercent < 50) return 'partly';
+  if (cloudCoverPercent < 85) return 'cloudy';
+  return 'overcast';
+}
+
+/**
+ * The hours a photographer is plausibly shooting, used to keep the "clearest"
+ * window off 03:00. Deliberately generous at both ends — a summer event at Spa
+ * has usable light well before 07:00 and well after 20:00.
+ */
+const DAYLIGHT_FROM_HOUR = 5;
+const DAYLIGHT_TO_HOUR = 21;
+
+/** Length of the window `clearestWindow` looks for, in hours. */
+const CLEAREST_WINDOW_HOURS = 3;
+
+export interface DaySummary {
+  /** Mean cloud cover across the day's hours, or null when no hour reported it. */
+  readonly meanCloudPercent: number | null;
+  /** Total precipitation across the day, mm. */
+  readonly totalRainMm: number;
+  /** How many of the day's hours are at or above `RAIN_THRESHOLD_MM`. */
+  readonly rainHours: number;
+  /** The day taken as a whole, for the header icon. */
+  readonly condition: SkyCondition;
+  /**
+   * The clearest run of daylight hours, or null when the day has none in
+   * range.
+   *
+   * Named for what it measures — least cloud — and not "best light", which it
+   * is not: flat overcast is the right sky for a lot of what gets shot at a
+   * circuit, and the app has no business ranking that. It reports where the
+   * sun is most likely to be out and leaves the judgement alone.
+   */
+  readonly clearestWindow: {
+    readonly fromHour: number;
+    readonly toHour: number;
+    readonly meanCloudPercent: number;
+  } | null;
+}
+
+/** The hour-of-day of a point's local time, or null if it is not shaped like one. */
+function hourOf(time: string): number | null {
+  const m = /T(\d{2}):/.exec(time);
+  if (!m) return null;
+  const hour = Number(m[1]);
+  return Number.isInteger(hour) && hour >= 0 && hour <= 23 ? hour : null;
+}
+
+function mean(values: readonly number[]): number | null {
+  if (values.length === 0) return null;
+  return values.reduce((a, b) => a + b, 0) / values.length;
+}
+
+/**
+ * The `CLEAREST_WINDOW_HOURS`-long run of daylight hours with the least cloud.
+ *
+ * A sliding window over consecutive hours only — a run broken by a missing
+ * hour is not a run, because the gap is exactly where the weather could have
+ * done anything. Ties go to the earlier window: morning light at a circuit is
+ * usually the one you can still get to.
+ */
+function clearestWindow(
+  points: readonly HourlyForecastPoint[],
+): DaySummary['clearestWindow'] {
+  const usable = points
+    .map((p) => ({ hour: hourOf(p.time), cloud: p.cloudCoverPercent }))
+    .filter(
+      (p): p is { hour: number; cloud: number } =>
+        p.hour !== null &&
+        p.cloud !== null &&
+        p.hour >= DAYLIGHT_FROM_HOUR &&
+        p.hour <= DAYLIGHT_TO_HOUR,
+    );
+  if (usable.length === 0) return null;
+
+  let best: { fromHour: number; toHour: number; meanCloudPercent: number } | null = null;
+  for (let i = 0; i + CLEAREST_WINDOW_HOURS <= usable.length; i++) {
+    const run = usable.slice(i, i + CLEAREST_WINDOW_HOURS);
+    // Consecutive hours, or it is not a window.
+    if (run[run.length - 1]!.hour - run[0]!.hour !== CLEAREST_WINDOW_HOURS - 1) continue;
+    const avg = mean(run.map((r) => r.cloud))!;
+    if (best === null || avg < best.meanCloudPercent) {
+      best = {
+        fromHour: run[0]!.hour,
+        toHour: run[run.length - 1]!.hour,
+        meanCloudPercent: avg,
+      };
+    }
+  }
+
+  // A day with fewer usable hours than a full window still has a clearest
+  // stretch; report the whole of what there is rather than nothing.
+  if (best === null) {
+    const avg = mean(usable.map((u) => u.cloud))!;
+    return {
+      fromHour: usable[0]!.hour,
+      toHour: usable[usable.length - 1]!.hour,
+      meanCloudPercent: avg,
+    };
+  }
+  return best;
+}
+
+/** Roll one day's hours up into the numbers the panel's header states. */
+export function summariseDay(points: readonly HourlyForecastPoint[]): DaySummary {
+  const clouds = points
+    .map((p) => p.cloudCoverPercent)
+    .filter((c): c is number => c !== null);
+  const rains = points
+    .map((p) => p.precipitationMm)
+    .filter((r): r is number => r !== null);
+
+  const meanCloudPercent = mean(clouds);
+  const totalRainMm = rains.reduce((a, b) => a + b, 0);
+  const rainHours = rains.filter((r) => r >= RAIN_THRESHOLD_MM).length;
+
+  return {
+    meanCloudPercent,
+    totalRainMm,
+    rainHours,
+    // A day is "rain" if any hour of it is: the total can stay small while a
+    // single hour soaks the session you came for.
+    condition:
+      rainHours > 0
+        ? 'rain'
+        : skyCondition(meanCloudPercent, null),
+    clearestWindow: clearestWindow(points),
   };
 }

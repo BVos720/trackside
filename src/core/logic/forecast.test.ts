@@ -236,3 +236,188 @@ describe('resolveForecastDisplay', () => {
     }
   });
 });
+
+/* ── Shaping a forecast for display ──────────────────────────────────────── */
+
+import {
+  groupForecastByDay,
+  skyCondition,
+  summariseDay,
+  RAIN_THRESHOLD_MM,
+  type HourlyForecastPoint,
+} from './forecast';
+
+const point = (
+  time: string,
+  cloud: number | null,
+  rain: number | null = 0,
+): HourlyForecastPoint => ({
+  time,
+  cloudCoverPercent: cloud,
+  precipitationMm: rain,
+});
+
+describe('groupForecastByDay', () => {
+  it('splits the series on calendar day', () => {
+    const days = groupForecastByDay([
+      point('2026-08-21T22:00', 10),
+      point('2026-08-21T23:00', 20),
+      point('2026-08-22T00:00', 30),
+    ]);
+    expect(days.map((d) => d.date)).toEqual(['2026-08-21', '2026-08-22']);
+    expect(days[0]!.points).toHaveLength(2);
+    expect(days[1]!.points).toHaveLength(1);
+  });
+
+  it('is empty for an empty series', () => {
+    expect(groupForecastByDay([])).toEqual([]);
+  });
+
+  it('keeps the order it was given rather than sorting', () => {
+    // A response that came back out of order is a fact about the response,
+    // not something this function should hide.
+    const days = groupForecastByDay([
+      point('2026-08-22T00:00', 30),
+      point('2026-08-21T22:00', 10),
+    ]);
+    expect(days.map((d) => d.date)).toEqual(['2026-08-22', '2026-08-21']);
+  });
+});
+
+describe('skyCondition', () => {
+  it('reads the cloud bands', () => {
+    expect(skyCondition(0, 0)).toBe('clear');
+    expect(skyCondition(14, 0)).toBe('clear');
+    expect(skyCondition(15, 0)).toBe('partly');
+    expect(skyCondition(49, 0)).toBe('partly');
+    expect(skyCondition(50, 0)).toBe('cloudy');
+    expect(skyCondition(84, 0)).toBe('cloudy');
+    expect(skyCondition(85, 0)).toBe('overcast');
+    expect(skyCondition(100, 0)).toBe('overcast');
+  });
+
+  it('lets rain beat any cloud band', () => {
+    expect(skyCondition(0, RAIN_THRESHOLD_MM)).toBe('rain');
+    expect(skyCondition(100, 5)).toBe('rain');
+  });
+
+  it('ignores rain below the threshold', () => {
+    expect(skyCondition(10, RAIN_THRESHOLD_MM - 0.01)).toBe('clear');
+  });
+
+  it('treats an unreported cloud figure as cloudy rather than clear', () => {
+    // Guessing "clear" from missing data would be the app asserting a fact it
+    // does not have — §0.2.
+    expect(skyCondition(null, 0)).toBe('cloudy');
+  });
+});
+
+describe('summariseDay', () => {
+  it('averages cloud and totals rain', () => {
+    const s = summariseDay([
+      point('2026-08-21T10:00', 20, 0),
+      point('2026-08-21T11:00', 40, 0.5),
+      point('2026-08-21T12:00', 60, 0.5),
+    ]);
+    expect(s.meanCloudPercent).toBe(40);
+    expect(s.totalRainMm).toBeCloseTo(1.0);
+    expect(s.rainHours).toBe(2);
+    expect(s.condition).toBe('rain');
+  });
+
+  it('calls a dry day by its cloud band', () => {
+    const s = summariseDay([
+      point('2026-08-21T10:00', 5, 0),
+      point('2026-08-21T11:00', 5, 0),
+    ]);
+    expect(s.condition).toBe('clear');
+    expect(s.rainHours).toBe(0);
+  });
+
+  it('calls the day rain even when the total is small', () => {
+    // One wet hour during the session you came for still changes the day.
+    const s = summariseDay([
+      point('2026-08-21T10:00', 5, 0),
+      point('2026-08-21T14:00', 5, RAIN_THRESHOLD_MM),
+    ]);
+    expect(s.condition).toBe('rain');
+    expect(s.totalRainMm).toBeCloseTo(RAIN_THRESHOLD_MM);
+  });
+
+  it('finds the clearest three-hour daylight window', () => {
+    const s = summariseDay([
+      point('2026-08-21T06:00', 90),
+      point('2026-08-21T07:00', 80),
+      point('2026-08-21T08:00', 70),
+      point('2026-08-21T09:00', 10),
+      point('2026-08-21T10:00', 10),
+      point('2026-08-21T11:00', 10),
+      point('2026-08-21T12:00', 95),
+    ]);
+    expect(s.clearestWindow).toEqual({
+      fromHour: 9,
+      toHour: 11,
+      meanCloudPercent: 10,
+    });
+  });
+
+  it('keeps the clearest window out of the middle of the night', () => {
+    const s = summariseDay([
+      point('2026-08-21T02:00', 0),
+      point('2026-08-21T03:00', 0),
+      point('2026-08-21T04:00', 0),
+      point('2026-08-21T10:00', 40),
+      point('2026-08-21T11:00', 40),
+      point('2026-08-21T12:00', 40),
+    ]);
+    expect(s.clearestWindow?.fromHour).toBe(10);
+  });
+
+  it('reports what there is when the day is shorter than a window', () => {
+    const s = summariseDay([
+      point('2026-08-21T10:00', 20),
+      point('2026-08-21T11:00', 40),
+    ]);
+    expect(s.clearestWindow).toEqual({
+      fromHour: 10,
+      toHour: 11,
+      meanCloudPercent: 30,
+    });
+  });
+
+  it('has no clearest window when nothing reported cloud', () => {
+    const s = summariseDay([point('2026-08-21T10:00', null)]);
+    expect(s.clearestWindow).toBeNull();
+    expect(s.meanCloudPercent).toBeNull();
+  });
+
+  it('does not span a gap in the hours', () => {
+    // 08:00 → 12:00 is a four-hour gap, so those two clear hours cannot be
+    // read as a window however clear they are; the run has to be consecutive.
+    // 12:00–14:00 is consecutive and wins on its average.
+    const s = summariseDay([
+      point('2026-08-21T08:00', 0),
+      point('2026-08-21T12:00', 0),
+      point('2026-08-21T13:00', 50),
+      point('2026-08-21T14:00', 50),
+      point('2026-08-21T15:00', 50),
+    ]);
+    expect(s.clearestWindow?.fromHour).toBe(12);
+    expect(s.clearestWindow?.toHour).toBe(14);
+  });
+
+  it('refuses a window that only exists by jumping the gap', () => {
+    // Nothing consecutive at all: every hour is isolated, so there is no
+    // three-hour run to report and it falls back to the whole span.
+    const s = summariseDay([
+      point('2026-08-21T08:00', 0),
+      point('2026-08-21T12:00', 30),
+      point('2026-08-21T16:00', 60),
+    ]);
+    expect(s.clearestWindow).toEqual({
+      fromHour: 8,
+      toHour: 16,
+      meanCloudPercent: 30,
+    });
+  });
+});

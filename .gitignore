@@ -55,3 +55,22 @@ public/tiles/
 # generated native folders
 /ios
 /android
+
+# Ruflo local secrets and runtime data
+.env
+.env.local
+.env.*.local
+
+# AI coding tooling — local scaffolding, not part of the app
+.agents/
+.claude-flow/
+.hive-mind/
+.swarm/
+.claude/agents/
+.claude/commands/
+.claude/helpers/
+.claude/skills/
+.claude/worktrees/
+.claude/proven-config.json
+.claude/.proven-config-version
+.claude/settings.json.bak
