@@ -58,6 +58,19 @@ export interface Media extends EntityBase {
   readonly id: MediaId;
   readonly ownerId: UserId;
   readonly spotId: SpotId | null;
+  /**
+   * The event that was active when this was captured, copied from
+   * `Event.tag` at creation time — see the note there.
+   *
+   * Stamped once and never recomputed: an event can be hidden by
+   * `isEventFinished` or tombstoned via `deletedAt` without either state
+   * destroying the record, but a photo that only carried a live `EventId`
+   * would need every reader to resolve it and reason about both. This answers
+   * "which weekend" on its own. Null for anything shot with no event active,
+   * and for every row written before this field existed — see
+   * `normaliseMedia` in `storage-local/repositories/documentRepositories.ts`.
+   */
+  readonly tag: string | null;
   readonly type: MediaType;
   readonly source: MediaSource;
   /**

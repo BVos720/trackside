@@ -22,9 +22,13 @@ import { formatDateRange } from '../DateRangePicker';
 import { MENU_CLEARANCE, color, radius, space, type, weight } from '../theme';
 import Collapsible from '../Collapsible';
 import EntryListScreen, { type SavedEntryRow } from './EntryListScreen';
+import EquipmentScreen, { type SavedEquipmentRow } from './EquipmentScreen';
 import PlannerScreen from './PlannerScreen';
 import TimetableScreen, { type PendingSession } from './TimetableScreen';
+import WeatherScreen from './WeatherScreen';
 import type { TextEntry } from '../../core/logic/entryList';
+import type { EquipmentCategory } from '../../core/logic/equipment';
+import type { ForecastDisplay } from '../../core/logic/forecast';
 
 export interface SavedSessionRow {
   id: string;
@@ -47,6 +51,14 @@ export default function EventScreen({
   onCommitEntries,
   onTogglePhotographed,
   onRemoveEntry,
+  equipment,
+  onTogglePacked,
+  onAddEquipmentItem,
+  onRemoveEquipmentItem,
+  weatherDisplay,
+  onRefreshWeather,
+  weatherRefreshing = false,
+  weatherError = null,
   onAddStop,
   onUpdateStop,
   onRemoveStop,
@@ -72,6 +84,14 @@ export default function EventScreen({
   onCommitEntries: (rows: TextEntry[]) => void;
   onTogglePhotographed: (id: string, photographed: boolean) => void;
   onRemoveEntry: (id: string) => void;
+  equipment: readonly SavedEquipmentRow[];
+  onTogglePacked: (id: string, packed: boolean) => void;
+  onAddEquipmentItem: (name: string, category: EquipmentCategory | null) => void;
+  onRemoveEquipmentItem: (id: string) => void;
+  weatherDisplay: ForecastDisplay;
+  onRefreshWeather: () => void;
+  weatherRefreshing?: boolean;
+  weatherError?: string | null;
   onAddStop: (spotId: SpotId, day: string | null) => void;
   onUpdateStop: (
     stopId: string,
@@ -167,6 +187,28 @@ export default function EventScreen({
       </Collapsible>
 
       <Collapsible
+        title="Weather"
+        hint={
+          weatherDisplay.state === 'fresh' || weatherDisplay.state === 'stale'
+            ? weatherDisplay.state === 'stale'
+              ? 'Cached forecast — stale'
+              : 'Cloud cover and rain for the weekend'
+            : weatherDisplay.state === 'too-far-out'
+              ? 'Not forecastable yet'
+              : weatherDisplay.state === 'no-data-yet'
+                ? 'Not fetched yet'
+                : 'Set the event dates first'
+        }
+      >
+        <WeatherScreen
+          display={weatherDisplay}
+          onRefresh={onRefreshWeather}
+          refreshing={weatherRefreshing}
+          error={weatherError}
+        />
+      </Collapsible>
+
+      <Collapsible
         title="Entry list"
         badge={entries.length > 0 ? `${entries.filter((e) => e.photographed).length}/${entries.length}` : null}
         hint={
@@ -180,6 +222,27 @@ export default function EventScreen({
           onCommit={onCommitEntries}
           onTogglePhotographed={onTogglePhotographed}
           onRemoveEntry={onRemoveEntry}
+        />
+      </Collapsible>
+
+      <Collapsible
+        title="Equipment"
+        badge={
+          equipment.length > 0
+            ? `${equipment.filter((i) => i.packed).length}/${equipment.length}`
+            : null
+        }
+        hint={
+          equipment.length === 0
+            ? 'Nothing yet — starts from your last event automatically'
+            : 'What to pack, and what is already in the bag'
+        }
+      >
+        <EquipmentScreen
+          items={equipment}
+          onTogglePacked={onTogglePacked}
+          onAddItem={onAddEquipmentItem}
+          onRemoveItem={onRemoveEquipmentItem}
         />
       </Collapsible>
 

@@ -63,6 +63,8 @@ import {
 } from './src/ui/map/style';
 import { useSessions } from './src/ui/state/useSessions';
 import { useEntries } from './src/ui/state/useEntries';
+import { useEquipment } from './src/ui/state/useEquipment';
+import { useWeather } from './src/ui/state/useWeather';
 import { snapBesideTrack } from './src/core/logic/track';
 import { useSpots, type SpotDraft } from './src/ui/state/useSpots';
 import { mediaStore } from './src/storage-local/mediaStore';
@@ -120,6 +122,25 @@ const CIRCUIT_IDS: Record<VenueKey, CircuitId> = {
   zolder: asId<CircuitId>('01920000-0000-7000-8000-000000000005'),
   suzuka: asId<CircuitId>('01920000-0000-7000-8000-000000000006'),
   fuji: asId<CircuitId>('01920000-0000-7000-8000-000000000007'),
+};
+
+/**
+ * IANA timezone per venue, standing in for `Circuit.timezone` for the same
+ * reason `CIRCUIT_IDS` above stands in for the rest of the `Circuit` preset —
+ * spec §4.1's presets are seeded from JSON and reserved for human sourcing
+ * under §0.2, which is about facts an official document has to confirm
+ * (`MarshalPost.officialNumber`, in particular). A circuit's timezone is not
+ * that kind of fact — it is public, undisputed geography — so a small fixed
+ * table here is enough until the real presets land.
+ */
+const VENUE_TIMEZONE: Record<VenueKey, string> = {
+  nordschleife: 'Europe/Berlin',
+  'spa-francorchamps': 'Europe/Brussels',
+  zandvoort: 'Europe/Amsterdam',
+  'le-mans': 'Europe/Paris',
+  zolder: 'Europe/Brussels',
+  suzuka: 'Asia/Tokyo',
+  fuji: 'Asia/Tokyo',
 };
 
 /** Reverse of CIRCUIT_IDS, so an event's circuit can select its venue. */
@@ -298,6 +319,47 @@ function AppShell() {
     remove: removeEntry,
     reload: reloadEntries,
   } = useEntries(activeEventId);
+
+  const {
+    items: checklist,
+    addItem: addEquipmentItem,
+    setPacked: setEquipmentPacked,
+    remove: removeEquipmentItem,
+    seedForNewEvent: seedEquipmentForNewEvent,
+    reload: reloadEquipment,
+  } = useEquipment(activeEventId);
+
+  /** The checklist as the equipment screen displays it. */
+  const equipmentRows = useMemo(
+    () =>
+      checklist.map((i) => ({
+        id: i.id,
+        name: i.name,
+        category: i.category,
+        packed: i.packed,
+      })),
+    [checklist],
+  );
+
+  /**
+   * The circuit's position and timezone, for the weather fetch.
+   *
+   * `VENUE_VIEW[venue].centre` is `[longitude, latitude]` — see map/style.ts.
+   */
+  const circuitPosition = useMemo(
+    () => ({
+      latitude: VENUE_VIEW[venue].centre[1],
+      longitude: VENUE_VIEW[venue].centre[0],
+    }),
+    [venue],
+  );
+
+  const {
+    display: weatherDisplay,
+    refresh: refreshWeather,
+    refreshing: weatherRefreshing,
+    error: weatherError,
+  } = useWeather(activeEvent, activeEventId, circuitPosition, VENUE_TIMEZONE[venue]);
 
   /** The field as the entry-list screen displays it — Entry, minus the parts it does not need. */
   const entryRows = useMemo(
@@ -541,6 +603,7 @@ function AppShell() {
             spots: visibleSpots,
             sessions: savedSessions,
             entries: fieldEntries,
+            equipment: checklist,
             days: Object.entries(sessionDayLabels).map(([id, label]) => ({
               id,
               date: label,
@@ -557,7 +620,14 @@ function AppShell() {
     }, 1500);
 
     return () => clearTimeout(timer);
-  }, [activeEvent, visibleSpots, savedSessions, fieldEntries, sessionDayLabels]);
+  }, [
+    activeEvent,
+    visibleSpots,
+    savedSessions,
+    fieldEntries,
+    checklist,
+    sessionDayLabels,
+  ]);
 
   /*
    * ── Reading an event back in ──────────────────────────────────────────────
@@ -624,6 +694,7 @@ function AppShell() {
         reloadSpots(),
         reloadSessions(),
         reloadEntries(),
+        reloadEquipment(),
       ]);
       activate(plan.event.id);
       setWhere('event');
@@ -635,6 +706,7 @@ function AppShell() {
       reloadSpots,
       reloadSessions,
       reloadEntries,
+      reloadEquipment,
       activate,
     ],
   );
@@ -701,7 +773,7 @@ function AppShell() {
       const spot = await create(draft, activeEventId);
       if (activeEventId) await setSpotIncluded(spot.id, true);
       for (const p of pendingPhotos) {
-        await addPhoto(spot.id, p.file, p.kind, p.isKey);
+        await addPhoto(spot.id, p.file, p.kind, p.isKey, activeEvent?.tag ?? null);
         // The preview was only ever a handle on a blob in memory; the bytes
         // now live in the media store under the spot's own id.
         if (p.previewUri?.startsWith('blob:')) URL.revokeObjectURL(p.previewUri);
@@ -726,7 +798,7 @@ function AppShell() {
       if (!picked) return; // User backed out, or permission was refused.
 
       if (activeId) {
-        void addPhoto(activeId, picked.blob, kind, isKey);
+        void addPhoto(activeId, picked.blob, kind, isKey, activeEvent?.tag ?? null);
       } else {
         // Creating: hold it until the spot has an id.
         setPendingPhotos((p) => [
@@ -735,7 +807,7 @@ function AppShell() {
         ]);
       }
     },
-    [activeId, addPhoto],
+    [activeId, addPhoto, activeEvent],
   );
 
   return (
@@ -1030,6 +1102,11 @@ function AppShell() {
               if (key && key !== venue) setVenue(key);
               void (async () => {
                 const event = await createEvent(name, from, to, [], forCircuit);
+                // Seeded from the most recent previous event's checklist —
+                // the entire point of the feature, see core/logic/equipment.ts.
+                // `eventList` here is the list as it stood before this event
+                // existed, which is exactly what "previous" means.
+                await seedEquipmentForNewEvent(eventList, event);
                 if (!seedFromSpots) return;
                 // Copies, not references: the event owns them, so nothing done
                 // here can damage the collection they came from.
@@ -1100,6 +1177,18 @@ function AppShell() {
                 void setEntryPhotographed(asId(id), photographed)
               }
               onRemoveEntry={(id) => void removeEntry(asId(id))}
+              equipment={equipmentRows}
+              onTogglePacked={(id, packed) =>
+                void setEquipmentPacked(asId(id), packed)
+              }
+              onAddEquipmentItem={(name, category) =>
+                void addEquipmentItem(name, category)
+              }
+              onRemoveEquipmentItem={(id) => void removeEquipmentItem(asId(id))}
+              weatherDisplay={weatherDisplay}
+              onRefreshWeather={() => void refreshWeather()}
+              weatherRefreshing={weatherRefreshing}
+              weatherError={weatherError}
               onAddStop={(spotId, day) => void addStop({ spotId, day })}
               onUpdateStop={(stopId, patch) => void updateStop(stopId, patch)}
               onRemoveStop={(stopId) => void removeStop(stopId)}
@@ -1140,6 +1229,7 @@ function AppShell() {
                     spots: visibleSpots,
                     sessions: savedSessions,
                     entries: fieldEntries,
+                    equipment: checklist,
                     days: Object.entries(sessionDayLabels).map(
                       ([id, label]) => ({ id, date: label, label }),
                     ),

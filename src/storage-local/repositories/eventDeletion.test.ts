@@ -94,6 +94,7 @@ async function aPhoto(
     id: newId<MediaId>(),
     ownerId: USER,
     spotId,
+    tag: null,
     type: MediaType.Photo,
     source: MediaSource.Uploaded,
     storageKey: 'media/local/1',
