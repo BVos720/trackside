@@ -103,11 +103,27 @@ export async function pickImage(): Promise<PickedImage | null> {
 }
 
 /**
- * Scale the long edge down to `MAX_EDGE`, leaving smaller images alone.
+ * Scale the long edge down to `MAX_EDGE` when the image is bigger than that,
+ * and re-encode unconditionally otherwise.
  *
- * Returns the original URI unchanged if anything fails. A reference photo at
- * full size is a storage problem; no reference photo at all is a spot you
- * cannot find again, and the second is much worse than the first.
+ * ── Why this always runs the manipulator, even at native size ─────────────
+ * §5.1/§9.4 require EXIF (GPS, timestamp, device) gone from every stored
+ * reference photo, not just the ones big enough to trigger a resize. This
+ * SDK's `ImageManipulator` has no metadata/EXIF option to set (checked
+ * `SaveOptions` — only `base64`, `compress`, `format`); what strips EXIF is
+ * that `renderAsync`/`saveAsync` re-encode from a decoded pixel buffer
+ * (`UIImage` on iOS, `Bitmap` on Android — see their native modules), which
+ * carries no EXIF block to begin with. That only happens as a side effect of
+ * actually running the pipeline, so an image already under `MAX_EDGE` must
+ * still be pushed through it — just with a no-op resize (its own dimensions)
+ * instead of a real one.
+ *
+ * Returns the original URI unchanged if the manipulator throws. That is a
+ * deliberate fallback for keeping the reference photo at all (a spot you
+ * cannot find again is worse than one with EXIF intact) — but it means the
+ * caller cannot assume the returned image is always stripped; see the
+ * exif-strip decision helper below for what's guaranteed vs. what still
+ * wants on-device verification.
  */
 async function downscale(
   uri: string,
@@ -115,18 +131,14 @@ async function downscale(
   height: number | undefined,
 ): Promise<string> {
   try {
-    const longest = Math.max(width ?? 0, height ?? 0);
-    // Already small enough. Re-encoding would lose quality for no saving.
-    if (longest > 0 && longest <= MAX_EDGE) return uri;
+    const targetSize = resizeTargetFor(width, height);
 
     const context = ImageManipulator.manipulate(uri);
     // Only the long edge is constrained; the other follows, so the aspect
-    // ratio is preserved without needing to know the orientation.
-    context.resize(
-      (width ?? 0) >= (height ?? 0)
-        ? { width: MAX_EDGE }
-        : { height: MAX_EDGE },
-    );
+    // ratio is preserved without needing to know the orientation. When the
+    // image is already within MAX_EDGE, `targetSize` reproduces its own
+    // dimensions — a no-op resize whose only job is to force the re-encode.
+    context.resize(targetSize);
 
     const image = await context.renderAsync();
     const saved = await image.saveAsync({
@@ -137,4 +149,33 @@ async function downscale(
   } catch {
     return uri;
   }
+}
+
+/**
+ * The `resize()` target for `downscale`'s manipulator pass.
+ *
+ * Pure and exported for testing: it is the one piece of this module's
+ * decision-making that doesn't touch a native API, so it is what stands in
+ * for "does every input get forced through the re-encode that strips EXIF."
+ * Above `MAX_EDGE` this shrinks the long edge as before; at or below it,
+ * it targets the image's own current size, which is a no-op resize that
+ * still forces `renderAsync`/`saveAsync` to run.
+ */
+export function resizeTargetFor(
+  width: number | undefined,
+  height: number | undefined,
+): { width?: number; height?: number } {
+  const w = width ?? 0;
+  const h = height ?? 0;
+  const longest = Math.max(w, h);
+  const longEdgeIsWidth = w >= h;
+
+  if (longest > 0 && longest <= MAX_EDGE) {
+    // No-op target: reproduce the image's own dimensions so the manipulator
+    // still runs (and still re-encodes, dropping EXIF) without changing
+    // what's stored.
+    return longEdgeIsWidth ? { width: w || undefined } : { height: h || undefined };
+  }
+
+  return longEdgeIsWidth ? { width: MAX_EDGE } : { height: MAX_EDGE };
 }
