@@ -16,9 +16,11 @@ import {
   Text,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import {
   HIT_SIZE,
+  MENU_CLEARANCE,
   color,
   lightQualityColor,
   radius,
@@ -94,6 +96,7 @@ const DIRECTION_BLURB: Record<LightDirection, string> = {
 };
 
 export default function LightScreen() {
+  const insets = useSafeAreaInsets();
   const [date, setDate] = useState(() => startOfDay(new Date()));
   const [minuteOfDay, setMinuteOfDay] = useState(() => {
     const now = new Date();
@@ -182,7 +185,10 @@ export default function LightScreen() {
   return (
     <ScrollView
       style={styles.root}
-      contentContainerStyle={styles.content}
+      contentContainerStyle={[
+        styles.content,
+        { paddingTop: insets.top + MENU_CLEARANCE },
+      ]}
       showsVerticalScrollIndicator={false}
     >
       <Text style={styles.kicker}>LIGHT</Text>
@@ -376,7 +382,7 @@ function KeyTime({ label, value }: { label: string; value: Date | null }) {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: color.background },
-  content: { padding: space.md, paddingTop: space.xxl, paddingBottom: space.xxl },
+  content: { padding: space.md, paddingBottom: space.xxl },
 
   kicker: {
     color: color.accent,

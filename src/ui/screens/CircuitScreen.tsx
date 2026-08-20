@@ -7,9 +7,10 @@
  * tell them apart before committing.
  */
 import { ScrollView, StyleSheet, Text, View, Pressable } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { VENUE_VIEW, circuitMetricsFor, type VenueKey } from '../map/style';
-import { color, radius, space, type, weight } from '../theme';
+import { MENU_CLEARANCE, color, radius, space, type, weight } from '../theme';
 
 const VENUES = Object.keys(VENUE_VIEW) as VenueKey[];
 
@@ -28,8 +29,16 @@ export default function CircuitScreen({
   venue: VenueKey;
   onChange: (v: VenueKey) => void;
 }) {
+  const insets = useSafeAreaInsets();
+
   return (
-    <ScrollView style={styles.root} contentContainerStyle={styles.content}>
+    <ScrollView
+      style={styles.root}
+      contentContainerStyle={[
+        styles.content,
+        { paddingTop: insets.top + MENU_CLEARANCE },
+      ]}
+    >
       <Text style={styles.kicker}>CIRCUIT</Text>
       <Text style={styles.title}>Where are you shooting?</Text>
 
@@ -75,7 +84,7 @@ export default function CircuitScreen({
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: color.background },
-  content: { padding: space.md, paddingTop: 96, paddingBottom: space.xxl },
+  content: { padding: space.md, paddingBottom: space.xxl },
   pressed: { opacity: 0.7 },
 
   kicker: {

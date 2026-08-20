@@ -40,7 +40,7 @@ import {
 } from '@maplibre/maplibre-react-native';
 
 import {
-  MENU_HEIGHT,
+  MENU_CLEARANCE,
   MENU_TOP,
   color,
   radius,
@@ -547,7 +547,7 @@ export default function MapScreen({
           // deliberately, and the right side belongs to the ruler. controlsTop
           // pushes it further down when the shell has stacked something else
           // there, such as the back-to-event button.
-          { top: insets.top + MENU_TOP + MENU_HEIGHT + 8 + controlsTop },
+          { top: insets.top + MENU_CLEARANCE + controlsTop },
           is3D && styles.modeButtonActive,
           pressed && styles.pressed,
         ]}
@@ -561,7 +561,7 @@ export default function MapScreen({
         <View
           style={[
             styles.terrainNote,
-            { top: insets.top + MENU_TOP + MENU_HEIGHT + 8 + controlsTop + 64 },
+            { top: insets.top + MENU_CLEARANCE + controlsTop + 64 },
           ]}
           pointerEvents="none"
         >

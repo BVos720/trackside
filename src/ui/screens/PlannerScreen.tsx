@@ -28,6 +28,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { type Event, type PlanStop, eventDays } from '../../core/domain/event';
 import type { SpotId } from '../../core/domain/ids';
@@ -41,7 +42,7 @@ import {
   type WalkEstimate,
 } from '../../core/logic/walk';
 import { formatDateRange, fromIsoDate } from '../DateRangePicker';
-import { color, radius, space, type, weight } from '../theme';
+import { MENU_CLEARANCE, color, radius, space, type, weight } from '../theme';
 
 /** A stop with everything the row needs already resolved. */
 interface PlannedStop {
@@ -174,10 +175,18 @@ export default function PlannerScreen({
   // another breaks scrolling on both.
   const Body = (embedded ? View : ScrollView) as typeof ScrollView;
 
+  // Only the standalone page floats under the menu trigger; embedded, it is
+  // already below the event page's own clearance.
+  const insets = useSafeAreaInsets();
+
   return (
     <Body
       style={embedded ? styles.embedded : styles.root}
-      contentContainerStyle={embedded ? undefined : styles.content}
+      contentContainerStyle={
+        embedded
+          ? undefined
+          : [styles.content, { paddingTop: insets.top + MENU_CLEARANCE }]
+      }
       keyboardShouldPersistTaps="handled"
     >
       {!embedded && (
@@ -537,7 +546,7 @@ function StopEditor({
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: color.background },
   embedded: { paddingTop: space.sm },
-  content: { padding: space.md, paddingTop: 96, paddingBottom: space.xxl },
+  content: { padding: space.md, paddingBottom: space.xxl },
   pressed: { opacity: 0.7 },
   disabled: { opacity: 0.35 },
 

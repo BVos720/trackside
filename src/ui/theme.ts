@@ -109,5 +109,24 @@ export const lightQualityColor = {
 export const MENU_TOP = 12;
 export const MENU_HEIGHT = 56;
 
+/**
+ * How far down a screen's own content has to start.
+ *
+ * Add it to `insets.top`: the trigger hangs at `insets.top + MENU_TOP` and is
+ * `MENU_HEIGHT` tall, so anything above that lands underneath it.
+ *
+ * The pages used to hard-code 96, which clears the trigger only where the
+ * status bar is short — 24 + 12 + 56 comes to 92 on Android, four points of
+ * luck. On a phone with a 59pt inset the trigger reaches 127 and the first row
+ * of the page goes behind it. On the event page that row is "‹ Events", so the
+ * way back was covered by the menu that also goes back, and only tappable
+ * where it poked out below.
+ *
+ * The inset is deliberately not folded in here. It is a property of the device
+ * and is read at render time; a constant that guessed it would be wrong on the
+ * next screen shape, which is exactly how 96 got here.
+ */
+export const MENU_CLEARANCE = MENU_TOP + MENU_HEIGHT + space.sm;
+
 /** Minimum touch target. Assume gloves (§5.14). */
 export const HIT_SIZE = 56;

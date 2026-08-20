@@ -34,13 +34,14 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { Event } from '../../core/domain/event';
 import type { CircuitId, EventId } from '../../core/domain/ids';
 import type { ImportConflict, ImportMode } from '../../core/logic/importBundle';
 import Collapsible from '../Collapsible';
 import DateRangePicker, { formatDateRange } from '../DateRangePicker';
-import { color, radius, space, type, weight } from '../theme';
+import { MENU_CLEARANCE, color, radius, space, type, weight } from '../theme';
 
 export interface CircuitChoice {
   readonly id: CircuitId;
@@ -136,6 +137,7 @@ export default function EventsScreen({
   onConfirmImport?: (mode: ImportMode) => void;
   onCancelImport?: () => void;
 }) {
+  const insets = useSafeAreaInsets();
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState('');
   const [startDate, setStartDate] = useState<string | null>(null);
@@ -175,7 +177,13 @@ export default function EventsScreen({
   };
 
   return (
-    <ScrollView style={styles.root} contentContainerStyle={styles.content}>
+    <ScrollView
+      style={styles.root}
+      contentContainerStyle={[
+        styles.content,
+        { paddingTop: insets.top + MENU_CLEARANCE },
+      ]}
+    >
       <Text style={styles.kicker}>EVENTS</Text>
       <Text style={styles.venue}>{circuitLabel}</Text>
 
@@ -451,7 +459,7 @@ export default function EventsScreen({
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: color.background },
-  content: { padding: space.md, paddingTop: 96, paddingBottom: space.xxl },
+  content: { padding: space.md, paddingBottom: space.xxl },
   pressed: { opacity: 0.7 },
   disabled: { opacity: 0.4 },
 
