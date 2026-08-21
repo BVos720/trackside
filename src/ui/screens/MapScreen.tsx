@@ -49,6 +49,13 @@ import {
   weight,
 } from '../theme';
 import CircuitRuler from '../map/CircuitRuler';
+import SunDial from '../map/SunDial';
+import SkyControl from '../map/SkyControl';
+import WeatherOverlay from '../map/WeatherOverlay';
+import { useMapClock } from '../state/useMapClock';
+import { skyConditionAt } from '../../core/logic/skyAtInstant';
+import type { LatLon } from '../../core/domain/common';
+import type { HourlyForecastPoint } from '../../core/logic/forecast';
 import {
   REMOTE_GLYPHS_URL,
   SCENERY_SPRITES,
@@ -80,6 +87,28 @@ const TILE_ASSETS: Record<VenueKey, number> = {
 const CALLOUT_MIN_ZOOM = 13;
 const MAX_CALLOUTS = 40;
 
+/**
+ * `SunDial` shares `CircuitRuler`'s corner (right edge, below the menu), so it
+ * stacks underneath rather than overlapping it. `CircuitRuler` has no fixed
+ * height of its own — it grows with the venue's metrics text — but in
+ * practice it settles around this, the same approximation
+ * `MapScreen.web.tsx` already uses when keeping callouts clear of it.
+ */
+const CIRCUIT_RULER_CLEARANCE = 172;
+
+/**
+ * `SkyControl` is bottom-anchored, the same corner the shell's own "Spots /
+ * + Spot" row uses (`App.tsx`'s `bottomBar`: `bottom: insets.bottom +
+ * space.md`, 52px tall) — found by putting the two on screen together and
+ * watching that row paint over `SkyControl`'s date row, since `App.tsx`
+ * renders it after `MapScreen` and both shared the same anchor. `MapScreen`
+ * has no visibility into whether that row is currently showing (it depends
+ * on `where`/`sheetOpen`/`navStop`, all owned by `App.tsx`), so this clears
+ * its full height unconditionally rather than reading through it — the same
+ * approximation `CIRCUIT_RULER_CLEARANCE` makes for its neighbour.
+ */
+const BOTTOM_BAR_CLEARANCE = space.md + 52 + space.md;
+
 interface SpotFeature {
   properties?: Record<string, unknown>;
   geometry?: { coordinates?: [number, number] };
@@ -96,6 +125,9 @@ export default function MapScreen({
   here,
   heading = null,
   controlsTop = 0,
+  position,
+  hourly,
+  timezone,
 }: {
   venue?: VenueKey;
   spots?: unknown;
@@ -123,7 +155,23 @@ export default function MapScreen({
    * height rather than the map guessing at it.
    */
   controlsTop?: number;
+  /** The circuit's own coordinates — what `SunDial`/`SkyControl` compute the sun against. */
+  position: LatLon;
+  /** The circuit's hourly forecast, or `[]` when none is loaded — see `skyConditionAt`. */
+  hourly: readonly HourlyForecastPoint[];
+  /** The circuit's IANA timezone, for resolving `hourly` against the scrubbed instant. */
+  timezone: string;
 }) {
+  /**
+   * One clock, shared by the sun and the weather.
+   *
+   * `useMapClock()` is called exactly once, here — `SkyControl` used to call
+   * it itself, which would have created a second, independent clock the
+   * moment `SunDial`/`WeatherOverlay` needed one too. See `SkyControl`'s file
+   * header and the task file's note on the shared-clock desync bug.
+   */
+  const clock = useMapClock();
+  const condition = skyConditionAt(hourly, clock.now, timezone);
   const [tilesUri, setTilesUri] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [zoom, setZoom] = useState(VENUE_VIEW[venue].zoom);
@@ -522,6 +570,15 @@ export default function MapScreen({
       </Map>
 
       {/*
+        Ambient weather, drawn straight over the map and under every control
+        below — later siblings paint on top, which is what keeps the overlay
+        from ever competing with the sun dial, the sky strip or the ruler for
+        legibility. `pointerEvents="none"` internally, so it never blocks a
+        tap either way.
+      */}
+      <WeatherOverlay condition={condition} />
+
+      {/*
         2D ⇄ 3D — spec §5.10, §5.11.
 
         Leaving 3D returns the camera to flat *and* north-up. Pitch and bearing
@@ -575,6 +632,27 @@ export default function MapScreen({
 
       {/* No venue badge: the top-left menu trigger carries the circuit and
           active event, and both sat in the same corner. */}
+
+      {/*
+        The sun, stacked below the ruler rather than sharing its exact corner
+        — see `CIRCUIT_RULER_CLEARANCE`.
+      */}
+      <SunDial
+        at={clock.now}
+        position={position}
+        top={insets.top + MENU_TOP + CIRCUIT_RULER_CLEARANCE}
+      />
+
+      {/*
+        Bottom-anchored rather than competing with the menu/ruler/sun cluster
+        at the top of the screen — a full-width strip reads better clear of
+        that corner.
+      */}
+      <SkyControl
+        clock={clock}
+        position={position}
+        bottom={insets.bottom + BOTTOM_BAR_CLEARANCE}
+      />
 
     </View>
   );

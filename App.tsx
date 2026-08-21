@@ -6,7 +6,6 @@ import {
   useSafeAreaInsets,
 } from 'react-native-safe-area-context';
 
-import LightScreen from './src/ui/screens/LightScreen';
 import MapScreen from './src/ui/screens/MapScreen';
 import SpotSheet from './src/ui/screens/SpotSheet';
 import SpotOverview from './src/ui/screens/SpotOverview';
@@ -360,6 +359,18 @@ function AppShell() {
     refreshing: weatherRefreshing,
     error: weatherError,
   } = useWeather(activeEvent, activeEventId, circuitPosition, VENUE_TIMEZONE[venue]);
+
+  /**
+   * The hourly series `skyConditionAt` resolves the map's weather overlay
+   * against — only `'fresh'`/`'stale'` carry `hourly`; every other
+   * `ForecastDisplay` state has none. `[]` degrades honestly: `skyConditionAt`
+   * returns `'unknown'` for an empty series, which `WeatherOverlay` already
+   * renders as nothing, so no special-casing is needed here.
+   */
+  const mapHourly =
+    weatherDisplay.state === 'fresh' || weatherDisplay.state === 'stale'
+      ? weatherDisplay.hourly
+      : [];
 
   /** The field as the entry-list screen displays it — Entry, minus the parts it does not need. */
   const entryRows = useMemo(
@@ -828,6 +839,9 @@ function AppShell() {
               // the mode toggle starts below it.
               controlsTop={activeEvent ? 48 : 0}
               mediaUris={mediaUris}
+              position={circuitPosition}
+              hourly={mapHourly}
+              timezone={VENUE_TIMEZONE[venue]}
               placing={where === 'map' && (placing || moving !== null)}
               onMapTap={(at) => {
                 // Never place a spot on the racing surface — push it to the
@@ -1301,7 +1315,10 @@ function AppShell() {
             }}
           />
         ) : (
-          <LightScreen />
+          // `where` is exhaustively handled by the branches above once
+          // `'light'` is gone from `Destination` — nothing reaches this arm,
+          // but a ternary chain still needs a final expression.
+          null
         )}
       </View>
 
