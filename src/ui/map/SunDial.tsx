@@ -251,10 +251,22 @@ const styles = StyleSheet.create({
     backgroundColor: color.border,
   },
   halo: { position: 'absolute', opacity: 0.28 },
+  /**
+   * `color.border` rather than `color.background`: the marker sits on this
+   * panel's own opaque background, not the map, so a border matched to
+   * `color.background` is invisible by construction — worse, at
+   * `LightQuality.Dark` the fill (`lightQualityColor.dark`, `#121722`) is
+   * itself a near-match for that same background, so fill and border and
+   * panel all collapsed into one indistinguishable smudge and the marker
+   * all but disappeared exactly when it is doing its most important job
+   * (below the horizon is still "where"). A neutral, already-defined edge
+   * keeps every quality's marker legible as a shape without touching any
+   * quality's own colour.
+   */
   marker: {
     position: 'absolute',
     borderWidth: 1,
-    borderColor: color.background,
+    borderColor: color.border,
   },
 
   divider: {
