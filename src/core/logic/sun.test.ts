@@ -112,6 +112,82 @@ describe('solarPosition — altitude', () => {
   });
 });
 
+describe('solarPosition — sunrise, solar noon, sunset', () => {
+  // These pin the shape of a day at the venue this app is built for: negative
+  // altitude gives way to positive at sunrise, peaks near noon, and drops back
+  // to negative at sunset — the arc the SkyControl strip has to draw.
+  it('sits at ~0° altitude at sunrise and sunset, and highest at solar noon', () => {
+    const day = solarDay(new Date('2026-06-21T12:00:00Z'), NURBURGRING);
+
+    const sunrise = solarPosition(day.sunrise!, NURBURGRING).altitude;
+    const noon = solarPosition(day.solarNoon!, NURBURGRING).altitude;
+    const sunset = solarPosition(day.sunset!, NURBURGRING).altitude;
+
+    // suncalc's sunrise/sunset is defined at the sun's centre a fraction of a
+    // degree below the geometric horizon (refraction + solar radius), not
+    // exactly 0 — assert "close to the horizon", not "exactly 0".
+    expect(sunrise).toBeGreaterThan(-1);
+    expect(sunrise).toBeLessThan(0);
+    expect(sunset).toBeGreaterThan(-1);
+    expect(sunset).toBeLessThan(0);
+
+    expect(noon).toBeGreaterThan(sunrise);
+    expect(noon).toBeGreaterThan(sunset);
+  });
+
+  it('is positive between sunrise and sunset, negative outside it', () => {
+    const day = solarDay(new Date('2026-06-21T12:00:00Z'), NURBURGRING);
+    const midMorning = new Date(
+      (day.sunrise!.getTime() + day.solarNoon!.getTime()) / 2,
+    );
+    const beforeDawn = new Date(day.sunrise!.getTime() - 2 * 3_600_000);
+    const afterDusk = new Date(day.sunset!.getTime() + 2 * 3_600_000);
+
+    expect(solarPosition(midMorning, NURBURGRING).altitude).toBeGreaterThan(0);
+    expect(solarPosition(beforeDawn, NURBURGRING).altitude).toBeLessThan(0);
+    expect(solarPosition(afterDusk, NURBURGRING).altitude).toBeLessThan(0);
+  });
+});
+
+describe('solarPosition — winter day at the venue', () => {
+  it('barely clears the treeline at midday in December', () => {
+    // At ~50.3°N, December solar noon altitude at the Nürburgring is around
+    // 16° — low enough that Adenauer Forst's treeline is a real concern for
+    // the flat-horizon caveat this file documents, and a useful contrast with
+    // the ~63° midsummer noon asserted above.
+    const winterNoon = solarDay(
+      new Date('2026-12-21T12:00:00Z'),
+      NURBURGRING,
+    ).solarNoon;
+    const { altitude } = solarPosition(winterNoon!, NURBURGRING);
+
+    expect(altitude).toBeGreaterThan(10);
+    expect(altitude).toBeLessThan(20);
+  });
+});
+
+describe('solarPosition — driven by the passed instant, not the system clock', () => {
+  it('gives a different, sensible answer for tomorrow at 05:00 than for today', () => {
+    // Guards against solarPosition (or something it calls) silently reaching
+    // for `new Date()` instead of using `at` — the scenario that would break
+    // scrubbing the SkyControl strip to a future date.
+    const today = solarPosition(
+      new Date('2026-10-10T14:00:00Z'),
+      NURBURGRING,
+    );
+    const tomorrowPreDawn = solarPosition(
+      new Date('2026-10-11T05:00:00Z'),
+      NURBURGRING,
+    );
+
+    expect(today.altitude).toBeGreaterThan(0); // mid-afternoon: sun is up
+    expect(tomorrowPreDawn.altitude).toBeLessThan(0); // 05:00: still dark
+
+    expect(tomorrowPreDawn.altitude).not.toBeCloseTo(today.altitude, 0);
+    expect(tomorrowPreDawn.azimuth).not.toBeCloseTo(today.azimuth, 0);
+  });
+});
+
 describe('twilightBand', () => {
   it('partitions the altitude axis at the standard boundaries', () => {
     expect(twilightBand(10)).toBe(TwilightBand.Day);
