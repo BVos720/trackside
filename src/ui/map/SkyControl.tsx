@@ -183,6 +183,15 @@ export default function SkyControl({
         {samples.map((s) => (
           <View
             key={s.hour}
+            // Purely visual — must not be a touch target. Without this,
+            // Android hit-tests to whichever hour cell is under the finger
+            // and reports `locationX` relative to *that* narrow cell (about
+            // 1/24 of the strip's width) instead of the strip itself, which
+            // makes every drag land within a few minutes of the cell's own
+            // start regardless of where on the strip you actually touch —
+            // the strip's own `panResponder.panHandlers` must stay the sole
+            // hit-test target.
+            pointerEvents="none"
             style={[styles.hourCell, { backgroundColor: lightQualityColor[s.quality] }]}
           />
         ))}
