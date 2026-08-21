@@ -133,8 +133,16 @@ describe('nearestHourSample', () => {
   });
 
   it('picks the midday sample at fraction 0.5', () => {
-    // round(0.5 * 23) = 12 — matches instantAtFraction's own midpoint.
     expect(nearestHourSample(samples, 0.5)!.hour).toBe(12);
+  });
+
+  it('picks the exact hour at a non-midpoint hour boundary', () => {
+    // Regression case: samples sit at fraction h/24 (each hour's own
+    // timestamp), not spread across (length - 1) steps. A formula that
+    // divides by (length - 1) instead of `length` rounds this down to hour
+    // 17 instead of 18 — wrong for the back half of the day specifically.
+    expect(nearestHourSample(samples, 18 / 24)!.hour).toBe(18);
+    expect(nearestHourSample(samples, 6 / 24)!.hour).toBe(6);
   });
 
   it('returns null for an empty sample set rather than throwing', () => {

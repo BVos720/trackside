@@ -78,9 +78,16 @@ export function nearestHourSample(
   fraction: number,
 ): HourSample | null {
   if (samples.length === 0) return null;
+  // Samples sit at fraction h/length (hour h's own timestamp), not spread
+  // evenly across [0, 1] in (length - 1) steps — multiplying by (length - 1)
+  // here would drift the "nearest" hour later than the true nearest for
+  // roughly the back half of the day (e.g. fraction 0.75 = 18:00 would round
+  // to hour 17, not 18). Multiplying by `length` and clamping to the last
+  // index keeps this an actual nearest-neighbour lookup against where the
+  // samples really are.
   const hour = Math.min(
     samples.length - 1,
-    Math.max(0, Math.round(fraction * (samples.length - 1))),
+    Math.max(0, Math.round(fraction * samples.length)),
   );
   return samples[hour] ?? samples[0]!;
 }
