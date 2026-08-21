@@ -17,9 +17,10 @@
  * mount and whenever the calendar date changes (`sampleDayLight`, one call
  * per hour — 24 calls, matching the task note's own suggestion of "one
  * sample per hour, or a coarse grid"). A drag frame itself does only pixel
- * arithmetic (`instantAtFraction` — no `suncalc` call); the one place a
- * render looks quality up rather than recomputing it is the header's
- * quality label, via `nearestHourSample` against the precomputed set.
+ * arithmetic (`instantAtFraction` — no `suncalc` call). The header's own
+ * quality label is computed exactly instead of via the sampled set — see
+ * the note beside `currentQuality` below for why that one value is cheap
+ * enough not to need the same coarseness as the 24-cell strip.
  *
  * `fractionOfDay`/`instantAtFraction`/`sampleDayLight`/`nearestHourSample`
  * themselves live in `core/logic/lightStrip.ts`, not here — they touch no
@@ -58,9 +59,9 @@ import type { LatLon } from '../../core/domain/common';
 import {
   fractionOfDay,
   instantAtFraction,
-  nearestHourSample,
   sampleDayLight,
 } from '../../core/logic/lightStrip';
+import { lightQuality, solarPosition } from '../../core/logic/sun';
 import { color, lightQualityColor, radius, space, type, weight } from '../theme';
 import type { MapClock } from '../state/useMapClock';
 
@@ -147,10 +148,20 @@ export default function SkyControl({
 
   const fraction = fractionOfDay(clock.now);
   const knobLeft = stripWidth > 0 ? fraction * stripWidth - KNOB_SIZE / 2 : 0;
-  // Cheap per-render lookup into the precomputed samples — no `suncalc` call,
-  // just the same helper a drag frame would use if it needed the quality
-  // rather than the raw instant.
-  const currentQuality = nearestHourSample(samples, fraction)?.quality ?? null;
+  /**
+   * The header's quality label, computed exactly for `clock.now` — not looked
+   * up via `nearestHourSample`. That helper's per-hour coarseness exists to
+   * keep the *strip's 24 cells* cheap to colour, which matters because they
+   * redraw on every drag frame; the header label is a single value computed
+   * once per render, exactly as cheap as `SunDial`'s own per-render
+   * `solarPosition` call, so there is no perf reason to accept its coarseness
+   * here too. Using the sampled version was found to visibly disagree with
+   * `SunDial` near a light-quality transition (e.g. the strip's own hour
+   * bucket still reading `golden` a few minutes into `blue`) — two widgets
+   * showing contradictory quality for the same instant, worse than the cost
+   * of one extra `solarPosition` call.
+   */
+  const currentQuality = lightQuality(solarPosition(clock.now, position).altitude);
 
   const goToDay = (deltaDays: number) => {
     clock.scrubTo(shiftDay(clock.now, deltaDays));
