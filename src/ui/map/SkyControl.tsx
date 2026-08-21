@@ -2,11 +2,14 @@
  * The 24-hour light-quality strip, date row, and "Now" control — the primary
  * UI for scrubbing the map's clock, task A3.
  *
- * This is the one file in `src/ui/map/` that consumes `useMapClock` directly
- * (per the task file's collision map) — everything else (`SunDial`,
- * `WeatherOverlay`) takes an already-resolved `at`/`condition` prop instead,
- * so a single wiring pass one level up can hand every consumer the same
- * instant without any of them needing to know the hook exists.
+ * `clock` is a prop, not a call to `useMapClock()` here — a second call to the
+ * hook would create an independent clock instance with its own state, which
+ * is exactly the desync bug the task file warns about (§ "the sun and the
+ * weather must be reading the *same instant*"). The wiring pass (`B-wire`)
+ * calls `useMapClock()` exactly once, at `MapScreen`'s top level, and hands
+ * the same `clock` object to this component, `SunDial` (as `at={clock.now}`)
+ * and `WeatherOverlay` (as a resolved `condition`) — one instant, three
+ * consumers.
  *
  * ── Why the strip doesn't recompute astronomy per frame ─────────────────────
  * `solarPosition`/suncalc is not free, and a drag produces dozens of frames a
@@ -59,7 +62,7 @@ import {
   sampleDayLight,
 } from '../../core/logic/lightStrip';
 import { color, lightQualityColor, radius, space, type, weight } from '../theme';
-import { useMapClock, type MapClock } from '../state/useMapClock';
+import type { MapClock } from '../state/useMapClock';
 
 const STRIP_HEIGHT = 36;
 const KNOB_SIZE = 18;
@@ -85,15 +88,18 @@ function shiftDay(at: Date, deltaDays: number): Date {
 }
 
 export default function SkyControl({
+  clock,
   position,
   /** Distance from the top of the screen, already clear of the safe area. */
   top,
+  /** Distance from the bottom of the screen, already clear of the safe area. */
+  bottom,
 }: {
+  clock: MapClock;
   position: LatLon;
   top?: number;
+  bottom?: number;
 }) {
-  const clock = useMapClock();
-
   const [stripWidth, setStripWidth] = useState(0);
 
   // Written every render, read only from inside PanResponder callbacks — see
@@ -151,7 +157,13 @@ export default function SkyControl({
   };
 
   return (
-    <View style={[styles.root, top === undefined ? null : { top }]}>
+    <View
+      style={[
+        styles.root,
+        top === undefined ? null : { top },
+        bottom === undefined ? null : { bottom },
+      ]}
+    >
       <View style={styles.header}>
         <Text style={styles.title}>SKY</Text>
         <Text style={styles.timeLabel}>{formatClock(clock.now)}</Text>

@@ -33,7 +33,6 @@ export type Destination =
   | 'map'
   | 'list'
   | 'times'
-  | 'light'
   | 'events'
   | 'event'
   | 'plan'
@@ -62,7 +61,6 @@ const ITEMS: { key: Destination; label: string; hint: string }[] = [
   { key: 'map', label: 'Map', hint: 'Waypoints and the circuit' },
   { key: 'events', label: 'Events', hint: 'Pick a weekend, or start clean' },
   { key: 'circuit', label: 'Circuit', hint: 'Switch venue' },
-  { key: 'light', label: 'Light', hint: 'Sun, twilight and direction' },
 ];
 
 export default function MainMenu({
