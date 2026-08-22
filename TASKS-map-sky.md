@@ -125,7 +125,22 @@ already did this work in a prior session. Re-checked on disk just now:
 > and time, and something to adjust the date. Once done, remove the Light
 > option from the menu. Make it look aesthetic.
 
-- [ ] **A1. Sun position, logic.** `src/core/logic/sun.ts` already computes
+**A1–A4 done — verified 22 August**, both statically (a worker read the code
+against each item's spec) and live on a real Android emulator (scrubbed the
+strip, watched the marker/label update, confirmed "Now" resumes live
+following, watched the frame-drop counter hold steady through a scrub —
+352 dropped, no spike). Two small housekeeping notes surfaced during
+verification and were fixed: `useMapClock.test.tsx` (and the new
+`useHeading.test.tsx`, see C1) existed but were never actually run by
+`npx vitest run` — `vitest.config.mts`'s `include` only covered `core/` and
+`storage-local/`; widened to also cover `src/ui/state/**`, deliberately not
+all of `src/ui/`, so a real component-render test still correctly needs
+jest-expo. Still owed, noted rather than blocking: on-device confirmation of
+`SunDial`'s contrast at both light-quality extremes over live map tiles
+(static reasoning + a mid-scrub screenshot look right; not exhaustively
+checked at every hour).
+
+- [x] **A1. Sun position, logic.** `src/core/logic/sun.ts` already computes
       solar position and light quality via `suncalc` (already a dependency —
       do not add another). Confirm it exposes azimuth *and* altitude for an
       arbitrary instant and position, and that it is driven by the passed-in
@@ -134,20 +149,20 @@ already did this work in a prior session. Re-checked on disk just now:
       noon, sunset, and a winter day where the sun barely clears the trees.
       New/edited logic file plus its test only. No UI.
 
-- [ ] **A2. The sun marker.** `SunDial.tsx`. It has to read as a *direction*,
+- [x] **A2. The sun marker.** `SunDial.tsx`. It has to read as a *direction*,
       not a decoration — the entire point is standing at a corner and knowing
       where the light will come from. Azimuth drives its bearing; altitude
       should be legible too (a low sun and a high sun must not look the same).
       Owns `SunDial.tsx` only.
 
-- [ ] **A3. Time and date scrubbing.** `SkyControl.tsx`. The 24-hour strip and
+- [x] **A3. Time and date scrubbing.** `SkyControl.tsx`. The 24-hour strip and
       date row exist; finish them and make them feel good under a thumb.
       Dragging must be smooth at 60fps — the light strip re-samples on every
       frame, so memoise rather than recomputing `suncalc` per drag frame.
       "Now" must snap back to the real clock *and resume following it*.
       Owns `SkyControl.tsx` and `useMapClock.ts`.
 
-- [ ] **A4. Aesthetics pass, after A2 and A3 land.** The objective asks for
+- [x] **A4. Aesthetics pass, after A2 and A3 land.** The objective asks for
       this explicitly and it is not decoration — this control sits over a dark
       map and competes with the track. Use `src/ui/theme.ts` tokens; the
       `lightQualityColor` ramp already exists and the strip should read as the
@@ -165,7 +180,11 @@ The overlay competes with the track, and the map is the tool. This is a
 deletion, and the only real risk in it is deleting one thing too many: the
 planner's weather is *staying*, and it shares logic with what is going.
 
-- [ ] **B1. Establish what the planner uses, before deleting anything.**
+**B1–B4 done — verified 22 August.** Importer list below; deletion done;
+confirmed live on the emulator, including a second venue (Spa-Francorchamps)
+to make sure the removal wasn't Nürburgring-specific.
+
+- [x] **B1. Establish what the planner uses, before deleting anything.**
       `src/core/logic/forecast.ts` and its tests are **staying** —
       `skyCondition` and everything around it. Grep for every importer of
       `forecast.ts` and write the list into the PR description. Anything
@@ -174,18 +193,40 @@ planner's weather is *staying*, and it shares logic with what is going.
       against is a tidy-up that silently removes the forecast from the event
       planner, which nobody would notice until a race weekend.
 
-- [ ] **B2. Delete `src/ui/map/WeatherOverlay.tsx`** and its wiring out of
+      **Importers, as found:** stays (planner-side) —
+      `src/ui/state/useWeather.ts`, `src/ui/screens/WeatherScreen.tsx`,
+      `src/ui/screens/EventScreen.tsx`, `src/ui/WeatherGlyph.tsx`,
+      `src/storage-local/weather.ts`, `src/core/logic/forecast.test.ts`.
+      Deleted (map-overlay-only) — `src/ui/map/WeatherOverlay.tsx` and
+      `src/core/logic/skyAtInstant.ts` (+ test), a thin `skyConditionAt`
+      wrapper whose only importer anywhere was `MapScreen.tsx`. Also found
+      and removed a dangling `import type { HourlyForecastPoint }` in
+      `MapScreen.tsx` that the original grep missed because it didn't route
+      through either of the above.
+
+- [x] **B2. Delete `src/ui/map/WeatherOverlay.tsx`** and its wiring out of
       `MapScreen.tsx` and `App.tsx`. Check `MapScreen.web.tsx` for a parallel
       mount — it is a separate implementation, and it will not fail the build
       just because the native side stopped rendering something.
 
-- [ ] **B3. Drop whatever only the overlay needed.** If `useMapClock` grew a
+      **Checked:** `MapScreen.web.tsx` had zero `WeatherOverlay` references —
+      nothing to remove there.
+
+- [x] **B3. Drop whatever only the overlay needed.** If `useMapClock` grew a
       weather field, take it out — the clock now drives the sun alone. Leave
       the clock itself; section A still needs it.
 
-- [ ] **B4. Confirm the planner still shows its weather** on the emulator, not
+      **Checked:** `MapClock` was always just `now`/`isLive`/`scrubTo`/
+      `resumeNow` — no weather field ever landed on it. Nothing to remove.
+
+- [x] **B4. Confirm the planner still shows its weather** on the emulator, not
       just in tests. This is the acceptance criterion for the whole section:
       the map is clean *and* the planner is untouched.
+
+      **Verified live:** opened "4 uur van Spa" → Weather row → full forecast
+      card renders (condition, cloud-cover/rain charts, day tabs, "Fresh —
+      just now", Refresh), unchanged. Map itself has no weather overlay on
+      either venue.
 
 ---
 
@@ -198,7 +239,7 @@ planner's weather is *staying*, and it shares logic with what is going.
 This is what makes the dial usable standing at a corner: you hold the phone up,
 and where the sun sits on the dial is where the sun is in front of you.
 
-- [ ] **C0. Decide the rotation model first — one decision, before any code.**
+- [x] **C0. Decide the rotation model first — one decision, before any code.**
       Two readings of the ask, and they produce different apps:
 
       **(a) Egocentric markers, north-up map.** The map keeps its orientation.
@@ -220,7 +261,7 @@ and where the sun sits on the dial is where the sun is in front of you.
       by Branco. `SunDial` rotates on `sunAzimuth − heading`; the map's own
       orientation is untouched by C. Do not build (b).
 
-- [ ] **C1. Heading, as a hook.** New `src/ui/state/useHeading.ts`.
+- [x] **C1. Heading, as a hook.** New `src/ui/state/useHeading.ts`.
       `expo-location` is already a dependency and exposes `watchHeadingAsync` —
       **do not add a sensor library**. Three things that will otherwise bite:
 
@@ -238,6 +279,23 @@ and where the sun sits on the dial is where the sun is in front of you.
       - **Stop the subscription when the map is not on screen.** A compass
         watch left running is a background drain on a device that also has to
         last a race weekend.
+
+      **Done — verified 22 August.** Built and tested in isolation, NOT wired
+      into `SunDial`/`MapScreen`/`App.tsx` yet (that's C2/C3, deliberately
+      separate to avoid touching those files while B's removal was landing in
+      parallel). Exported shape:
+      ```ts
+      type HeadingStatus = 'idle' | 'requesting' | 'watching' | 'denied' | 'unavailable';
+      interface UseHeadingResult { heading: number | null; status: HeadingStatus }
+      function useHeading(enabled?: boolean): UseHeadingResult; // default true
+      function smoothHeading(previous: number | null, next: number, alpha: number): number; // pure
+      ```
+      `heading: null` is the unambiguous "unavailable" signal — never coerced
+      from `-1`/uncalibrated to `0`. `smoothHeading` takes the shortest signed
+      angular path and is exported standalone so the wrap-around math is
+      tested without mocking `expo-location`. Permission handling follows
+      `usePosition.ts`'s existing convention. 14 tests, all passing (now
+      actually executed — see the vitest-config note above A1).
 
 - [ ] **C2. Rotate the dial.** `SunDial.tsx` takes heading as a prop and
       rotates. Keep the component pure — same render for the same
