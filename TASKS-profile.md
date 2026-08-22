@@ -348,10 +348,26 @@ available) — worth a quick look before calling it fully done.
 
 ## Done means
 
-- `npx tsc --noEmit` clean.
-- `npx vitest run --exclude "**/entryList.fixtures.test.ts"` green.
-- Theme switching verified **on the emulator**, including a cold start — the
+- [x] `npx tsc --noEmit` clean.
+- [x] `npx vitest run --exclude "**/entryList.fixtures.test.ts"` green (534/534).
+- [x] Theme switching verified **on the emulator**, including a cold start — the
   failure mode this feature invites is a colour that only updates after a
   restart, and that is invisible in a test.
-- Gear added in the profile appears in the event dropdown, and search finds it.
-- No colour that carries meaning has become user-configurable.
+- [x] Gear added in the profile appears in the event dropdown, and search finds it.
+- [x] No colour that carries meaning has become user-configurable.
+
+**All five confirmed live — 22 August**, on a real emulator run, capping off
+the session: opened Profile, confirmed System/Light/Dark and the accent
+slider render (default hue, matching the dial's own blue); added "Nikon Z9"
+through the new Gear form and watched it appear in the list immediately;
+opened the event screen's Gear section and found "Nikon Z9" already
+selectable there, no restart needed; typed "nikon" into its search field and
+watched the list narrow to exactly that one item. The one thing still
+genuinely open is D1's own frame-counter measurement (trees on vs. off) —
+the switch exists now, that comparison is just not done yet.
+
+Section A (menu entry, screen scaffold), B (theme, System/Light/Dark, accent
+hue), and D (performance toggle wiring, gear domain, event dropdown with
+search) are all built, wired, and verified. C is fully checked off too.
+Nothing in this file is unstarted; what remains is the deferred `src/ui/`
+colour-migration sweep B1 explicitly put off, and the D1 measurement above.
