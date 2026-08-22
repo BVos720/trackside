@@ -13,13 +13,26 @@ import { fileURLToPath } from 'node:url';
  * and the generated migration SQL are plain declarations and text, so asserting
  * on them needs no native SQLite driver and no device.
  *
- * Component and native-module tests are a separate concern and will need
- * jest-expo; they do not belong in this config.
+ * `ui/state/` hooks are included too, on the same logic: they mock any native
+ * module they touch (e.g. `expo-location`) rather than exercising it for
+ * real, and test with `react-test-renderer` rather than rendering actual RN
+ * primitives — so, like `core/`, they run under plain Node with nothing to
+ * shim. This is narrower than "all of `src/ui/`" on purpose: a component test
+ * that renders real `View`/`Text`/map primitives still needs jest-expo and
+ * does not belong here.
+ *
+ * Component and native-module-rendering tests are a separate concern and will
+ * need jest-expo; they do not belong in this config.
  */
 export default defineConfig({
   test: {
     environment: 'node',
-    include: ['src/core/**/*.test.ts', 'src/storage-local/**/*.test.ts'],
+    include: [
+      'src/core/**/*.test.ts',
+      'src/storage-local/**/*.test.ts',
+      'src/ui/state/**/*.test.ts',
+      'src/ui/state/**/*.test.tsx',
+    ],
     globals: false,
   },
   resolve: {
