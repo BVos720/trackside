@@ -79,6 +79,7 @@ import type { ReferenceKind } from './src/core/domain/media';
 import {
   MENU_HEIGHT,
   MENU_TOP,
+  ThemeProvider,
   color,
   radius,
   space,
@@ -169,7 +170,9 @@ const CIRCUIT_CHOICES = (Object.keys(CIRCUIT_IDS) as VenueKey[]).map((v) => ({
 export default function App() {
   return (
     <SafeAreaProvider>
-      <AppShell />
+      <ThemeProvider>
+        <AppShell />
+      </ThemeProvider>
     </SafeAreaProvider>
   );
 }
