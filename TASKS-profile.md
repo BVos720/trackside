@@ -262,7 +262,7 @@ available) — worth a quick look before calling it fully done.
       resolving a possibly-null `GearItem.cropFactor` to a real number is left
       to whoever wires this into a screen. Not wired into any screen yet.
 
-- [ ] **D4. The gear dropdown in the event screen, with search.** "In the event
+- [x] **D4. The gear dropdown in the event screen, with search.** "In the event
       menu where you have to add gear, you have a dropdown of all your gear …
       and the dropdown needs to have a search bar." Search matters once the
       list is long, so build the list to be long. Match on manufacturer and
@@ -270,10 +270,29 @@ available) — worth a quick look before calling it fully done.
       EOS R6 Mark II — and keep matching offline and local; this is a filter
       over the user's own rows, not a lookup against anything.
 
-- [ ] **D5. One-handed, in gloves.** A dropdown with a search field is the
+      **Done — 22 August.** Gear attaches to the event (per the decision
+      above): `Event.gearItemIds: readonly UserGearItemId[]` follows
+      `spotIds`' exact pattern, `setGearIncluded` mirrors `setSpotIncluded`.
+      `searchGear` (`core/logic/gearSearch.ts`) splits the query into words
+      and matches each as a substring against manufacturer+model together —
+      multi-word AND, so "canon r6" narrows rather than only matching an
+      exact phrase. 12 tests, including the task's own r6/canon r6/EOS R6
+      examples. New `GearScreen.tsx`, a searchable multi-select, in a new
+      "Gear" section on the event screen, after Equipment. **No "add gear"
+      UI exists anywhere yet** — the profile screen's Gear section (A3) is
+      still the placeholder from the scaffolding pass, so this dropdown has
+      nothing to select from until that's built. Verified live by seeding
+      gear rows directly into storage (bypassing the missing UI): search
+      filtered correctly, selection toggled and survived a cold
+      force-stop + relaunch.
+
+- [x] **D5. One-handed, in gloves.** A dropdown with a search field is the
       fiddliest control in the app so far, and it gets used in a paddock.
       `HIT_SIZE` exists for this. If it cannot be driven with a thumb, it is
       not done (§5.14).
+
+      **Done — 22 August**, alongside D4. Every row and the search input
+      itself are sized to `HIT_SIZE` (56).
 
 ---
 
