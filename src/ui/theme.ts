@@ -1,3 +1,5 @@
+import { createContext, createElement, useContext, type ReactNode } from 'react';
+
 /**
  * Design tokens — spec §5.13, §5.14.
  *
@@ -9,6 +11,26 @@
  *
  * The quiet part does most of the work (§5.13): a 4pt spacing scale used
  * without exception, two font weights rather than five, one accent colour.
+ *
+ * ── Light mode and §5.14, resolved ──────────────────────────────────────
+ * §5.14's own words used to read as requiring *dark* surfaces specifically,
+ * because at the time "opaque and high-contrast" and "dark" were the same
+ * palette — the only one that existed. They are not the same constraint.
+ * Opacity, contrast against the map, and HIT_SIZE touch targets are the hard
+ * requirement; darkness was an implementation of it, not the requirement
+ * itself. A bright theme can hold that same bar — a white sky over Spa in
+ * July can make a dark panel harder to read at a glance than a light one at
+ * an equal contrast ratio — so a light palette is not automatically a §5.14
+ * violation, provided it stays opaque and meets the same contrast and
+ * touch-target floor the dark palette does. What §5.14 still rules out,
+ * regardless of palette, is translucency and undersized targets.
+ *
+ * `color` below stays the dark palette, unchanged, and is not the only
+ * theme forever — see `ThemeProvider`/`useTheme` at the bottom of this file,
+ * which exist so a second (light) palette can be selected at runtime rather
+ * than requiring every screen to re-import a different constant. For now the
+ * provider always hands out this same dark `color`; the light palette itself
+ * is a later change, not this one.
  */
 
 /** 4pt scale. Every margin and padding in the app comes from here. */
@@ -130,3 +152,39 @@ export const MENU_CLEARANCE = MENU_TOP + MENU_HEIGHT + space.sm;
 
 /** Minimum touch target. Assume gloves (§5.14). */
 export const HIT_SIZE = 56;
+
+/**
+ * Colour as a runtime value — the mechanism, not the feature.
+ *
+ * `StyleSheet.create` runs once at import and freezes whatever `color.*` was
+ * at that moment; there are dozens of these calls across `src/ui/`, and none
+ * of them would notice a theme changed later. A context is the fix: a
+ * component that reads `useTheme()` re-renders (and rebuilds its styles) when
+ * the value the provider hands out changes, the way a static import never
+ * can.
+ *
+ * `Theme` is deliberately just `{ color }` for now — the smallest shape that
+ * proves the mechanism. Whoever adds the light palette and the accent hue
+ * (profile sections B2/B3, C) extends this shape and this provider; they
+ * should not need to touch call sites that already migrated to `useTheme()`.
+ *
+ * This provider is intentionally inert: it always hands out the same dark
+ * `color` object above, unconditionally. No picker, no persistence, no
+ * second palette — that is later work. Landing here is only about proving
+ * every `StyleSheet.create` call site *can* read colour at render time
+ * instead of at import time, on a small slice of the app, with zero visible
+ * change.
+ */
+export interface Theme {
+  color: typeof color;
+}
+
+const ThemeContext = createContext<Theme>({ color });
+
+export function ThemeProvider({ children }: { children: ReactNode }) {
+  return createElement(ThemeContext.Provider, { value: { color } }, children);
+}
+
+export function useTheme(): Theme {
+  return useContext(ThemeContext);
+}

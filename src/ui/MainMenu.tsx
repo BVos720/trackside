@@ -10,12 +10,22 @@
  * event you are in, because those two facts change what every other screen is
  * about, and getting them wrong wastes a day.
  */
+import { useMemo } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { SpotUse } from '../core/domain/spot';
 import { VENUE_VIEW, type VenueKey } from './map/style';
-import { MENU_HEIGHT, MENU_TOP, color, radius, space, type, weight } from './theme';
+import {
+  MENU_HEIGHT,
+  MENU_TOP,
+  radius,
+  space,
+  type,
+  useTheme,
+  weight,
+  type Theme,
+} from './theme';
 
 /**
  * The two things you can be at a circuit to do.
@@ -88,6 +98,12 @@ export default function MainMenu({
   onNavigate: (to: Destination) => void;
 }) {
   const insets = useSafeAreaInsets();
+  const { color } = useTheme();
+  // `StyleSheet.create` freezes whatever it is given at call time, so the
+  // styles are rebuilt here — inside the render, keyed on the theme's colour
+  // object — rather than once at module import (see theme.ts's ThemeProvider
+  // doc comment for why that matters).
+  const styles = useMemo(() => makeStyles(color), [color]);
 
   const badge = (key: Destination): string | null => {
     if (key === 'list' || key === 'map') return counts.spots ? String(counts.spots) : null;
@@ -201,96 +217,102 @@ export default function MainMenu({
   );
 }
 
-const styles = StyleSheet.create({
-  trigger: {
-    position: 'absolute',
-    left: space.md,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space.sm,
-    maxWidth: 260,
-    paddingLeft: space.md,
-    paddingRight: space.lg,
-    // Gloves are the normal operating condition (§5.14).
-    height: MENU_HEIGHT,
-    borderRadius: radius.md,
-    backgroundColor: 'rgba(11,13,16,0.92)',
-    borderWidth: 1,
-    borderColor: color.border,
-  },
-  pressed: { opacity: 0.7 },
-  glyph: { color: color.text, fontSize: 18, fontWeight: weight.bold },
-  triggerText: { flexShrink: 1 },
-  triggerTitle: {
-    color: color.text,
-    fontSize: type.body,
-    fontWeight: weight.bold,
-  },
-  triggerSub: { color: color.accent, fontSize: type.label },
+/**
+ * Built per-render from the current theme rather than once at import — see
+ * the `styles` call site above and theme.ts's `ThemeProvider` doc comment.
+ */
+function makeStyles(color: Theme['color']) {
+  return StyleSheet.create({
+    trigger: {
+      position: 'absolute',
+      left: space.md,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: space.sm,
+      maxWidth: 260,
+      paddingLeft: space.md,
+      paddingRight: space.lg,
+      // Gloves are the normal operating condition (§5.14).
+      height: MENU_HEIGHT,
+      borderRadius: radius.md,
+      backgroundColor: 'rgba(11,13,16,0.92)',
+      borderWidth: 1,
+      borderColor: color.border,
+    },
+    pressed: { opacity: 0.7 },
+    glyph: { color: color.text, fontSize: 18, fontWeight: weight.bold },
+    triggerText: { flexShrink: 1 },
+    triggerTitle: {
+      color: color.text,
+      fontSize: type.body,
+      fontWeight: weight.bold,
+    },
+    triggerSub: { color: color.accent, fontSize: type.label },
 
-  backdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    justifyContent: 'flex-end',
-  },
-  sheet: {
-    backgroundColor: color.surface,
-    borderTopLeftRadius: radius.lg,
-    borderTopRightRadius: radius.lg,
-    padding: space.md,
-    maxHeight: '80%',
-  },
-  venueTitle: {
-    color: color.text,
-    fontSize: type.title,
-    fontWeight: weight.bold,
-  },
-  venueSub: { color: color.textMuted, fontSize: type.label, marginTop: 2 },
+    backdrop: {
+      flex: 1,
+      backgroundColor: 'rgba(0,0,0,0.6)',
+      justifyContent: 'flex-end',
+    },
+    sheet: {
+      backgroundColor: color.surface,
+      borderTopLeftRadius: radius.lg,
+      borderTopRightRadius: radius.lg,
+      padding: space.md,
+      maxHeight: '80%',
+    },
+    venueTitle: {
+      color: color.text,
+      fontSize: type.title,
+      fontWeight: weight.bold,
+    },
+    venueSub: { color: color.textMuted, fontSize: type.label, marginTop: 2 },
 
-  modeRow: { flexDirection: 'row', gap: space.sm, marginTop: space.md },
-  /**
-   * Sized for §5.14 — a gloved thumb, in the rain, without looking carefully.
-   * 56pt is the floor for a control that changes what the whole map means.
-   */
-  mode: {
-    flex: 1,
-    minHeight: 56,
-    justifyContent: 'center',
-    paddingHorizontal: space.md,
-    borderRadius: radius.md,
-    backgroundColor: color.surfaceRaised,
-    borderWidth: 1,
-    borderColor: 'transparent',
-  },
-  modeOn: { borderColor: color.accent, backgroundColor: color.surface },
-  modeLabel: { color: color.textMuted, fontSize: type.body, fontWeight: weight.bold },
-  modeLabelOn: { color: color.text },
-  modeCount: { color: color.textFaint, fontSize: 11, marginTop: 2 },
-  modeCountOn: { color: color.accent },
+    modeRow: { flexDirection: 'row', gap: space.sm, marginTop: space.md },
+    /**
+     * Sized for §5.14 — a gloved thumb, in the rain, without looking carefully.
+     * 56pt is the floor for a control that changes what the whole map means.
+     */
+    mode: {
+      flex: 1,
+      minHeight: 56,
+      justifyContent: 'center',
+      paddingHorizontal: space.md,
+      borderRadius: radius.md,
+      backgroundColor: color.surfaceRaised,
+      borderWidth: 1,
+      borderColor: 'transparent',
+    },
+    modeOn: { borderColor: color.accent, backgroundColor: color.surface },
+    modeLabel: { color: color.textMuted, fontSize: type.body, fontWeight: weight.bold },
+    modeLabelOn: { color: color.text },
+    modeCount: { color: color.textFaint, fontSize: 11, marginTop: 2 },
+    modeCountOn: { color: color.accent },
 
-  items: { marginTop: space.md },
-  item: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    minHeight: 60,
-    paddingHorizontal: space.md,
-    borderRadius: radius.md,
-    backgroundColor: color.surfaceRaised,
-    marginBottom: space.sm,
-  },
-  itemPressed: { backgroundColor: color.accent },
-  itemText: { flex: 1 },
-  itemLabel: {
-    color: color.text,
-    fontSize: type.body,
-    fontWeight: weight.bold,
-  },
-  itemHint: { color: color.textFaint, fontSize: type.label, marginTop: 1 },
-  count: {
-    color: color.accent,
-    fontSize: type.body,
-    fontWeight: weight.bold,
-    fontVariant: ['tabular-nums'],
-  },
-});
+    items: { marginTop: space.md },
+    item: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      minHeight: 60,
+      paddingHorizontal: space.md,
+      borderRadius: radius.md,
+      backgroundColor: color.surfaceRaised,
+      marginBottom: space.sm,
+    },
+    itemPressed: { backgroundColor: color.accent },
+    itemText: { flex: 1 },
+    itemLabel: {
+      color: color.text,
+      fontSize: type.body,
+      fontWeight: weight.bold,
+    },
+    itemHint: { color: color.textFaint, fontSize: type.label, marginTop: 1 },
+    count: {
+      color: color.accent,
+      fontSize: type.body,
+      fontWeight: weight.bold,
+      fontVariant: ['tabular-nums'],
+    },
+  });
+}
