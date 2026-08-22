@@ -509,6 +509,26 @@ export function buildMapStyle(
    * the bundle; web uses the default, which its dev server already serves.
    */
   glyphsUrl: string = GLYPHS_URL,
+  /**
+   * Draw the woodland/field scatter — the `trees` and `ground-detail` symbol
+   * layers, both fed by `TREES_SOURCE`.
+   *
+   * The real cost here: `scripts/extract-scenery.mjs` caps the scatter at
+   * 7000 tree points plus 6000 field-plant points per venue (see `MAX_TREES` /
+   * `MAX_FIELD_PLANTS` there), so this one source can carry up to 13k symbol
+   * instances into the style document — by far the largest feature count of
+   * anything `buildMapStyle` composes. `BUILDINGS_SOURCE` was considered too,
+   * but real OSM coverage is thin (a few hundred to ~1100 footprints per
+   * venue, see the comment on `buildings` below) and it carries no comparable
+   * cap or cost callout, so it stays always-on.
+   *
+   * Defaults to `true` — including scenery is the existing behaviour, so
+   * nobody who has not visited the new performance setting sees a change.
+   * When `false`, `TREES_SOURCE` itself is left out of `sources` (not just
+   * hidden), so the up-to-13k-feature GeoJSON is never parsed or held in
+   * memory, not merely skipped at paint time.
+   */
+  includeScenery = true,
 ): unknown {
   const generated = layers(BASEMAP_SOURCE, namedFlavor('dark'), {
     lang: 'en',
@@ -838,7 +858,9 @@ export function buildMapStyle(
       [MASK_SOURCE]: { type: 'geojson', data: MASK_GEOJSON[venue] },
       [KERBS_SOURCE]: { type: 'geojson', data: KERBS_GEOJSON[venue] },
       [BUILDINGS_SOURCE]: { type: 'geojson', data: BUILDINGS_GEOJSON[venue] },
-      [TREES_SOURCE]: { type: 'geojson', data: TREES_GEOJSON[venue] },
+      ...(includeScenery
+        ? { [TREES_SOURCE]: { type: 'geojson', data: TREES_GEOJSON[venue] } }
+        : {}),
       ...(omitSpots ? {} : { [SPOTS_SOURCE]: { type: 'geojson', data: spots } }),
       [TERRAIN_SOURCE]: {
         type: 'raster-dem',
@@ -882,8 +904,7 @@ export function buildMapStyle(
       // On top of the asphalt, under the trees — a tree at the edge of a corner
       // should occlude the kerb, not the other way round.
       ...kerbLayers,
-      trees,
-      groundDetail,
+      ...(includeScenery ? [trees, groundDetail] : []),
       cornerLabels,
       corridorMask,
       // Above the mask: the user's own spots are never masked away.

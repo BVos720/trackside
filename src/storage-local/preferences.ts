@@ -16,6 +16,7 @@ const ACTIVE_EVENT = 'trackside.ui.activeEventId.v1';
 const ACTIVE_VENUE = 'trackside.ui.venue.v1';
 const SPOT_USE = 'trackside.ui.spotUse.v1';
 const PROFILE_NAME = 'trackside.ui.profileName.v1';
+const MAP_SCENERY = 'trackside.ui.mapScenery.v1';
 
 export async function getActiveEventId(): Promise<string | null> {
   return kv.get(ACTIVE_EVENT);
@@ -66,4 +67,22 @@ export async function setProfileName(name: string | null): Promise<void> {
   const trimmed = name?.trim() ?? '';
   if (trimmed === '') await kv.remove(PROFILE_NAME);
   else await kv.set(PROFILE_NAME, trimmed);
+}
+
+/**
+ * Whether the map draws its woodland/field scatter (`trees` and
+ * `groundDetail` in `src/ui/map/style.ts`) — TASKS-profile.md D1.
+ *
+ * Unset reads as enabled, matching the style module's own default: nobody
+ * who has not visited the new performance setting sees a behaviour change.
+ * Stored as `'0'`/`'1'` rather than a JSON boolean because every other value
+ * in this store is a plain string and `kv` is a string-only port.
+ */
+export async function getMapSceneryEnabled(): Promise<boolean> {
+  const raw = await kv.get(MAP_SCENERY);
+  return raw !== '0';
+}
+
+export async function setMapSceneryEnabled(enabled: boolean): Promise<void> {
+  await kv.set(MAP_SCENERY, enabled ? '1' : '0');
 }

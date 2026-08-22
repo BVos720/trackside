@@ -28,6 +28,7 @@ import {
 } from 'react-native';
 import { Asset } from 'expo-asset';
 import { prepareGlyphs } from '../../storage-local/glyphs';
+import { getMapSceneryEnabled } from '../../storage-local/preferences';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   Camera,
@@ -182,6 +183,18 @@ export default function MapScreen({
   const [zoom, setZoom] = useState(VENUE_VIEW[venue].zoom);
   const [is3D, setIs3D] = useState(false);
   /**
+   * Performance toggle — TASKS-profile.md D1. Defaults to `true` (matching
+   * `buildMapStyle`'s own default) so the map looks unchanged before this
+   * loads or for anyone who never visits the new setting. This screen is
+   * conditionally rendered rather than kept mounted behind a navigator (see
+   * `App.tsx`), so remounting on every visit to the map is enough to pick up
+   * a change made on the profile screen — no subscription needed.
+   */
+  const [sceneryEnabled, setSceneryEnabled] = useState(true);
+  useEffect(() => {
+    void (async () => setSceneryEnabled(await getMapSceneryEnabled()))();
+  }, []);
+  /**
    * Local glyph template, once the ranges are on disk.
    *
    * Null until ready, and null forever if the copy fails — the style then keeps
@@ -257,8 +270,9 @@ export default function MapScreen({
             true,
             is3D,
             glyphsUrl ?? REMOTE_GLYPHS_URL,
+            sceneryEnabled,
           ) as never),
-    [tilesUri, venue, is3D, glyphsUrl],
+    [tilesUri, venue, is3D, glyphsUrl, sceneryEnabled],
   );
 
   if (error !== null) {
