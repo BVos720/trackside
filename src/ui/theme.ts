@@ -1,4 +1,22 @@
-import { createContext, createElement, useContext, type ReactNode } from 'react';
+import {
+  createContext,
+  createElement,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from 'react';
+import { useColorScheme } from 'react-native';
+
+import {
+  getThemePreference,
+  setThemePreference,
+  type ThemePreference,
+} from '../storage-local/preferences';
+
+export type { ThemePreference };
 
 /**
  * Design tokens — spec §5.13, §5.14.
@@ -25,12 +43,11 @@ import { createContext, createElement, useContext, type ReactNode } from 'react'
  * touch-target floor the dark palette does. What §5.14 still rules out,
  * regardless of palette, is translucency and undersized targets.
  *
- * `color` below stays the dark palette, unchanged, and is not the only
- * theme forever — see `ThemeProvider`/`useTheme` at the bottom of this file,
- * which exist so a second (light) palette can be selected at runtime rather
- * than requiring every screen to re-import a different constant. For now the
- * provider always hands out this same dark `color`; the light palette itself
- * is a later change, not this one.
+ * `color` below is the dark palette, unchanged from before this file grew a
+ * second one; `lightColor` is the new light palette (TASKS-profile.md B2).
+ * See `ThemeProvider`/`useTheme` at the bottom of this file, which resolve a
+ * three-state preference (system/light/dark, B3) to whichever of the two a
+ * component should actually render with.
  */
 
 /** 4pt scale. Every margin and padding in the app comes from here. */
@@ -70,7 +87,32 @@ export const type = {
   mono: 15,
 } as const;
 
-export const color = {
+/**
+ * The shape both palettes below share.
+ *
+ * Widened to plain `string` (rather than each palette's own literal-typed
+ * `as const` shape) so `color` and `lightColor` are interchangeable wherever
+ * a `Theme` is consumed — a call site reading `useTheme().color.background`
+ * should not care, or be able to tell, which palette it got.
+ */
+export interface ColorTokens {
+  background: string;
+  surface: string;
+  surfaceRaised: string;
+  border: string;
+
+  text: string;
+  textMuted: string;
+  textFaint: string;
+
+  accent: string;
+  onAccent: string;
+
+  undocumented: string;
+  danger: string;
+}
+
+export const color: ColorTokens = {
   /** Opaque, not translucent. See the §5.14 note above. */
   background: '#0B0D10',
   surface: '#161A20',
@@ -104,7 +146,66 @@ export const color = {
    * the thing that costs you something.
    */
   danger: '#E5675C',
-} as const;
+};
+
+/**
+ * The light palette — TASKS-profile.md B2. Same eleven tokens as `color`,
+ * same roles, new values; nothing here changes what a token *means*.
+ *
+ * ── Hierarchy, not three near-identical near-whites ─────────────────────
+ * `background` → `surface` → `surfaceRaised` climbs in the same *direction*
+ * as the dark palette (each step is a little brighter than the last, reading
+ * as "closer to the viewer") rather than inventing a different relationship
+ * for light mode — `background` is a visibly grey-blue floor (#D8DEE5, not a
+ * near-white), `surface` sits above it, and `surfaceRaised` is the one true
+ * white in the palette, reserved for the most-raised layer the way the dark
+ * palette reserves its lightest tone for the same role.
+ *
+ * ── Contrast, checked against a white sky, not a blank screen ────────────
+ * `accent` is a deeper, more saturated blue than the dark palette's
+ * (`#1B63D1` vs `#2E7DF6`) rather than the same hex reused: the dark
+ * palette's brighter blue reads at ~3.9:1 against white, under the 4.5:1
+ * floor for normal text — legible as a border or a fill, not reliably as
+ * text. `#1B63D1` holds ~5.6:1 against both `surfaceRaised` (white) and
+ * `onAccent` (also white, so the label on a filled accent button holds the
+ * same ratio in reverse). `danger` is deepened the same way for the same
+ * reason (`#E5675C` is ~3.3:1 on white; `#C13B30` is ~5.3:1). `text` and
+ * `textMuted` clear 13:1 and 6:1 against `background`, the darkest of the
+ * three surfaces and so the hardest case. `textFaint` (and `undocumented`,
+ * which — like the dark palette — is deliberately the same value as
+ * `textFaint` rather than a fourth grey) sits around 4.3:1 against
+ * `surfaceRaised`: short of the 4.5:1 text floor, but consistent with the
+ * dark palette's own `textFaint`, which is ~2.75:1 against its raised
+ * surface. Both palettes treat "faint" as a deliberately de-emphasised tier,
+ * never used for anything that has to be read rather than skimmed — the
+ * light palette actually holds a higher floor there than the dark one does.
+ *
+ * These are the same panel-over-map surfaces `SunDial.tsx`/`SkyControl.tsx`
+ * were built against (no fill, a text shadow, or a single opaque backdrop
+ * disc) — the map itself stays the dark basemap in `src/ui/map/style.ts`
+ * regardless of this palette, so nothing here recolours it, and any control
+ * resting directly on map pixels still needs its own fixed, theme-independent
+ * treatment the way those two files already have (see `MainMenu.tsx`'s
+ * floating trigger for the one place that needed a matching fix once this
+ * palette existed to expose it).
+ */
+export const lightColor: ColorTokens = {
+  background: '#D8DEE5',
+  surface: '#EDF0F3',
+  surfaceRaised: '#FFFFFF',
+  border: '#C3CBD5',
+
+  text: '#12161B',
+  textMuted: '#48505B',
+  textFaint: '#727B87',
+
+  accent: '#1B63D1',
+  onAccent: '#FFFFFF',
+
+  undocumented: '#727B87',
+
+  danger: '#C13B30',
+};
 
 /**
  * Colours for the light-quality bands.
@@ -113,6 +214,10 @@ export const color = {
  * information. At solar altitude +2° the strip renders amber because the light
  * genuinely is amber at that moment — aesthetics and function collapse into one
  * thing rather than competing.
+ *
+ * Data, not decoration (TASKS-profile.md B2.3/C3) — this ramp, and the
+ * access-classification colours in `src/core/domain/spot.ts`'s companion UI,
+ * do not change between palettes and are never driven by `useTheme()`.
  */
 export const lightQualityColor = {
   daylight: '#7FB2E5',
@@ -154,7 +259,7 @@ export const MENU_CLEARANCE = MENU_TOP + MENU_HEIGHT + space.sm;
 export const HIT_SIZE = 56;
 
 /**
- * Colour as a runtime value — the mechanism, not the feature.
+ * Colour as a runtime value — the mechanism, and now the feature.
  *
  * `StyleSheet.create` runs once at import and freezes whatever `color.*` was
  * at that moment; there are dozens of these calls across `src/ui/`, and none
@@ -163,26 +268,95 @@ export const HIT_SIZE = 56;
  * the value the provider hands out changes, the way a static import never
  * can.
  *
- * `Theme` is deliberately just `{ color }` for now — the smallest shape that
- * proves the mechanism. Whoever adds the light palette and the accent hue
- * (profile sections B2/B3, C) extends this shape and this provider; they
- * should not need to touch call sites that already migrated to `useTheme()`.
+ * ── The three states (B3) ─────────────────────────────────────────────────
+ * `preference` is what the user chose — `'system'` (default), `'light'` or
+ * `'dark'` — persisted through `storage-local/preferences.ts`'s
+ * `getThemePreference`/`setThemePreference`. `scheme` is what that resolves
+ * to *right now*: `'system'` tracks `useColorScheme()`, the other two are
+ * fixed. Both are exposed on `Theme` because the profile screen's switch
+ * needs to show which of the three is selected, not just which palette is
+ * currently active — those differ exactly when the preference is `'system'`.
  *
- * This provider is intentionally inert: it always hands out the same dark
- * `color` object above, unconditionally. No picker, no persistence, no
- * second palette — that is later work. Landing here is only about proving
- * every `StyleSheet.create` call site *can* read colour at render time
- * instead of at import time, on a small slice of the app, with zero visible
- * change.
+ * `useColorScheme()` already subscribes to OS appearance changes reactively;
+ * this provider's own `useEffect` only loads the *persisted preference* once
+ * on mount; the two are independent state, so a `'system'` user's screen
+ * updates the instant the OS flips at sunset without waiting on — or being
+ * blocked by — the preference load. `setPreference` updates the in-memory
+ * state immediately (so the switch feels instant) and persists in the
+ * background.
  */
 export interface Theme {
-  color: typeof color;
+  color: ColorTokens;
+  /** Which palette is actually in effect right now, after 'system' resolves. */
+  scheme: 'light' | 'dark';
+  /** The user's stored choice — 'system' unless they overrode it. */
+  preference: ThemePreference;
+  /** Persist a new choice and apply it immediately. */
+  setPreference: (preference: ThemePreference) => void;
 }
 
-const ThemeContext = createContext<Theme>({ color });
+const ThemeContext = createContext<Theme>({
+  color,
+  scheme: 'dark',
+  preference: 'system',
+  setPreference: () => {},
+});
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  return createElement(ThemeContext.Provider, { value: { color } }, children);
+  // Independent of the preference load below — an OS appearance change
+  // reaches a 'system' user immediately regardless of whether the persisted
+  // preference has finished loading yet.
+  const osScheme = useColorScheme();
+  const [preference, setPreferenceState] = useState<ThemePreference>('system');
+
+  useEffect(() => {
+    let cancelled = false;
+    void getThemePreference()
+      .then((stored) => {
+        if (!cancelled) setPreferenceState(stored);
+      })
+      .catch(() => {
+        // The store failed to answer (e.g. a cold-start race on the
+        // underlying kv table) — 'system' is already the state above, so
+        // there is nothing to roll back to. Swallowed rather than an
+        // unhandled rejection: a settings read that cannot complete is not
+        // worth crashing the app over, and the next successful read (or the
+        // next explicit choice, which persists again) corrects it.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const setPreference = useCallback((next: ThemePreference) => {
+    // Update in memory first so the switch flips on the same frame it is
+    // tapped; the persisted write can trail behind without the UI waiting on
+    // it — a cold start reads it back via the effect above.
+    setPreferenceState(next);
+    // Same reasoning as the load above: a failed write should not crash the
+    // screen the user is actively using it from. The choice still holds for
+    // the rest of this session (in-memory state above already changed); it
+    // just may not survive a restart if this particular write lost the race.
+    void setThemePreference(next).catch(() => {});
+  }, []);
+
+  // Unknown/undetermined OS scheme (web, or a platform that reports null)
+  // falls back to dark — the palette's original hard default — rather than
+  // guessing light.
+  const scheme: 'light' | 'dark' =
+    preference === 'system' ? (osScheme === 'light' ? 'light' : 'dark') : preference;
+
+  const value = useMemo<Theme>(
+    () => ({
+      color: scheme === 'light' ? lightColor : color,
+      scheme,
+      preference,
+      setPreference,
+    }),
+    [scheme, preference, setPreference],
+  );
+
+  return createElement(ThemeContext.Provider, { value }, children);
 }
 
 export function useTheme(): Theme {

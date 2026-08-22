@@ -12,10 +12,10 @@
  * so a closed section still tells you whether it has anything in it — which is
  * usually the only question.
  */
-import { useState, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { color, radius, space, type, weight } from './theme';
+import { radius, space, type, useTheme, weight, type Theme } from './theme';
 
 export default function Collapsible({
   title,
@@ -33,6 +33,8 @@ export default function Collapsible({
   children: ReactNode;
 }) {
   const [open, setOpen] = useState(initiallyOpen);
+  const { color } = useTheme();
+  const styles = useMemo(() => makeStyles(color), [color]);
 
   return (
     <View style={styles.root}>
@@ -59,37 +61,43 @@ export default function Collapsible({
   );
 }
 
-const styles = StyleSheet.create({
-  root: {
-    marginTop: space.sm,
-    borderRadius: radius.md,
-    backgroundColor: color.surface,
-    overflow: 'hidden',
-  },
-  pressed: { opacity: 0.7 },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space.sm,
-    // Gloves are the normal operating condition (§5.14).
-    minHeight: 56,
-    paddingHorizontal: space.md,
-  },
-  chevron: { color: color.textMuted, fontSize: 13, width: 14 },
-  titleBlock: { flex: 1 },
-  title: { color: color.text, fontSize: type.body, fontWeight: weight.bold },
-  hint: { color: color.textMuted, fontSize: type.label, marginTop: 1 },
-  badge: {
-    color: color.accent,
-    fontSize: type.body,
-    fontWeight: weight.bold,
-    fontVariant: ['tabular-nums'],
-  },
-  body: {
-    paddingHorizontal: space.md,
-    paddingBottom: space.md,
-    borderTopWidth: 1,
-    borderTopColor: color.border,
-    paddingTop: space.sm,
-  },
-});
+/**
+ * Built per-render from the current theme rather than once at import — see
+ * `MainMenu.tsx`'s `makeStyles` and theme.ts's `ThemeProvider` doc comment.
+ */
+function makeStyles(color: Theme['color']) {
+  return StyleSheet.create({
+    root: {
+      marginTop: space.sm,
+      borderRadius: radius.md,
+      backgroundColor: color.surface,
+      overflow: 'hidden',
+    },
+    pressed: { opacity: 0.7 },
+    header: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: space.sm,
+      // Gloves are the normal operating condition (§5.14).
+      minHeight: 56,
+      paddingHorizontal: space.md,
+    },
+    chevron: { color: color.textMuted, fontSize: 13, width: 14 },
+    titleBlock: { flex: 1 },
+    title: { color: color.text, fontSize: type.body, fontWeight: weight.bold },
+    hint: { color: color.textMuted, fontSize: type.label, marginTop: 1 },
+    badge: {
+      color: color.accent,
+      fontSize: type.body,
+      fontWeight: weight.bold,
+      fontVariant: ['tabular-nums'],
+    },
+    body: {
+      paddingHorizontal: space.md,
+      paddingBottom: space.md,
+      borderTopWidth: 1,
+      borderTopColor: color.border,
+      paddingTop: space.sm,
+    },
+  });
+}
