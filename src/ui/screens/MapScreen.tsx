@@ -52,6 +52,7 @@ import CircuitRuler from '../map/CircuitRuler';
 import SunDial from '../map/SunDial';
 import SkyControl from '../map/SkyControl';
 import { useMapClock } from '../state/useMapClock';
+import { useHeading } from '../state/useHeading';
 import type { LatLon } from '../../core/domain/common';
 import {
   REMOTE_GLYPHS_URL,
@@ -162,6 +163,20 @@ export default function MapScreen({
    * task file's note on the shared-clock desync bug.
    */
   const clock = useMapClock();
+  /**
+   * C2: which way the phone is pointing, for `SunDial`'s rotation.
+   *
+   * Enabled unconditionally rather than tracking screen focus explicitly —
+   * `MapScreen` itself only mounts while `App.tsx`'s `where` is `'map'` or
+   * `'list'` (see that file), so the hook's own subscription already stops
+   * the moment this component unmounts, which is the same "stop watching
+   * when the map is not on screen" the task file (C1) asks for. True heading
+   * only (never `usePosition`'s magnetic fallback below) — this value gets
+   * subtracted from an astronomically-computed azimuth in `SunDial`, and a
+   * magnetic reading would put the sun mark a few degrees off in a way
+   * nobody could explain by looking at it.
+   */
+  const { heading: dialHeading } = useHeading(true);
   const [tilesUri, setTilesUri] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [zoom, setZoom] = useState(VENUE_VIEW[venue].zoom);
@@ -622,6 +637,7 @@ export default function MapScreen({
         at={clock.now}
         position={position}
         top={insets.top + MENU_TOP + CIRCUIT_RULER_CLEARANCE}
+        heading={dialHeading}
       />
 
       {/*

@@ -1,15 +1,14 @@
 /**
  * The 24-hour light-quality strip, date row, and "Now" control — the primary
- * UI for scrubbing the map's clock, task A3.
+ * UI for scrubbing the map's clock, task A3/D1/D2.
  *
  * `clock` is a prop, not a call to `useMapClock()` here — a second call to the
  * hook would create an independent clock instance with its own state, which
  * is exactly the desync bug the task file warns about (§ "the sun and the
- * weather must be reading the *same instant*"). The wiring pass (`B-wire`)
- * calls `useMapClock()` exactly once, at `MapScreen`'s top level, and hands
- * the same `clock` object to this component, `SunDial` (as `at={clock.now}`)
- * and `WeatherOverlay` (as a resolved `condition`) — one instant, three
- * consumers.
+ * weather must be reading the *same instant*"). `MapScreen` calls
+ * `useMapClock()` exactly once, at its top level, and hands the same `clock`
+ * object to this component and `SunDial` (as `at={clock.now}`) — one
+ * instant, both consumers.
  *
  * ── Why the strip doesn't recompute astronomy per frame ─────────────────────
  * `solarPosition`/suncalc is not free, and a drag produces dozens of frames a
@@ -25,17 +24,19 @@
  * `fractionOfDay`/`instantAtFraction`/`sampleDayLight`/`nearestHourSample`
  * themselves live in `core/logic/lightStrip.ts`, not here — they touch no
  * React/RN API, and this project's `vitest.config.mts` only runs tests under
- * `src/core/` and `src/storage-local/` (component tests are explicitly out
- * of scope there pending `jest-expo`). Keeping them framework-free is what
- * makes them testable at all under the existing test setup; see that file's
- * header for the full reasoning.
+ * `src/core/`, `src/storage-local/` and `src/ui/state/` (component tests are
+ * explicitly out of scope there pending `jest-expo`). Keeping them
+ * framework-free is what makes them testable at all under the existing test
+ * setup; see that file's header for the full reasoning.
  *
  * ── Dragging ─────────────────────────────────────────────────────────────
  * No gesture library and no `Animated` are installed in this project, and
- * neither should be added (`WeatherOverlay`'s header notes the same
+ * neither should be added (`WeatherOverlay`'s old header noted the same
  * constraint for animation, for the same reason: a native module and a
  * component known to fight this app's map surface). `PanResponder` — part of
- * core `react-native`, no extra dependency — drives the strip directly.
+ * core `react-native`, no extra dependency — drives the strip directly, and
+ * the collapse/expand below (D2) snaps between two fixed heights rather than
+ * animating between them for the same reason.
  *
  * The strip's on-screen width is captured via `onLayout`. Because
  * `PanResponder.create` is called exactly once (`useRef`), its handlers close
@@ -44,10 +45,32 @@
  * is the fix: it is written on every render (not just via effects) and read
  * from inside the gesture handlers instead of capturing values directly, so
  * the handlers always see the current strip width, clock and day.
+ *
+ * ── D2: quiet until touched ──────────────────────────────────────────────
+ * The full 24-hour strip, hour ticks and date row are furniture for
+ * something used a few seconds at a time (task: "it doesn't feel like it's
+ * all cluttered"). Collapsed by default to a slim strip — same 24-cell
+ * gradient, just short — that expands to the full interactive height for as
+ * long as a thumb is down (`onPanResponderGrant`/`Release`/`Terminate`
+ * toggle `expanded`) and recedes the moment it lifts. The header row (time,
+ * quality, the Now/Live control) is a sibling that renders unconditionally —
+ * "Now" has to stay reachable without expanding anything (task D2), and it
+ * already lived outside the strip, so nothing moves to satisfy that.
+ * `hitSlop` keeps the *touch* target glove-sized (§5.14, `HIT_SIZE`) even
+ * though the *visible* collapsed strip is deliberately thin — the two are
+ * allowed to disagree.
+ *
+ * ── D1/D4: reading as part of the map, not a card on top of it ──────────────
+ * No enclosing rectangle, no border, no background fill — the strip itself
+ * (already its own rounded, bordered bar; that shape is content, not
+ * chrome) is the only solid object. Header and date-row text get a drop
+ * shadow for contrast against the map's own brightness instead of a
+ * background box (D4).
  */
 import { useCallback, useMemo, useRef, useState } from 'react';
 import {
   PanResponder,
+  Pressable,
   StyleSheet,
   Text,
   View,
@@ -65,8 +88,22 @@ import { lightQuality, solarPosition } from '../../core/logic/sun';
 import { color, lightQualityColor, radius, space, type, weight } from '../theme';
 import type { MapClock } from '../state/useMapClock';
 
-const STRIP_HEIGHT = 36;
+/** Full interactive height, while a thumb is down. Matches the old always-on height. */
+const STRIP_HEIGHT_EXPANDED = 36;
+/** D2's "quiet" height — a hint of the day's shape, not a control. */
+const STRIP_HEIGHT_COLLAPSED = 10;
 const KNOB_SIZE = 18;
+/**
+ * Extra invisible touch margin so the collapsed strip stays glove-sized
+ * (§5.14) despite reading thin. `top` is deliberately much smaller than the
+ * other three sides — the "Now"/"Live" button sits directly above with only
+ * `space.sm` of real gap, and this hitSlop must not reach up far enough to
+ * steal a tap meant for that button. `bottom`/`left`/`right` face open map,
+ * so they can be generous.
+ */
+const STRIP_HIT_SLOP = { top: 6, bottom: 24, left: 4, right: 4 };
+/** The Now/Live control gets its own slop rather than relying on the strip's falling short of it. */
+const NOW_BUTTON_HIT_SLOP = { top: 10, bottom: 10, left: 10, right: 10 };
 
 function formatClock(at: Date): string {
   const h = at.getHours().toString().padStart(2, '0');
@@ -102,6 +139,8 @@ export default function SkyControl({
   bottom?: number;
 }) {
   const [stripWidth, setStripWidth] = useState(0);
+  const [expanded, setExpanded] = useState(false);
+  const stripHeight = expanded ? STRIP_HEIGHT_EXPANDED : STRIP_HEIGHT_COLLAPSED;
 
   // Written every render, read only from inside PanResponder callbacks — see
   // the file header for why a plain closure over `clock`/`stripWidth` would
@@ -121,8 +160,13 @@ export default function SkyControl({
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: () => true,
-      onPanResponderGrant: (evt: GestureResponderEvent) => scrubToLocationX(evt),
+      onPanResponderGrant: (evt: GestureResponderEvent) => {
+        setExpanded(true);
+        scrubToLocationX(evt);
+      },
       onPanResponderMove: (evt: GestureResponderEvent) => scrubToLocationX(evt),
+      onPanResponderRelease: () => setExpanded(false),
+      onPanResponderTerminate: () => setExpanded(false),
     }),
   ).current;
 
@@ -181,16 +225,32 @@ export default function SkyControl({
         {currentQuality && (
           <Text style={styles.qualityLabel}>{currentQuality.toUpperCase()}</Text>
         )}
-        <Text
+        {/*
+          A `Pressable`, not a `Text` with `onPress` — the strip immediately
+          below carries its own `hitSlop` (D2, so the thin collapsed strip
+          stays glove-easy to grab) and the two controls sit only
+          `space.sm` apart. `Text` has no `hitSlop` of its own to defend
+          this button's edge with; `Pressable` does, so the button owns its
+          touch area outright instead of hoping the strip's slop stops short.
+        */}
+        <Pressable
           accessibilityRole="button"
+          hitSlop={NOW_BUTTON_HIT_SLOP}
           onPress={() => clock.resumeNow()}
           style={[styles.nowButton, clock.isLive && styles.nowButtonLive]}
         >
-          {clock.isLive ? 'LIVE' : 'NOW'}
-        </Text>
+          <Text style={[styles.nowButtonLabel, clock.isLive && styles.nowButtonLabelLive]}>
+            {clock.isLive ? 'LIVE' : 'NOW'}
+          </Text>
+        </Pressable>
       </View>
 
-      <View style={styles.strip} onLayout={onStripLayout} {...panResponder.panHandlers}>
+      <View
+        style={[styles.strip, { height: stripHeight }]}
+        onLayout={onStripLayout}
+        hitSlop={STRIP_HIT_SLOP}
+        {...panResponder.panHandlers}
+      >
         {samples.map((s) => (
           <View
             key={s.hour}
@@ -207,49 +267,66 @@ export default function SkyControl({
           />
         ))}
         {stripWidth > 0 && (
-          <View style={[styles.knob, { left: knobLeft }]} pointerEvents="none" />
+          <View
+            style={[
+              styles.knob,
+              { left: knobLeft, height: stripHeight + 6 },
+            ]}
+            pointerEvents="none"
+          />
         )}
       </View>
 
-      <View style={styles.hourTicks} pointerEvents="none">
-        <Text style={styles.hourTick}>00</Text>
-        <Text style={styles.hourTick}>06</Text>
-        <Text style={styles.hourTick}>12</Text>
-        <Text style={styles.hourTick}>18</Text>
-        <Text style={styles.hourTick}>24</Text>
-      </View>
+      {expanded && (
+        <>
+          <View style={styles.hourTicks} pointerEvents="none">
+            <Text style={styles.hourTick}>00</Text>
+            <Text style={styles.hourTick}>06</Text>
+            <Text style={styles.hourTick}>12</Text>
+            <Text style={styles.hourTick}>18</Text>
+            <Text style={styles.hourTick}>24</Text>
+          </View>
 
-      <View style={styles.dateRow}>
-        <Text
-          style={styles.dateArrow}
-          accessibilityRole="button"
-          onPress={() => goToDay(-1)}
-        >
-          ‹
-        </Text>
-        <Text style={styles.dateLabel}>{formatDate(clock.now)}</Text>
-        <Text
-          style={styles.dateArrow}
-          accessibilityRole="button"
-          onPress={() => goToDay(1)}
-        >
-          ›
-        </Text>
-      </View>
+          <View style={styles.dateRow}>
+            <Text
+              style={styles.dateArrow}
+              accessibilityRole="button"
+              onPress={() => goToDay(-1)}
+            >
+              ‹
+            </Text>
+            <Text style={styles.dateLabel}>{formatDate(clock.now)}</Text>
+            <Text
+              style={styles.dateArrow}
+              accessibilityRole="button"
+              onPress={() => goToDay(1)}
+            >
+              ›
+            </Text>
+          </View>
+        </>
+      )}
     </View>
   );
 }
+
+/**
+ * Shared by every loose text label below — see `SunDial.tsx`'s identical
+ * constant for why a drop shadow replaces the background box this control
+ * used to sit on (D4), and why `'#000'` specifically (matches the app's one
+ * existing drop-shadow convention in `PlannerScreen.tsx`).
+ */
+const textLegibility = {
+  textShadowColor: '#000',
+  textShadowOffset: { width: 0, height: 1 },
+  textShadowRadius: 3,
+} as const;
 
 const styles = StyleSheet.create({
   root: {
     position: 'absolute',
     left: space.md,
     right: space.md,
-    padding: space.sm,
-    borderRadius: radius.md,
-    backgroundColor: 'rgba(11,13,16,0.86)',
-    borderWidth: 1,
-    borderColor: color.border,
   },
   header: {
     flexDirection: 'row',
@@ -257,12 +334,14 @@ const styles = StyleSheet.create({
     marginBottom: space.xs,
   },
   title: {
-    color: color.textFaint,
+    ...textLegibility,
+    color: color.text,
     fontSize: 10,
     fontWeight: weight.bold,
     letterSpacing: 1.5,
   },
   timeLabel: {
+    ...textLegibility,
     marginLeft: space.sm,
     color: color.text,
     fontSize: type.body,
@@ -270,18 +349,23 @@ const styles = StyleSheet.create({
     fontVariant: ['tabular-nums'],
   },
   qualityLabel: {
+    ...textLegibility,
     marginLeft: space.sm,
-    color: color.textFaint,
+    color: color.textMuted,
     fontSize: 9,
     fontWeight: weight.bold,
     letterSpacing: 1,
   },
+  /**
+   * The one button on this control, so it keeps its own opaque fill even
+   * though the panel around it lost its own (D1) — a tap target has to stay
+   * legible and feel pressable regardless of what the "quiet" strip below it
+   * is doing, and `HIT_SIZE`-style controls elsewhere in the app are always
+   * solid, never see-through. A `Pressable` now (see the JSX comment above),
+   * so layout/paint lives here and text styling lives in `nowButtonLabel`.
+   */
   nowButton: {
     marginLeft: 'auto',
-    color: color.text,
-    fontSize: 10,
-    fontWeight: weight.bold,
-    letterSpacing: 1,
     paddingHorizontal: space.sm,
     paddingVertical: space.xs,
     borderRadius: radius.sm,
@@ -291,14 +375,23 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   nowButtonLive: {
-    color: color.onAccent,
     backgroundColor: color.accent,
     borderColor: color.accent,
+  },
+  nowButtonLabel: {
+    ...textLegibility,
+    color: color.text,
+    fontSize: 10,
+    fontWeight: weight.bold,
+    letterSpacing: 1,
+  },
+  nowButtonLabelLive: {
+    color: color.onAccent,
+    textShadowColor: 'transparent',
   },
 
   strip: {
     flexDirection: 'row',
-    height: STRIP_HEIGHT,
     borderRadius: radius.sm,
     overflow: 'hidden',
     borderWidth: 1,
@@ -309,7 +402,6 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: -3,
     width: KNOB_SIZE,
-    height: STRIP_HEIGHT + 6,
     borderRadius: KNOB_SIZE / 2,
     borderWidth: 2,
     borderColor: color.text,
@@ -321,7 +413,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginTop: space.xs,
   },
-  hourTick: { color: color.textFaint, fontSize: 9, fontVariant: ['tabular-nums'] },
+  hourTick: { ...textLegibility, color: color.textMuted, fontSize: 9, fontVariant: ['tabular-nums'] },
 
   dateRow: {
     flexDirection: 'row',
@@ -331,7 +423,8 @@ const styles = StyleSheet.create({
     gap: space.md,
   },
   dateArrow: {
-    color: color.textMuted,
+    ...textLegibility,
+    color: color.text,
     fontSize: type.title,
     fontWeight: weight.bold,
     paddingHorizontal: space.md,
@@ -340,6 +433,7 @@ const styles = StyleSheet.create({
     paddingVertical: space.xs,
   },
   dateLabel: {
+    ...textLegibility,
     color: color.text,
     fontSize: type.body,
     fontWeight: weight.bold,

@@ -1,5 +1,5 @@
 /**
- * The sun, as a fixed on-screen dial — spec §5.2/§5.12, task A2.
+ * The sun, as a fixed on-screen dial — spec §5.2/§5.12, task A2/C2/D1.
  *
  * Not a map pin. The sun has no ground coordinate, so unlike `CircuitRuler`'s
  * neighbours on this screen it never anchors to a `lngLat` — it is a compass
@@ -7,10 +7,8 @@
  * camera body rather than drawn on the map itself.
  *
  * ── Reading it ────────────────────────────────────────────────────────────
- * The map is north-up with no camera bearing applied (`MapScreen` never
- * rotates), so azimuth 0° is screen-up without any correction. A marker
- * orbits the ring at that bearing — stand at a corner, look at the ring, and
- * the marker points the way the light is coming from.
+ * A marker orbits the ring at the sun's bearing — stand at a corner, look at
+ * the ring, and the marker points the way the light is coming from.
  *
  * Altitude reads on the same marker two ways at once, because colour alone
  * is too easy to misjudge at a glance in bright sun:
@@ -23,16 +21,38 @@
  *     *where*, which is the whole point during golden/blue hour, but it never
  *     looks like daytime.
  *
- * Controlled, deliberately: `at` and `position` are props, not state read
- * from `useMapClock` directly. The wiring step (`B-wire`) supplies `at`, so
- * this file has no dependency on the clock hook and can be built and tested
- * against a plain `Date`.
+ * ── C2: rotating with the phone ──────────────────────────────────────────
+ * Task C0 decided egocentric markers on a north-up map: the map itself never
+ * rotates, but the ring does, so its "up" tracks wherever the phone is
+ * physically pointing. The whole `ringWrap` (ring, N label, halo, marker) gets
+ * one `rotate` transform of `-heading` degrees. Because the marker's own
+ * position inside that view is still placed by plain azimuth
+ * (`bearingOffset`, unchanged from before C2), rotating the container is
+ * mathematically the same as computing `azimuth − heading` directly, and it
+ * carries the N label around for free — north still reads correctly wherever
+ * it now points, with no separate rotation math for it.
+ *
+ * `heading == null` (no permission, no sensor, not yet calibrated — see
+ * `useHeading.ts`) means "no rotation", not "rotation of 0": the ring simply
+ * stays north-up, exactly as it always did, but a small caption says so
+ * rather than silently implying the ring is phone-relative when it is not
+ * (task C2: "degrade honestly"). Kept a pure function of props, same as
+ * before — the subscription lives in `useHeading`, not here.
+ *
+ * ── D1/D4: reading as part of the map, not a card on top of it ──────────────
+ * No enclosing rectangle, no border, no title bar. The only "solid" shape is
+ * a disc sized to the ring itself — a compass rose sitting on the map, the
+ * way a physical bezel compass would, rather than a panel that happens to
+ * contain one. Loose text (bearing/altitude/quality) gets a drop shadow
+ * instead of a background box for contrast, since the map's own brightness
+ * changes under it as it moves (D4) and a big rectangle was the "clutter"
+ * Branco named.
  */
 import { StyleSheet, Text, View } from 'react-native';
 
 import type { LatLon } from '../../core/domain/common';
 import { LightQuality, lightQuality, solarPosition } from '../../core/logic/sun';
-import { color, lightQualityColor, radius, space, type, weight } from '../theme';
+import { color, lightQualityColor, space, type, weight } from '../theme';
 
 /** Outer diameter of the compass ring. */
 const RING_SIZE = 88;
@@ -93,9 +113,11 @@ export function compassAbbrev(azimuthDegrees: number): string {
 /**
  * Azimuth to a screen offset from the ring's centre, at a given distance.
  *
- * The map is north-up with no bearing rotation (see the file header), so
- * azimuth is used directly as a screen angle measured clockwise from
- * straight up — no correction for camera bearing is needed or applied here.
+ * Always plain azimuth, measured clockwise from the ring's own "up" — never
+ * corrected for heading here. `ringWrap`'s own `transform: rotate(...)`
+ * (C2) carries the whole ring, marker and N label around together, which is
+ * equivalent to subtracting heading from azimuth without this function
+ * needing to know heading exists.
  */
 export function bearingOffset(
   azimuthDegrees: number,
@@ -131,10 +153,17 @@ export default function SunDial({
   position,
   /** Distance from the top of the screen, already clear of the safe area. */
   top,
+  /**
+   * True-north compass bearing from `useHeading()`, or `null` for "no usable
+   * heading" — permission refused, no sensor, or not yet calibrated. `null`
+   * (the default) renders the ring north-up, same as before C2 existed.
+   */
+  heading = null,
 }: {
   at: Date;
   position: LatLon;
   top?: number;
+  heading?: number | null;
 }) {
   const solar = solarPosition(at, position);
   const quality = lightQuality(solar.altitude);
@@ -144,6 +173,7 @@ export default function SunDial({
   const { dx, dy } = bearingOffset(solar.azimuth, distance);
   const markerSize = MARKER_SIZE[quality];
   const showHalo = HALO_QUALITIES.has(quality);
+  const isNorthUp = heading === null;
 
   return (
     <View
@@ -152,43 +182,52 @@ export default function SunDial({
     >
       <Text style={styles.title}>SUN</Text>
 
-      <View style={styles.ringWrap}>
-        <View style={styles.ring} />
-        <Text style={styles.northLabel}>N</Text>
-        <View style={styles.centreDot} />
+      <View style={styles.ringSlot}>
+        <View style={styles.ringBackdrop} />
+        <View
+          style={[
+            styles.ringWrap,
+            isNorthUp ? null : { transform: [{ rotate: `${-heading}deg` }] },
+          ]}
+        >
+          <View style={styles.ring} />
+          <Text style={styles.northLabel}>N</Text>
+          <View style={styles.centreDot} />
 
-        {showHalo && (
+          {showHalo && (
+            <View
+              style={[
+                styles.halo,
+                {
+                  width: markerSize * 2.4,
+                  height: markerSize * 2.4,
+                  borderRadius: markerSize * 1.2,
+                  backgroundColor: qualityColor,
+                  left: RING_RADIUS + dx - markerSize * 1.2,
+                  top: RING_RADIUS + dy - markerSize * 1.2,
+                },
+              ]}
+            />
+          )}
+
           <View
             style={[
-              styles.halo,
+              styles.marker,
               {
-                width: markerSize * 2.4,
-                height: markerSize * 2.4,
-                borderRadius: markerSize * 1.2,
+                width: markerSize,
+                height: markerSize,
+                borderRadius: markerSize / 2,
                 backgroundColor: qualityColor,
-                left: RING_RADIUS + dx - markerSize * 1.2,
-                top: RING_RADIUS + dy - markerSize * 1.2,
+                left: RING_RADIUS + dx - markerSize / 2,
+                top: RING_RADIUS + dy - markerSize / 2,
               },
             ]}
           />
-        )}
-
-        <View
-          style={[
-            styles.marker,
-            {
-              width: markerSize,
-              height: markerSize,
-              borderRadius: markerSize / 2,
-              backgroundColor: qualityColor,
-              left: RING_RADIUS + dx - markerSize / 2,
-              top: RING_RADIUS + dy - markerSize / 2,
-            },
-          ]}
-        />
+        </View>
       </View>
 
-      <View style={styles.divider} />
+      {isNorthUp && <Text style={styles.northUpNote}>NORTH-UP</Text>}
+
       <View style={styles.row}>
         <Text style={styles.bearingValue}>{compassAbbrev(solar.azimuth)}</Text>
         <Text style={styles.altitudeValue}>{formatAltitude(solar.altitude)}</Text>
@@ -198,30 +237,62 @@ export default function SunDial({
   );
 }
 
+/**
+ * Shared by every loose text label below — the map behind this control moves
+ * and changes brightness as it pans (D4), so a drop shadow does the contrast
+ * job a background box used to do, without reintroducing the box. `'#000'`
+ * matches the one drop-shadow convention already in the app
+ * (`PlannerScreen.tsx`'s raised card) rather than inventing a new value.
+ */
+const textLegibility = {
+  textShadowColor: '#000',
+  textShadowOffset: { width: 0, height: 1 },
+  textShadowRadius: 3,
+} as const;
+
 const styles = StyleSheet.create({
   root: {
     position: 'absolute',
     right: space.md,
     width: RING_SIZE + space.sm * 2,
-    padding: space.sm,
     alignItems: 'center',
-    borderRadius: radius.md,
-    backgroundColor: 'rgba(11,13,16,0.86)',
-    borderWidth: 1,
-    borderColor: color.border,
   },
   title: {
-    alignSelf: 'flex-start',
-    color: color.textFaint,
+    ...textLegibility,
+    color: color.text,
     fontSize: 10,
     fontWeight: weight.bold,
     letterSpacing: 1.5,
   },
 
-  ringWrap: {
+  ringSlot: {
     width: RING_SIZE,
     height: RING_SIZE,
-    marginTop: space.sm,
+    marginTop: space.xs,
+  },
+  /**
+   * The one solid shape left — a disc sized to the ring, not a rectangle
+   * around the whole widget. Reads as a physical object resting on the map
+   * (a bezel compass) rather than a UI panel that happens to contain one, and
+   * still gives the ring's thin border and small marker the opaque backing
+   * §5.14 asks for against a map whose own colour varies underneath it. Same
+   * `rgba(11,13,16,0.86)` already used for this elsewhere in the app
+   * (`MapScreen`'s mode button, `CircuitRuler`) — reused, not reinvented.
+   */
+  ringBackdrop: {
+    position: 'absolute',
+    width: RING_SIZE,
+    height: RING_SIZE,
+    borderRadius: RING_RADIUS,
+    backgroundColor: 'rgba(11,13,16,0.86)',
+  },
+  // Rotated by C2 as one unit — see the file header. Must stay a plain
+  // wrapper with no padding/margin of its own so RING_RADIUS-based placement
+  // inside it stays correct regardless of rotation.
+  ringWrap: {
+    position: 'absolute',
+    width: RING_SIZE,
+    height: RING_SIZE,
   },
   ring: {
     position: 'absolute',
@@ -237,7 +308,7 @@ const styles = StyleSheet.create({
     left: RING_RADIUS - 5,
     width: 10,
     textAlign: 'center',
-    color: color.textFaint,
+    color: color.textMuted,
     fontSize: 9,
     fontWeight: weight.bold,
   },
@@ -252,16 +323,15 @@ const styles = StyleSheet.create({
   },
   halo: { position: 'absolute', opacity: 0.28 },
   /**
-   * `color.border` rather than `color.background`: the marker sits on this
-   * panel's own opaque background, not the map, so a border matched to
-   * `color.background` is invisible by construction — worse, at
-   * `LightQuality.Dark` the fill (`lightQualityColor.dark`, `#121722`) is
-   * itself a near-match for that same background, so fill and border and
-   * panel all collapsed into one indistinguishable smudge and the marker
-   * all but disappeared exactly when it is doing its most important job
-   * (below the horizon is still "where"). A neutral, already-defined edge
-   * keeps every quality's marker legible as a shape without touching any
-   * quality's own colour.
+   * `color.border` rather than `color.background`: the marker sits on the
+   * ring backdrop, not the map, so a border matched to `color.background` is
+   * invisible by construction — worse, at `LightQuality.Dark` the fill
+   * (`lightQualityColor.dark`, `#121722`) is itself a near-match for that
+   * same background, so fill and border and backdrop all collapsed into one
+   * indistinguishable smudge and the marker all but disappeared exactly when
+   * it is doing its most important job (below the horizon is still "where").
+   * A neutral, already-defined edge keeps every quality's marker legible as a
+   * shape without touching any quality's own colour.
    */
   marker: {
     position: 'absolute',
@@ -269,25 +339,41 @@ const styles = StyleSheet.create({
     borderColor: color.border,
   },
 
-  divider: {
-    alignSelf: 'stretch',
-    height: 1,
-    backgroundColor: color.border,
-    marginTop: space.sm,
-    marginBottom: space.xs,
+  /**
+   * C2's honesty note. Same micro-label vocabulary as `title`/`qualityLabel`
+   * (all-caps, `textFaint`, tight tracking) so it reads as part of the same
+   * system rather than a warning banner — this is a normal, expected state
+   * (no permission yet, no sensor, indoors), not an error.
+   */
+  northUpNote: {
+    ...textLegibility,
+    marginTop: space.xs,
+    color: color.textFaint,
+    fontSize: 9,
+    fontWeight: weight.bold,
+    letterSpacing: 1,
   },
-  row: { flexDirection: 'row', alignItems: 'baseline', gap: space.xs },
+
+  row: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: space.xs,
+    marginTop: space.xs,
+  },
   bearingValue: {
+    ...textLegibility,
     color: color.text,
     fontSize: type.label,
     fontWeight: weight.bold,
   },
   altitudeValue: {
+    ...textLegibility,
     color: color.textMuted,
     fontSize: type.label,
     fontVariant: ['tabular-nums'],
   },
   qualityLabel: {
+    ...textLegibility,
     marginTop: 1,
     color: color.textFaint,
     fontSize: 9,
