@@ -145,13 +145,41 @@ available) — worth a quick look before calling it fully done.
       environment) — low risk since the commit is designed to be a no-op
       visually, but worth a look.
 
-- [ ] **B2. The two palettes.** Dark stays exactly as it is; light is new.
+- [x] **B2. The two palettes.** Dark stays exactly as it is; light is new.
       Check contrast against the map in both, not against a blank screen —
       the map is the background for most of this app.
 
-- [ ] **B3. Follow the system by default, with an explicit override.** Three
+      **Done — 22 August.** Dark palette untouched. Light palette's
+      `accent`/`danger` deepened from the dark palette's own hues rather than
+      reused verbatim — the dark values only hold ~3.9:1/~3.3:1 against
+      white, under the 4.5:1 text floor; deepened to ~5.6:1/~5.3:1.
+      `background`/`surface`/`surfaceRaised` climb with real separation
+      rather than three near-white greys. `lightQualityColor` and `spot.ts`'s
+      access-classification colours untouched, confirmed — data, not theme.
+      One real bug caught along the way: `MainMenu.tsx`'s floating trigger
+      sits directly on the (always-dark) map with a fixed opaque backdrop —
+      its text/border had been migrated to `useTheme()` by B1's proof slice,
+      which would have gone near-invisible in light mode (near-black text on
+      a near-black backdrop). Reverted just those three trigger styles to
+      fixed on-map constants, matching `SunDial`/`SkyControl`'s convention.
+
+- [x] **B3. Follow the system by default, with an explicit override.** Three
       states, not two: System, Light, Dark. A phone that switches to dark at
       sunset should not fight a user who chose light this morning.
+
+      **Done — 22 August.** `getThemePreference`/`setThemePreference` in
+      `preferences.ts` (`'system' | 'light' | 'dark'`, default `'system'`);
+      `ThemeProvider` resolves `'system'` against React Native's
+      `useColorScheme()` reactively, independent of the async preference
+      load, so an OS change reaches a system-following user immediately.
+      Real three-option switch wired into `ProfileScreen.tsx`'s Appearance
+      section. Verified live, including the specific cold-start scenario
+      this item names: set Light, force-stopped, relaunched, confirmed the
+      choice was applied from the very first render, not just carried in
+      memory. `ProfileScreen.tsx` and `Collapsible.tsx` fully migrated off
+      the static `color` import to prove the switch works end-to-end; the
+      rest of `src/ui/` remains on the static import, same deferred state
+      B1 left it in.
 
 ---
 
@@ -255,6 +283,10 @@ available) — worth a quick look before calling it fully done.
   menu reads as per-event ("this weekend I am carrying these two bodies"), but
   the useful version at a spot is per-stop ("at Brünnchen, the 500mm"). They are
   different features and the second is much more valuable. Ask before building.
+
+  **Decided, 22 August: per event.** Confirmed by Branco — simpler, matches
+  the literal ask, faster to ship. Plan-stop scoping can follow later if it
+  turns out to matter. D4/D5 attach gear to the event, not to a `PlanStop`.
 - **Is a preset list of bodies and lenses wanted, or is typing them in enough?**
   A bundled catalogue makes onboarding quick and is a licensing and maintenance
   liability. Typing is honest and dull. Default to typing unless he asks.
