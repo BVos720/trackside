@@ -188,23 +188,50 @@ available) — worth a quick look before calling it fully done.
 > "Now it's dark blue, but you need a slider of color so you can choose, for
 > example, the real color needs to be red. So whatever you like."
 
-- [ ] **C1. A hue slider, not a swatch grid.** The ask was a slider. Store the
+- [x] **C1. A hue slider, not a swatch grid.** The ask was a slider. Store the
       hue and derive the accent from it, rather than storing a hex string —
       derived colours can be re-derived correctly when B's light palette needs
       a different lightness for the same hue.
 
-- [ ] **C2. Contrast is not optional.** A freely chosen hue will land on
+      **Done — 22 August.** Hue (`0-360`) stored via `getThemeAccentHue`/
+      `setThemeAccentHue` in `preferences.ts`. Continuous drag strip in
+      `ProfileScreen.tsx` (`AccentHueSlider`), following `SkyControl.tsx`'s
+      `PanResponder` pattern exactly. `DEFAULT_ACCENT_HUE = 216` matches the
+      app's original fixed accent, so a fresh install looks unchanged.
+
+- [x] **C2. Contrast is not optional.** A freely chosen hue will land on
       combinations that are unreadable on one of the two backgrounds. Clamp
       lightness and saturation to a range that stays legible in both themes
       rather than handing over the raw picker output. Being unable to make the
       app unreadable is a feature.
 
-- [ ] **C3. `lightQualityColor` is data and must not be themed.** That ramp
+      **Done — 22 August, more rigorously than a lightness clamp.**
+      `deriveAccent(hue, scheme)` in `src/core/logic/accentColor.ts` fixes
+      saturation per scheme and *solves* lightness by binary-searching WCAG
+      relative luminance to a fixed target, rather than clamping HSL
+      lightness directly — HSL lightness doesn't track perceived brightness
+      across hues (green is weighted 0.7152 in WCAG luminance, blue only
+      0.0722), so a lightness clamp holds contrast for some hues and
+      silently fails others; normalizing luminance instead makes the
+      guarantee hue-independent. Verified exhaustively: 25 tests sweep all
+      360 integer hues in both schemes against the three real surface
+      colours plus the accent/onAccent pair, asserting ≥4.5:1 (the WCAG
+      floor `theme.ts`'s own B2 palette work already used) every time —
+      not spot-checked, every hue.
+
+- [x] **C3. `lightQualityColor` is data and must not be themed.** That ramp
       encodes the actual colour of the light at a given hour — golden hour is
       gold because the light is gold. It is information, not decoration, and
       the accent must not override it. Same for anything that means something
       by its colour: the access-classification states in `spot.ts` carry a
       physical-safety meaning (§9.1) and are not the user's to recolour.
+
+      **Confirmed — 22 August.** Grepped every file this work touched for
+      `lightQualityColor` and the access-classification names — the only
+      match is `lightQualityColor`'s own pre-existing definition, untouched.
+      Not verified live (adb was under heavy contention from this session's
+      other concurrent agents at the time) — worth a look before calling the
+      whole Appearance section fully done.
 
 ---
 
