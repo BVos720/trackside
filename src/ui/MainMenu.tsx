@@ -46,7 +46,8 @@ export type Destination =
   | 'events'
   | 'event'
   | 'plan'
-  | 'circuit';
+  | 'circuit'
+  | 'profile';
 
 /**
  * Top-level destinations.
@@ -66,11 +67,16 @@ export type Destination =
  * *while* looking at the map — to find the spot you can see a pin for — so
  * putting it two taps deep in a menu was one tap too many for the thing you do
  * most.
+ *
+ * `profile` belongs here, unlike those three: it is not scoped to an event or
+ * a spot, so there is no "which one" question a menu row would leave
+ * unanswered.
  */
 const ITEMS: { key: Destination; label: string; hint: string }[] = [
   { key: 'map', label: 'Map', hint: 'Waypoints and the circuit' },
   { key: 'events', label: 'Events', hint: 'Pick a weekend, or start clean' },
   { key: 'circuit', label: 'Circuit', hint: 'Switch venue' },
+  { key: 'profile', label: 'Profile', hint: 'Appearance, performance, gear' },
 ];
 
 export default function MainMenu({

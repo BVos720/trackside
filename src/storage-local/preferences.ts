@@ -15,6 +15,7 @@ import { kv } from './kv';
 const ACTIVE_EVENT = 'trackside.ui.activeEventId.v1';
 const ACTIVE_VENUE = 'trackside.ui.venue.v1';
 const SPOT_USE = 'trackside.ui.spotUse.v1';
+const PROFILE_NAME = 'trackside.ui.profileName.v1';
 
 export async function getActiveEventId(): Promise<string | null> {
   return kv.get(ACTIVE_EVENT);
@@ -46,4 +47,23 @@ export async function getSpotUse(): Promise<string | null> {
 
 export async function setSpotUse(use: string): Promise<void> {
   await kv.set(SPOT_USE, use);
+}
+
+/**
+ * The display name shown on the profile screen.
+ *
+ * There is only one local profile, and it belongs to `LOCAL_USER_ID`
+ * (`ui/state/useSpots.ts`) — every spot, note and media row already carries
+ * that id, so this is a label on that identity rather than a second one.
+ * Null (nothing set, or cleared back to empty) reads as "unnamed", never as
+ * a default string baked into storage.
+ */
+export async function getProfileName(): Promise<string | null> {
+  return kv.get(PROFILE_NAME);
+}
+
+export async function setProfileName(name: string | null): Promise<void> {
+  const trimmed = name?.trim() ?? '';
+  if (trimmed === '') await kv.remove(PROFILE_NAME);
+  else await kv.set(PROFILE_NAME, trimmed);
 }

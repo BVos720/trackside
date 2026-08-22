@@ -12,6 +12,7 @@ import SpotOverview from './src/ui/screens/SpotOverview';
 import SpotListScreen from './src/ui/screens/SpotListScreen';
 import TimetableScreen from './src/ui/screens/TimetableScreen';
 import CircuitScreen from './src/ui/screens/CircuitScreen';
+import ProfileScreen from './src/ui/screens/ProfileScreen';
 import PlannerScreen from './src/ui/screens/PlannerScreen';
 import EventScreen from './src/ui/screens/EventScreen';
 import NavigatorPanel from './src/ui/screens/NavigatorPanel';
@@ -44,8 +45,10 @@ import {
 } from './src/storage-local/eventFiles';
 import { applyImport, readLocalState } from './src/storage-local/importEvent';
 import {
+  getProfileName,
   getSpotUse,
   getVenue,
+  setProfileName as setProfileNamePreference,
   setSpotUse as setSpotUsePreference,
   setVenue as setVenuePreference,
 } from './src/storage-local/preferences';
@@ -228,6 +231,18 @@ function AppShell() {
   useEffect(() => {
     void setSpotUsePreference(spotUse);
   }, [spotUse]);
+
+  /**
+   * The profile's display name, restored on launch. Null means unnamed —
+   * see `setProfileName`.
+   */
+  const [profileName, setProfileNameState] = useState<string | null>(null);
+  useEffect(() => {
+    void (async () => {
+      const saved = await getProfileName();
+      setProfileNameState(saved);
+    })();
+  }, []);
 
   const circuitId = CIRCUIT_IDS[venue];
   const {
@@ -1301,6 +1316,14 @@ function AppShell() {
             onChange={(v) => {
               setVenue(v);
               setWhere('map');
+            }}
+          />
+        ) : where === 'profile' ? (
+          <ProfileScreen
+            displayName={profileName}
+            onChangeDisplayName={(name) => {
+              setProfileNameState(name);
+              void setProfileNamePreference(name);
             }}
           />
         ) : (
