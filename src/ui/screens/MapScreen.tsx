@@ -51,11 +51,8 @@ import {
 import CircuitRuler from '../map/CircuitRuler';
 import SunDial from '../map/SunDial';
 import SkyControl from '../map/SkyControl';
-import WeatherOverlay from '../map/WeatherOverlay';
 import { useMapClock } from '../state/useMapClock';
-import { skyConditionAt } from '../../core/logic/skyAtInstant';
 import type { LatLon } from '../../core/domain/common';
-import type { HourlyForecastPoint } from '../../core/logic/forecast';
 import {
   REMOTE_GLYPHS_URL,
   SCENERY_SPRITES,
@@ -126,8 +123,6 @@ export default function MapScreen({
   heading = null,
   controlsTop = 0,
   position,
-  hourly,
-  timezone,
 }: {
   venue?: VenueKey;
   spots?: unknown;
@@ -157,21 +152,16 @@ export default function MapScreen({
   controlsTop?: number;
   /** The circuit's own coordinates — what `SunDial`/`SkyControl` compute the sun against. */
   position: LatLon;
-  /** The circuit's hourly forecast, or `[]` when none is loaded — see `skyConditionAt`. */
-  hourly: readonly HourlyForecastPoint[];
-  /** The circuit's IANA timezone, for resolving `hourly` against the scrubbed instant. */
-  timezone: string;
 }) {
   /**
    * One clock, shared by the sun and the weather.
    *
    * `useMapClock()` is called exactly once, here — `SkyControl` used to call
    * it itself, which would have created a second, independent clock the
-   * moment `SunDial`/`WeatherOverlay` needed one too. See `SkyControl`'s file
-   * header and the task file's note on the shared-clock desync bug.
+   * moment `SunDial` needed one too. See `SkyControl`'s file header and the
+   * task file's note on the shared-clock desync bug.
    */
   const clock = useMapClock();
-  const condition = skyConditionAt(hourly, clock.now, timezone);
   const [tilesUri, setTilesUri] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [zoom, setZoom] = useState(VENUE_VIEW[venue].zoom);
@@ -568,15 +558,6 @@ export default function MapScreen({
             );
           })}
       </Map>
-
-      {/*
-        Ambient weather, drawn straight over the map and under every control
-        below — later siblings paint on top, which is what keeps the overlay
-        from ever competing with the sun dial, the sky strip or the ruler for
-        legibility. `pointerEvents="none"` internally, so it never blocks a
-        tap either way.
-      */}
-      <WeatherOverlay condition={condition} />
 
       {/*
         2D ⇄ 3D — spec §5.10, §5.11.
