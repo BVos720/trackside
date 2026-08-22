@@ -4,7 +4,7 @@
  * Async throughout, caller-supplied ids, tombstones only (§0.1).
  */
 import type { Event, PlanStop } from '../domain/event';
-import type { CircuitId, EventId, SpotId } from '../domain/ids';
+import type { CircuitId, EventId, SpotId, UserGearItemId } from '../domain/ids';
 
 export interface IEventRepository {
   listByCircuit(circuitId: CircuitId): Promise<Event[]>;
@@ -42,6 +42,12 @@ export interface IEventRepository {
   softDelete(id: EventId, at?: string): Promise<void>;
   /** Add or remove a spot reference. Idempotent in both directions. */
   setSpotIncluded(id: EventId, spotId: SpotId, included: boolean): Promise<void>;
+  /** Add or remove a gear reference. Idempotent in both directions. */
+  setGearIncluded(
+    id: EventId,
+    gearItemId: UserGearItemId,
+    included: boolean,
+  ): Promise<void>;
 
   /**
    * Append a stop to the route.

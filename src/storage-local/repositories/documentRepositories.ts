@@ -194,6 +194,8 @@ function normaliseEvent(row: Event & { dates?: string | null }): Event {
     endDate: row.endDate ?? null,
     spotIds: row.spotIds ?? [],
     stops: row.stops ?? [],
+    // Rows written before D4 have no gear field at all.
+    gearItemIds: row.gearItemIds ?? [],
     notes:
       row.notes ??
       (legacy ? `Dates before the calendar existed: ${legacy}` : null),
@@ -678,6 +680,29 @@ class EventRepository implements IEventRepository {
           spotIds: included
             ? [...(e.spotIds ?? []), spotId]
             : (e.spotIds ?? []).filter((x) => x !== spotId),
+          updatedAt: at,
+        };
+      }),
+    );
+  }
+
+  /** Same shape as setSpotIncluded, for the event's gear list instead. */
+  async setGearIncluded(
+    id: EventId,
+    gearItemId: UserGearItemId,
+    included: boolean,
+  ): Promise<void> {
+    const at = nowUtc();
+    await update<Event>(EVENTS_KEY, (rows) =>
+      rows.map((e) => {
+        if (e.id !== id) return e;
+        const has = (e.gearItemIds ?? []).includes(gearItemId);
+        if (has === included) return e;
+        return {
+          ...e,
+          gearItemIds: included
+            ? [...(e.gearItemIds ?? []), gearItemId]
+            : (e.gearItemIds ?? []).filter((x) => x !== gearItemId),
           updatedAt: at,
         };
       }),
