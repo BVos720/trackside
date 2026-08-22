@@ -253,13 +253,12 @@ available) — worth a quick look before calling it fully done.
       and left always-on — real coverage is a few hundred to ~1100 footprints
       per venue, no comparable cost. Persisted via
       `getMapSceneryEnabled`/`setMapSceneryEnabled` in `preferences.ts`;
-      `MapScreen.tsx` reads it on mount. **The actual switch UI on this
-      screen's Performance section is not built** — A3's placeholder is still
-      a placeholder there, this only built what it will call. The
-      before/after frame-counter measurement this item explicitly asks for is
-      **still owed** for the same reason: nothing in the running app can flip
-      the toggle yet to compare against. Smoke-tested only (fresh launch,
-      scenery on by default, map renders correctly, no regression).
+      `MapScreen.tsx` reads it on mount. A real `Switch` now lives in the
+      Performance section too (added later the same day) — loaded fresh on
+      mount rather than assumed, so it shows the true persisted state from a
+      cold start. The before/after frame-counter measurement this item
+      explicitly asks for is **still owed** — worth doing now that the switch
+      actually exists to flip.
 
 - [x] **D2. Your gear, as real records.** Bodies and lenses, added by hand.
       Use `UserGearItemId`, follow `src/core/domain/` rules — UUID v7,
@@ -271,8 +270,13 @@ available) — worth a quick look before calling it fully done.
       (`kind: 'body' | 'lens'`, manufacturer/model as free text — no preset
       catalogue, see the open question below — plus a nullable crop factor),
       repository in `documentRepositories.ts` exported as `gear`, following
-      `EquipmentRepository`'s exact shape. No UI built on top yet — that's
-      D4/D5.
+      `EquipmentRepository`'s exact shape. An add/remove form now lives in
+      the profile screen's Gear section (kind picker, manufacturer/model,
+      optional crop factor for a body only) — added later the same day,
+      closing what was genuinely a dead end until then: gear could only be
+      created by writing into storage directly. `useGear()` is called once
+      at `App.tsx`'s root so the same list feeds this form and D4's event
+      dropdown — adding a body here updates the dropdown immediately.
 
 - [x] **D3. A body knows its crop factor — use it.** `Spot.shotSettings`
       already stores focal lengths as full-frame equivalent *plus* the
@@ -305,13 +309,16 @@ available) — worth a quick look before calling it fully done.
       multi-word AND, so "canon r6" narrows rather than only matching an
       exact phrase. 12 tests, including the task's own r6/canon r6/EOS R6
       examples. New `GearScreen.tsx`, a searchable multi-select, in a new
-      "Gear" section on the event screen, after Equipment. **No "add gear"
-      UI exists anywhere yet** — the profile screen's Gear section (A3) is
-      still the placeholder from the scaffolding pass, so this dropdown has
-      nothing to select from until that's built. Verified live by seeding
-      gear rows directly into storage (bypassing the missing UI): search
-      filtered correctly, selection toggled and survived a cold
-      force-stop + relaunch.
+      "Gear" section on the event screen, after Equipment. At the time this
+      was verified, no "add gear" UI existed anywhere — the profile screen's
+      Gear section (A3) was still the scaffolding placeholder, so this
+      dropdown had nothing to select from — so it was verified live by
+      seeding gear rows directly into storage instead: search filtered
+      correctly, selection toggled and survived a cold force-stop +
+      relaunch. **D2's note above records that the add/remove UI landed
+      later the same day**, closing that gap — worth a fresh end-to-end
+      check (add gear on the profile screen → see it here → select it) now
+      that both pieces exist, rather than only the seeded-data path.
 
 - [x] **D5. One-handed, in gloves.** A dropdown with a search field is the
       fiddliest control in the app so far, and it gets used in a paddock.
