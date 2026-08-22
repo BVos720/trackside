@@ -5,13 +5,17 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
 import { useColorScheme } from 'react-native';
 
+import { DEFAULT_ACCENT_HUE, deriveAccent } from '../core/logic/accentColor';
 import {
+  getThemeAccentHue,
   getThemePreference,
+  setThemeAccentHue,
   setThemePreference,
   type ThemePreference,
 } from '../storage-local/preferences';
@@ -284,6 +288,27 @@ export const HIT_SIZE = 56;
  * blocked by — the preference load. `setPreference` updates the in-memory
  * state immediately (so the switch feels instant) and persists in the
  * background.
+ *
+ * ── The accent hue (C1/C2) ─────────────────────────────────────────────────
+ * `accentHue` is the other half of `preference`/`scheme` above: a single
+ * `0-360` number, persisted through `storage-local/preferences.ts`'s
+ * `getThemeAccentHue`/`setThemeAccentHue`, loaded and saved with the exact
+ * same fire-and-forget-with-`.catch()` shape as `preference` two paragraphs
+ * up (same underlying `kv` cold-start race B2/B3 hit). `color.accent`/
+ * `color.onAccent` are *not* read from either palette const below any more —
+ * they are computed every time `accentHue` or `scheme` changes, by
+ * `core/logic/accentColor.ts`'s `deriveAccent`, which fixes the saturation
+ * and solves the lightness per `scheme` so the result stays legible against
+ * every real surface regardless of which hue the user picked (C2 — see that
+ * file's own comment for the exact numbers and how they were checked). The
+ * other nine tokens still come straight from `color`/`lightColor`, unchanged.
+ *
+ * The static `color`/`lightColor` consts above keep their own original fixed
+ * `accent`/`onAccent` — deliberately: `src/ui/` files still on the static
+ * `color` import (B1's deferred migration) read those directly, not through
+ * `useTheme()`, and must not go stale or shift underneath them just because
+ * this file grew a hue. Only values that flow through `useTheme()` pick up
+ * the user's chosen hue.
  */
 export interface Theme {
   color: ColorTokens;
@@ -293,6 +318,10 @@ export interface Theme {
   preference: ThemePreference;
   /** Persist a new choice and apply it immediately. */
   setPreference: (preference: ThemePreference) => void;
+  /** The hue (0-360) `color.accent`/`color.onAccent` are derived from. */
+  accentHue: number;
+  /** Persist a new hue and apply it immediately. */
+  setAccentHue: (hue: number) => void;
 }
 
 const ThemeContext = createContext<Theme>({
@@ -300,6 +329,8 @@ const ThemeContext = createContext<Theme>({
   scheme: 'dark',
   preference: 'system',
   setPreference: () => {},
+  accentHue: DEFAULT_ACCENT_HUE,
+  setAccentHue: () => {},
 });
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
@@ -308,6 +339,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   // preference has finished loading yet.
   const osScheme = useColorScheme();
   const [preference, setPreferenceState] = useState<ThemePreference>('system');
+  const [accentHue, setAccentHueState] = useState<number>(DEFAULT_ACCENT_HUE);
 
   useEffect(() => {
     let cancelled = false;
@@ -328,6 +360,21 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    void getThemeAccentHue()
+      .then((stored) => {
+        if (!cancelled) setAccentHueState(stored);
+      })
+      .catch(() => {
+        // Same reasoning as the preference load above — DEFAULT_ACCENT_HUE
+        // is already the state, so there is nothing to roll back to.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const setPreference = useCallback((next: ThemePreference) => {
     // Update in memory first so the switch flips on the same frame it is
     // tapped; the persisted write can trail behind without the UI waiting on
@@ -340,21 +387,51 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     void setThemePreference(next).catch(() => {});
   }, []);
 
+  // A drag on the profile screen's hue slider calls setAccentHue on every
+  // pointer-move frame (so the live preview updates continuously, the same
+  // way `SkyControl`'s time strip scrubs `clock.now` on every move) — but
+  // unlike that clock, this value is persisted, and a raw SQLite UPSERT per
+  // frame (`storage-local/kv.ts`) would queue dozens of writes a second for a
+  // single drag. The state update stays synchronous on every call so the
+  // preview never lags; the persisted write is debounced behind it.
+  const accentHueSaveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (accentHueSaveTimeout.current) clearTimeout(accentHueSaveTimeout.current);
+    },
+    [],
+  );
+
+  const setAccentHue = useCallback((next: number) => {
+    // Update in memory on every call — same reasoning as setPreference
+    // above, just more frequent.
+    setAccentHueState(next);
+    // Persist only once the drag has been idle for a moment, not on every
+    // frame. Same "failed write is not fatal" reasoning as setPreference.
+    if (accentHueSaveTimeout.current) clearTimeout(accentHueSaveTimeout.current);
+    accentHueSaveTimeout.current = setTimeout(() => {
+      accentHueSaveTimeout.current = null;
+      void setThemeAccentHue(next).catch(() => {});
+    }, 250);
+  }, []);
+
   // Unknown/undetermined OS scheme (web, or a platform that reports null)
   // falls back to dark — the palette's original hard default — rather than
   // guessing light.
   const scheme: 'light' | 'dark' =
     preference === 'system' ? (osScheme === 'light' ? 'light' : 'dark') : preference;
 
-  const value = useMemo<Theme>(
-    () => ({
-      color: scheme === 'light' ? lightColor : color,
+  const value = useMemo<Theme>(() => {
+    const base = scheme === 'light' ? lightColor : color;
+    return {
+      color: { ...base, ...deriveAccent(accentHue, scheme) },
       scheme,
       preference,
       setPreference,
-    }),
-    [scheme, preference, setPreference],
-  );
+      accentHue,
+      setAccentHue,
+    };
+  }, [scheme, preference, setPreference, accentHue, setAccentHue]);
 
   return createElement(ThemeContext.Provider, { value }, children);
 }

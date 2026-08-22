@@ -10,6 +10,7 @@
  * tombstones and no sync story, and putting them through the same machinery
  * would imply they do.
  */
+import { DEFAULT_ACCENT_HUE } from '../core/logic/accentColor';
 import { kv } from './kv';
 
 const ACTIVE_EVENT = 'trackside.ui.activeEventId.v1';
@@ -18,6 +19,7 @@ const SPOT_USE = 'trackside.ui.spotUse.v1';
 const PROFILE_NAME = 'trackside.ui.profileName.v1';
 const MAP_SCENERY = 'trackside.ui.mapScenery.v1';
 const THEME_PREFERENCE = 'trackside.ui.themePreference.v1';
+const THEME_ACCENT_HUE = 'trackside.ui.themeAccentHue.v1';
 
 export async function getActiveEventId(): Promise<string | null> {
   return kv.get(ACTIVE_EVENT);
@@ -110,4 +112,28 @@ export async function getThemePreference(): Promise<ThemePreference> {
 export async function setThemePreference(preference: ThemePreference): Promise<void> {
   if (preference === 'system') await kv.remove(THEME_PREFERENCE);
   else await kv.set(THEME_PREFERENCE, preference);
+}
+
+/**
+ * The accent colour's hue — TASKS-profile.md C1. A single number, `0-360`,
+ * not a hex string: deriving the actual `accent`/`onAccent` colours from it
+ * happens in `theme.ts` (`ThemeProvider`, via `core/logic/accentColor.ts`'s
+ * `deriveAccent`), which can re-derive correctly whenever `scheme` needs a
+ * different saturation/lightness for the same hue — a stored hex could not.
+ *
+ * Unset, or any stored value that does not parse to a finite number, reads as
+ * `DEFAULT_ACCENT_HUE` — the same "unrecognised reads as the safe default"
+ * shape as `getThemePreference` above. `DEFAULT_ACCENT_HUE` is the hue the
+ * app's original fixed accent (`#2E7DF6` dark / `#1B63D1` light) sat at, so a
+ * fresh install looks the same as it did before this setting existed.
+ */
+export async function getThemeAccentHue(): Promise<number> {
+  const raw = await kv.get(THEME_ACCENT_HUE);
+  if (raw === null) return DEFAULT_ACCENT_HUE;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : DEFAULT_ACCENT_HUE;
+}
+
+export async function setThemeAccentHue(hue: number): Promise<void> {
+  await kv.set(THEME_ACCENT_HUE, String(hue));
 }
