@@ -26,11 +26,39 @@
  * which it uses throughout) is migrated to `useTheme()` so the switch has a
  * real, visible effect end to end — see `MainMenu.tsx` for the migration
  * pattern this follows.
+ *
+ * ── The accent hue slider (TASKS-profile.md C1/C2) ──────────────────────────
+ * A continuous drag strip, not a swatch grid — the ask was "a slider of
+ * color". No gesture library and no `Animated` are installed in this project
+ * (`SkyControl.tsx`'s header note explains why neither should be added), so
+ * this follows that file's own `PanResponder` + `onLayout`-measured-width +
+ * `latestRef` pattern exactly, down to the `pointerEvents="none"` on the
+ * visual hue cells so Android hit-tests the strip itself rather than
+ * whichever narrow cell sits under the finger (the bug `SkyControl`'s strip
+ * hit and fixed). The strip is painted from `deriveAccent` at the *current*
+ * `scheme`, not a fixed rainbow — what you see while dragging is exactly
+ * what you get, in both palettes. `useTheme()`'s `accentHue`/`setAccentHue`
+ * round-trip through `storage-local/preferences.ts`'s
+ * `getThemeAccentHue`/`setThemeAccentHue`; the derivation itself (fixed
+ * saturation, luminance-solved lightness per scheme) lives in
+ * `core/logic/accentColor.ts`, not here — see that file for why the result
+ * stays legible for every hue the strip can produce (C2).
  */
-import { useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useCallback, useMemo, useRef, useState } from 'react';
+import {
+  PanResponder,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+  type GestureResponderEvent,
+  type LayoutChangeEvent,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { deriveAccent } from '../../core/logic/accentColor';
 import Collapsible from '../Collapsible';
 import {
   HIT_SIZE,
@@ -67,7 +95,7 @@ export default function ProfileScreen({
 }) {
   const insets = useSafeAreaInsets();
   const [name, setName] = useState(displayName ?? '');
-  const { color, preference, setPreference } = useTheme();
+  const { color, scheme, preference, setPreference, accentHue, setAccentHue } = useTheme();
   const styles = useMemo(() => makeStyles(color), [color]);
 
   const commit = () => {
@@ -134,9 +162,13 @@ export default function ProfileScreen({
             );
           })}
         </View>
-        <Text style={styles.placeholder}>
-          An accent colour you pick is coming here next.
-        </Text>
+        <Text style={[styles.label, styles.accentLabel]}>ACCENT COLOUR</Text>
+        <AccentHueSlider
+          scheme={scheme}
+          hue={accentHue}
+          onChange={setAccentHue}
+          color={color}
+        />
       </Collapsible>
 
       <Collapsible
@@ -159,6 +191,138 @@ export default function ProfileScreen({
     </ScrollView>
   );
 }
+
+/** Cells across the hue circle (6° each) — see `AccentHueSlider` below. */
+const HUE_TRACK_SEGMENTS = 60;
+const KNOB_SIZE = 28;
+
+/**
+ * The continuous hue drag strip itself — TASKS-profile.md C1. See this
+ * file's header comment for why it follows `SkyControl.tsx`'s `PanResponder`
+ * pattern exactly.
+ *
+ * `touchArea` (not the narrower visual `track`) carries both `onLayout` and
+ * `panResponder.panHandlers`, so the width used to convert a touch's
+ * `locationX` into a hue is the same element the touch coordinates are
+ * reported relative to, and is `HIT_SIZE` tall regardless of how slim the
+ * painted strip looks — §5.14's glove-sized touch target without visually
+ * ballooning the track.
+ */
+function AccentHueSlider({
+  scheme,
+  hue,
+  onChange,
+  color,
+}: {
+  scheme: 'light' | 'dark';
+  hue: number;
+  onChange: (hue: number) => void;
+  color: Theme['color'];
+}) {
+  const [trackWidth, setTrackWidth] = useState(0);
+
+  // Written every render, read only from inside the PanResponder callbacks
+  // below — see `SkyControl.tsx`'s file header for why a plain closure over
+  // `hue`/`trackWidth` would go stale (PanResponder.create only runs once).
+  const latestRef = useRef({ trackWidth });
+  latestRef.current.trackWidth = trackWidth;
+
+  const onTrackLayout = useCallback((e: LayoutChangeEvent) => {
+    setTrackWidth(e.nativeEvent.layout.width);
+  }, []);
+
+  const scrubToLocationX = useCallback(
+    (evt: GestureResponderEvent) => {
+      const { trackWidth: width } = latestRef.current;
+      if (width <= 0) return;
+      const fraction = Math.max(0, Math.min(1, evt.nativeEvent.locationX / width));
+      // 360 wraps back to 0 at the strip's own far edge — normalizeHue
+      // (`core/logic/accentColor.ts`) would do the same, but the slider
+      // itself never produces a value outside [0, 360) to begin with.
+      onChange(Math.min(359, Math.round(fraction * 360)));
+    },
+    [onChange],
+  );
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderGrant: scrubToLocationX,
+      onPanResponderMove: scrubToLocationX,
+    }),
+  ).current;
+
+  // Recomputed only when `scheme` changes, not on every drag frame — the
+  // strip shows every hue's colour in the *current* palette, independent of
+  // which one is currently selected.
+  const cells = useMemo(
+    () =>
+      Array.from({ length: HUE_TRACK_SEGMENTS }, (_, i) =>
+        deriveAccent((i / HUE_TRACK_SEGMENTS) * 360, scheme).accent,
+      ),
+    [scheme],
+  );
+
+  const knobLeft = trackWidth > 0 ? (hue / 360) * trackWidth - KNOB_SIZE / 2 : 0;
+  const knobColor = useMemo(() => deriveAccent(hue, scheme).accent, [hue, scheme]);
+
+  return (
+    <View
+      style={sliderStyles.touchArea}
+      onLayout={onTrackLayout}
+      {...panResponder.panHandlers}
+    >
+      <View style={[sliderStyles.track, { borderColor: color.border }]}>
+        {cells.map((cellColor, i) => (
+          // Purely visual, like SkyControl's hourCell — pointerEvents="none"
+          // keeps `touchArea` (not one narrow cell) as the sole hit-test
+          // target, which is the Android bug that file's own fix note
+          // describes.
+          <View key={i} pointerEvents="none" style={[sliderStyles.cell, { backgroundColor: cellColor }]} />
+        ))}
+      </View>
+      {trackWidth > 0 && (
+        <View
+          pointerEvents="none"
+          style={[
+            sliderStyles.knob,
+            { left: knobLeft, borderColor: color.text, backgroundColor: knobColor },
+          ]}
+        />
+      )}
+    </View>
+  );
+}
+
+/**
+ * Structural only (size, radius, border width) — every colour applied to
+ * these is theme-derived and passed inline where the element is used, so
+ * nothing here goes stale the way a colour baked into a module-level
+ * `StyleSheet.create` would (see `theme.ts`'s `ThemeProvider` doc comment).
+ */
+const sliderStyles = StyleSheet.create({
+  touchArea: {
+    height: HIT_SIZE,
+    justifyContent: 'center',
+  },
+  track: {
+    flexDirection: 'row',
+    height: 16,
+    borderRadius: radius.sm,
+    overflow: 'hidden',
+    borderWidth: 1,
+  },
+  cell: { flex: 1, height: '100%' },
+  knob: {
+    position: 'absolute',
+    top: (HIT_SIZE - (KNOB_SIZE + 6)) / 2,
+    width: KNOB_SIZE,
+    height: KNOB_SIZE + 6,
+    borderRadius: KNOB_SIZE / 2,
+    borderWidth: 3,
+  },
+});
 
 /**
  * Built per-render from the current theme rather than once at import — see
@@ -240,6 +404,8 @@ function makeStyles(color: Theme['color']) {
       fontWeight: weight.bold,
     },
     themeOptionLabelOn: { color: color.text },
+
+    accentLabel: { marginTop: space.md, marginBottom: space.xs },
 
     placeholder: {
       color: color.textFaint,
