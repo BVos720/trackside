@@ -17,6 +17,7 @@ const ACTIVE_VENUE = 'trackside.ui.venue.v1';
 const SPOT_USE = 'trackside.ui.spotUse.v1';
 const PROFILE_NAME = 'trackside.ui.profileName.v1';
 const MAP_SCENERY = 'trackside.ui.mapScenery.v1';
+const THEME_PREFERENCE = 'trackside.ui.themePreference.v1';
 
 export async function getActiveEventId(): Promise<string | null> {
   return kv.get(ACTIVE_EVENT);
@@ -85,4 +86,28 @@ export async function getMapSceneryEnabled(): Promise<boolean> {
 
 export async function setMapSceneryEnabled(enabled: boolean): Promise<void> {
   await kv.set(MAP_SCENERY, enabled ? '1' : '0');
+}
+
+/**
+ * Light/dark mode — TASKS-profile.md B3. Three states, not two: `'system'`
+ * follows the OS appearance setting, `'light'`/`'dark'` are an explicit
+ * override. `'system'` is the default so a fresh install (or any value this
+ * store has never seen) reads as "follow the phone" rather than pinning a
+ * palette nobody chose.
+ *
+ * Unset, or any stored value other than the two explicit overrides, reads as
+ * `'system'` — the same "unrecognised reads as the safe default" shape as
+ * `getMapSceneryEnabled` above, rather than throwing on a value a future
+ * version of the app no longer writes.
+ */
+export type ThemePreference = 'system' | 'light' | 'dark';
+
+export async function getThemePreference(): Promise<ThemePreference> {
+  const raw = await kv.get(THEME_PREFERENCE);
+  return raw === 'light' || raw === 'dark' ? raw : 'system';
+}
+
+export async function setThemePreference(preference: ThemePreference): Promise<void> {
+  if (preference === 'system') await kv.remove(THEME_PREFERENCE);
+  else await kv.set(THEME_PREFERENCE, preference);
 }

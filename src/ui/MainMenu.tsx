@@ -224,6 +224,23 @@ export default function MainMenu({
 }
 
 /**
+ * The floating trigger button rests directly on the map, not on app chrome —
+ * the same "compass resting on the map" territory as `SunDial`/`SkyControl`,
+ * which is why its backdrop below is already the literal
+ * `'rgba(11,13,16,0.92)'` rather than a `color.*` token. The map's own
+ * basemap (`src/ui/map/style.ts`) stays a fixed dark style regardless of the
+ * app's theme (TASKS-profile.md B2 is explicit that theming the app chrome
+ * must not theme the map), so anything permanently opaque-backed against it
+ * has to stay fixed too: a light-mode `color.text` is near-black, and on top
+ * of this same near-black backdrop it would vanish rather than merely clash.
+ * These three tokens are that fix. The sheet below, once open, sits over its
+ * own scrim rather than directly on map pixels, so it themes normally.
+ */
+const ON_MAP_TEXT = '#F2F5F8';
+const ON_MAP_ACCENT = '#2E7DF6';
+const ON_MAP_BORDER = '#2A313B';
+
+/**
  * Built per-render from the current theme rather than once at import — see
  * the `styles` call site above and theme.ts's `ThemeProvider` doc comment.
  */
@@ -243,17 +260,17 @@ function makeStyles(color: Theme['color']) {
       borderRadius: radius.md,
       backgroundColor: 'rgba(11,13,16,0.92)',
       borderWidth: 1,
-      borderColor: color.border,
+      borderColor: ON_MAP_BORDER,
     },
     pressed: { opacity: 0.7 },
-    glyph: { color: color.text, fontSize: 18, fontWeight: weight.bold },
+    glyph: { color: ON_MAP_TEXT, fontSize: 18, fontWeight: weight.bold },
     triggerText: { flexShrink: 1 },
     triggerTitle: {
-      color: color.text,
+      color: ON_MAP_TEXT,
       fontSize: type.body,
       fontWeight: weight.bold,
     },
-    triggerSub: { color: color.accent, fontSize: type.label },
+    triggerSub: { color: ON_MAP_ACCENT, fontSize: type.label },
 
     backdrop: {
       flex: 1,
