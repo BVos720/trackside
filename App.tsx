@@ -66,6 +66,7 @@ import {
 import { useSessions } from './src/ui/state/useSessions';
 import { useEntries } from './src/ui/state/useEntries';
 import { useEquipment } from './src/ui/state/useEquipment';
+import { useGear } from './src/ui/state/useGear';
 import { useWeather } from './src/ui/state/useWeather';
 import { snapBesideTrack } from './src/core/logic/track';
 import { useSpots, type SpotDraft } from './src/ui/state/useSpots';
@@ -270,6 +271,7 @@ function AppShell() {
     remove: removeEvent,
     setSpotIncluded,
     attachSpots,
+    setGearIncluded,
     addStop,
     updateStop,
     removeStop,
@@ -345,6 +347,9 @@ function AppShell() {
     seedForNewEvent: seedEquipmentForNewEvent,
     reload: reloadEquipment,
   } = useEquipment(activeEventId);
+
+  /** The user's standing gear locker — the same list regardless of event. */
+  const { items: gearItems } = useGear();
 
   /** The checklist as the equipment screen displays it. */
   const equipmentRows = useMemo(
@@ -1203,6 +1208,10 @@ function AppShell() {
                 void addEquipmentItem(name, category)
               }
               onRemoveEquipmentItem={(id) => void removeEquipmentItem(asId(id))}
+              gearItems={gearItems}
+              onToggleGear={(id, included) =>
+                void setGearIncluded(id, included)
+              }
               weatherDisplay={weatherDisplay}
               onRefreshWeather={() => void refreshWeather()}
               weatherRefreshing={weatherRefreshing}

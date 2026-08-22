@@ -11,11 +11,13 @@
  * go and find the other screen. They sit in one scroll so the answer is visible
  * while you enter it.
  */
+import { useMemo } from 'react';
 import { ScrollView, StyleSheet, Text, View, Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { type Event, type PlanStop, eventDays } from '../../core/domain/event';
-import type { SpotId } from '../../core/domain/ids';
+import type { GearItem } from '../../core/domain/gear';
+import type { SpotId, UserGearItemId } from '../../core/domain/ids';
 import type { Spot } from '../../core/domain/spot';
 import type { WalkNetwork } from '../../core/logic/route';
 import { formatDateRange } from '../DateRangePicker';
@@ -23,6 +25,7 @@ import { MENU_CLEARANCE, color, radius, space, type, weight } from '../theme';
 import Collapsible from '../Collapsible';
 import EntryListScreen, { type SavedEntryRow } from './EntryListScreen';
 import EquipmentScreen, { type SavedEquipmentRow } from './EquipmentScreen';
+import GearScreen from './GearScreen';
 import PlannerScreen from './PlannerScreen';
 import TimetableScreen, { type PendingSession } from './TimetableScreen';
 import WeatherScreen from './WeatherScreen';
@@ -55,6 +58,8 @@ export default function EventScreen({
   onTogglePacked,
   onAddEquipmentItem,
   onRemoveEquipmentItem,
+  gearItems,
+  onToggleGear,
   weatherDisplay,
   onRefreshWeather,
   weatherRefreshing = false,
@@ -88,6 +93,9 @@ export default function EventScreen({
   onTogglePacked: (id: string, packed: boolean) => void;
   onAddEquipmentItem: (name: string, category: EquipmentCategory | null) => void;
   onRemoveEquipmentItem: (id: string) => void;
+  /** The user's whole gear locker — not filtered to this event; see GearScreen. */
+  gearItems: readonly GearItem[];
+  onToggleGear: (id: UserGearItemId, included: boolean) => void;
   weatherDisplay: ForecastDisplay;
   onRefreshWeather: () => void;
   weatherRefreshing?: boolean;
@@ -113,6 +121,10 @@ export default function EventScreen({
   const insets = useSafeAreaInsets();
   const range = formatDateRange(event.startDate, event.endDate);
   const dayOptions = eventDays(event);
+  const selectedGearIds = useMemo(
+    () => new Set(event.gearItemIds),
+    [event.gearItemIds],
+  );
 
   return (
     <ScrollView
@@ -243,6 +255,24 @@ export default function EventScreen({
           onTogglePacked={onTogglePacked}
           onAddItem={onAddEquipmentItem}
           onRemoveItem={onRemoveEquipmentItem}
+        />
+      </Collapsible>
+
+      <Collapsible
+        title="Gear"
+        badge={selectedGearIds.size || null}
+        hint={
+          gearItems.length === 0
+            ? 'No gear recorded yet — add it in your profile'
+            : selectedGearIds.size === 0
+              ? 'Nothing attached — search and tap to add'
+              : 'Bodies and lenses carried for this event'
+        }
+      >
+        <GearScreen
+          items={gearItems}
+          selectedIds={selectedGearIds}
+          onToggle={onToggleGear}
         />
       </Collapsible>
 

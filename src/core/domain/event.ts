@@ -34,6 +34,7 @@ import {
   type EventId,
   type SessionId,
   type SpotId,
+  type UserGearItemId,
   type UserId,
   newId,
 } from './ids';
@@ -94,6 +95,18 @@ export interface Event extends EntityBase {
   readonly spotIds: readonly SpotId[];
   /** The planned route, in order. See the note at the top of this file. */
   readonly stops: readonly PlanStop[];
+  /**
+   * Gear carried for this event, by id — references into the user's standing
+   * locker (`../domain/gear.ts`), never copies.
+   *
+   * Decided 22 August (`TASKS-profile.md`, "Open questions"): gear attaches to
+   * the *event*, not to a `PlanStop`. "This weekend I am carrying these two
+   * bodies" is the whole ask; "at Brünnchen, the 500mm" is a different,
+   * more valuable feature left for later if it turns out to matter. Same
+   * skip-on-miss behaviour as `spotIds`: an id whose `GearItem` was deleted is
+   * simply not shown, never pruned here, so a restored item reappears.
+   */
+  readonly gearItemIds: readonly UserGearItemId[];
   readonly createdBy: UserId;
   /**
    * A stable label for this weekend, generated once at creation.
@@ -137,6 +150,7 @@ export function newEvent(input: {
   notes?: string | null;
   spotIds?: readonly SpotId[];
   stops?: readonly PlanStop[];
+  gearItemIds?: readonly UserGearItemId[];
   at?: Utc;
 }): Event {
   const id = newId<EventId>();
@@ -149,6 +163,7 @@ export function newEvent(input: {
     notes: input.notes ?? null,
     spotIds: input.spotIds ?? [],
     stops: input.stops ?? [],
+    gearItemIds: input.gearItemIds ?? [],
     createdBy: input.createdBy,
     tag: newEventTag(input.name, id),
     ...newEntityBase(input.at),

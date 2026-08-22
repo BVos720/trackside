@@ -18,6 +18,7 @@ import type {
   EventId,
   SessionId,
   SpotId,
+  UserGearItemId,
 } from '../../core/domain/ids';
 import { events as repo } from '../../storage-local/repositories/documentRepositories';
 import {
@@ -183,6 +184,20 @@ export function useEvents(circuitId: CircuitId) {
     [activeId, reload],
   );
 
+  /**
+   * Add or remove a gear item from the active event — the toggle behind D4's
+   * dropdown. Mirrors `setSpotIncluded` exactly; gear attaches to the event
+   * the same way spots do (§ "Open questions", `TASKS-profile.md`).
+   */
+  const setGearIncluded = useCallback(
+    async (gearItemId: UserGearItemId, included: boolean) => {
+      if (!activeId) return;
+      await repo.setGearIncluded(activeId, gearItemId, included);
+      await reload();
+    },
+    [activeId, reload],
+  );
+
   // ── the plan ──────────────────────────────────────────────────────────────
 
   const addStop = useCallback(
@@ -239,6 +254,7 @@ export function useEvents(circuitId: CircuitId) {
     remove,
     setSpotIncluded,
     attachSpots,
+    setGearIncluded,
     addStop,
     updateStop,
     removeStop,
