@@ -297,7 +297,7 @@ and where the sun sits on the dial is where the sun is in front of you.
       `usePosition.ts`'s existing convention. 14 tests, all passing (now
       actually executed — see the vitest-config note above A1).
 
-- [ ] **C2. Rotate the dial.** `SunDial.tsx` takes heading as a prop and
+- [x] **C2. Rotate the dial.** `SunDial.tsx` takes heading as a prop and
       rotates. Keep the component pure — same render for the same
       `(sun, heading)` pair, with the subscription living in the hook — so it
       stays testable and a screenshot stays reproducible.
@@ -306,7 +306,16 @@ and where the sun sits on the dial is where the sun is in front of you.
       silently pointing somewhere wrong. Web has no heading at all;
       `MapScreen.web.tsx` must keep working, north-up.
 
-- [ ] **C3. The user dot gets a facing cone.** The dot says where you are; the
+      **Done — verified 22 August.** `MapScreen.tsx` wires `SunDial` to
+      `useHeading(true)` as `dialHeading` (a separate call from the
+      `heading` prop that feeds C3's facing cone — see below). Re-confirmed
+      on a fresh emulator cold boot: the emulator has no compass, so
+      `useHeading()` reports `heading: null`, and the dial renders north-up
+      with the explicit "NORTH-UP" caption every time, never silently wrong.
+      The rotation transform itself (non-null heading) is implemented but not
+      exercisable here — no magnetometer to feed it — that's C4.
+
+- [x] **C3. The user dot gets a facing cone.** The dot says where you are; the
       cone says which way you are looking, which is the half that matters when
       you are deciding whether a spot faces the light. Check what
       `@maplibre/maplibre-react-native` already provides for the location puck
@@ -314,10 +323,27 @@ and where the sun sits on the dial is where the sun is in front of you.
       hand-rolled one that drifts out of sync with the library's is worse than
       either alone.
 
+      **Verified 22 August — pre-existing, not built this pass.**
+      `MapScreen.tsx`'s `nav-here-cone`/`nav-here-dot` layers (grepped, still
+      the only `nav-here*` block in the file) predate this task and are fed by
+      `usePosition.ts`'s own `heading`, which falls back `trueHeading` →
+      `magHeading` — that file's own comment calls this deliberate, "the cone
+      is a rough indicator by design," a different precision tier from
+      `SunDial`'s strict `trueHeading`-only `useHeading()`, and correctly so.
+      `App.tsx` reads `usePosition`'s `heading` and passes it into
+      `MapScreen`'s `heading` prop, which is what `nav-here-cone` renders from
+      — confirmed a clean, separate data path from `dialHeading` above.
+      Grepped `UserLocation` across all of `src/`: zero matches, so there is
+      no `@maplibre/maplibre-react-native` location puck anywhere to
+      duplicate. The "no duplicate" conclusion stands.
+
 - [ ] **C4. Verify by walking, not by reading.** Rotation bugs are invisible in
       a test and obvious in the hand. Point the phone at a known landmark and
       check the dial agrees with the real sun. An emulator can fake a heading
       but not a magnetic field — this one needs a real device.
+
+      **Still open.** Needs a real device with a magnetometer — an emulator
+      cannot fake one. Not attempted here; do not check this off without one.
 
 ---
 
@@ -331,30 +357,85 @@ These currently read as two panels parked on top of a map. The objective is one
 surface, not three. This is a design task before it is a coding task: sketch
 it, look at it on the emulator, then build.
 
-- [ ] **D1. The dial belongs to the map, not to the screen.** The strongest
+- [x] **D1. The dial belongs to the map, not to the screen.** The strongest
       version of "integrated" is that it stops being chrome — anchor it to the
       user's position so it reads as a compass rose drawn *on* the map, which
       also inherits C2's rotation for free. Second best is a corner element
       that shares the map's visual language: no panel edges, no competing
       background fill.
 
-- [ ] **D2. The slider should be quiet until touched.** A full-height strip is
+      **Done — second-best, deliberately, 22 August.** The strongest version
+      (relocate the dial to a map layer at the user's position) was
+      considered and set aside: `SunDial`'s rich readout (ring, halo, bearing/
+      altitude/quality text) would need rebuilding as MapLibre symbol/text
+      layers, a much larger rewrite for a corner-panel problem, not a
+      positioning one. Built the second-best version instead: both `SunDial`
+      and `SkyControl` lost their bordered rectangular card. `SunDial` keeps
+      one solid shape — a disc backdrop sized to the ring itself, so it reads
+      as a compass rose resting on the map rather than a panel that happens
+      to contain one. Loose text everywhere (both files) gets a drop shadow
+      (`textShadowColor: '#000'`, matching `PlannerScreen.tsx`'s one existing
+      shadow convention) instead of a background box.
+
+- [x] **D2. The slider should be quiet until touched.** A full-height strip is
       permanent furniture for something used a few seconds at a time. Consider
       a thin edge affordance that expands to the full light strip while a thumb
       is down and recedes after. Keep "Now" reachable *without* expanding —
       snapping back to the real clock is the most-used action on the control.
 
-- [ ] **D3. Respect the space already spoken for.** `MENU_CLEARANCE` in
+      **Done — verified 22 August.** `SkyControl`'s strip is a 10px hint of
+      the day's gradient by default, expands to the full interactive height
+      (with hour ticks and the date row) only while a thumb is down —
+      `PanResponder`'s `Grant`/`Release`/`Terminate` toggle an `expanded`
+      state — and recedes immediately on release. The header (time, quality,
+      Now/Live) is a permanent sibling, not inside the collapsible part, so
+      "Now" never requires expanding anything. Verified live: mid-drag
+      screenshot shows the full strip with ticks/knob/date row; a screenshot
+      taken right after release shows it back to the thin hint.
+
+- [x] **D3. Respect the space already spoken for.** `MENU_CLEARANCE` in
       `src/ui/theme.ts` exists because the floating menu trigger overlaps
       anything near the top — add `insets.top + MENU_CLEARANCE`, never a
       hard-coded number. The spot list sits bottom-left. Whatever you build has
       to coexist with both, one-handed, in gloves (§5.14).
 
-- [ ] **D4. Contrast over a moving map, not over a screenshot.** The map moves
+      **Already satisfied, confirmed 22 August — no new work needed.**
+      `SunDial`/`SkyControl`'s `top`/`bottom` anchors were untouched by this
+      pass: `insets.top + MENU_TOP + CIRCUIT_RULER_CLEARANCE` and
+      `insets.bottom + BOTTOM_BAR_CLEARANCE` respectively, both already
+      routing through the safe-area insets rather than a hard-coded number,
+      established before C/D began. `SunDial` sits on the right edge (the
+      menu trigger is top-left), so it clears via `MENU_TOP` rather than the
+      full `MENU_CLEARANCE` — deliberate, matching `CircuitRuler`'s
+      pre-existing precedent in the same corner, not a gap. D2's `hitSlop`
+      addition to the strip did need its own fix here (see D4) so it
+      wouldn't invade the Now button's own space, three lines above it.
+
+- [x] **D4. Contrast over a moving map, not over a screenshot.** The map moves
       under these controls and its brightness changes as it moves. Use
       `src/ui/theme.ts` tokens and the existing `lightQualityColor` ramp; do
       not introduce a second palette. Removing the overlay in B gives this
       section back the room it needs — do B first.
+
+      **Done — verified 22 August, after B.** Contrast comes from the text
+      shadow described under D1 rather than a fill, plus one solid backdrop
+      disc behind `SunDial`'s ring specifically (the one place a thin 1.5px
+      border genuinely needed opaque backing against a busy map). One real
+      bug found and fixed in the same pass: `SkyControl`'s "Now"/"Live"
+      control was a `Text` with `onPress`, which has no `hitSlop` of its own —
+      D2's new `hitSlop` on the strip below it (added so the thin collapsed
+      strip stays glove-sized, §5.14) sat only `space.sm` away and could
+      reach up and steal taps meant for the button. Fixed by converting the
+      control to a `Pressable` with its own `hitSlop`, and shrinking the
+      strip's `top` hitSlop specifically (the side facing the button) from 22
+      to 6, keeping the other three sides generous. Confirmed on-device via
+      `adb shell uiautomator dump` for the button's exact element bounds
+      (manual pixel estimates from screenshots had been missing it
+      repeatedly, off by roughly 700px in Y at one point — the dump gave a
+      center of (1168, 2455) against guesses clustered around (1160, 1780)):
+      scrubbed away from live, tapped the dumped bounds' centre, the clock
+      snapped back to the real time and the button flipped to the blue
+      "LIVE" state.
 
 ---
 
