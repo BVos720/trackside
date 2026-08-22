@@ -17,6 +17,7 @@ import type { Entry } from '../../core/domain/entry';
 import { setPhotographed as tick } from '../../core/domain/entry';
 import type { EquipmentItem } from '../../core/domain/equipment';
 import { setPacked as tickPacked } from '../../core/domain/equipment';
+import type { GearItem } from '../../core/domain/gear';
 import type { Media } from '../../core/domain/media';
 import type { Spot } from '../../core/domain/spot';
 import type { UserSpotNote } from '../../core/domain/userSpotNote';
@@ -29,6 +30,7 @@ import {
   type MediaId,
   type SessionId,
   type SpotId,
+  type UserGearItemId,
   type UserId,
   newId,
 } from '../../core/domain/ids';
@@ -37,6 +39,7 @@ import type { EventDay, Session } from '../../core/domain/planning';
 import type { Event, PlanStop } from '../../core/domain/event';
 import type { IEntryRepository } from '../../core/repositories/entryRepository';
 import type { IEquipmentRepository } from '../../core/repositories/equipmentRepository';
+import type { IGearRepository } from '../../core/repositories/gearRepository';
 import type { IEventRepository } from '../../core/repositories/eventRepository';
 import type {
   IEventDayRepository,
@@ -58,6 +61,7 @@ const SESSIONS_KEY = 'trackside.sessions.v1';
 const EVENTS_KEY = 'trackside.events.v1';
 const ENTRIES_KEY = 'trackside.entries.v1';
 const EQUIPMENT_KEY = 'trackside.equipment.v1';
+const GEAR_KEY = 'trackside.gear.v1';
 
 /** Read a whole collection. Missing or corrupt data yields an empty set. */
 async function readAll<T>(key: string): Promise<T[]> {
@@ -504,6 +508,39 @@ class EquipmentRepository implements IEquipmentRepository {
   }
 }
 
+class GearRepository implements IGearRepository {
+  async listByUser(userId: UserId): Promise<GearItem[]> {
+    const rows = await readAll<GearItem>(GEAR_KEY);
+    // Insertion order — see the note on IGearRepository.listByUser. Grouped
+    // for display into bodies/lenses by the UI, not here.
+    return live(rows).filter((i) => i.userId === userId);
+  }
+
+  async get(id: UserGearItemId): Promise<GearItem | null> {
+    const rows = await readAll<GearItem>(GEAR_KEY);
+    return rows.find((i) => i.id === id) ?? null;
+  }
+
+  async save(item: GearItem): Promise<void> {
+    await update<GearItem>(GEAR_KEY, (rows) => upsert(rows, item));
+  }
+
+  async saveMany(items: readonly GearItem[]): Promise<void> {
+    if (items.length === 0) return;
+    await update<GearItem>(GEAR_KEY, (rows) =>
+      items.reduce((acc, item) => upsert(acc, item), rows),
+    );
+  }
+
+  async softDelete(id: UserGearItemId, at: string = nowUtc()): Promise<void> {
+    await update<GearItem>(GEAR_KEY, (rows) =>
+      rows.map((i) =>
+        i.id === id ? { ...i, deletedAt: at as Utc, updatedAt: at as Utc } : i,
+      ),
+    );
+  }
+}
+
 class EventRepository implements IEventRepository {
   async listByCircuit(circuitId: CircuitId): Promise<Event[]> {
     const rows = (await readAll<Event>(EVENTS_KEY)).map(normaliseEvent);
@@ -702,6 +739,7 @@ class EventRepository implements IEventRepository {
 export const events: IEventRepository = new EventRepository();
 export const entries: IEntryRepository = new EntryRepository();
 export const equipment: IEquipmentRepository = new EquipmentRepository();
+export const gear: IGearRepository = new GearRepository();
 export const eventDays: IEventDayRepository = new EventDayRepository();
 export const sessions: ISessionRepository = new SessionRepository();
 
