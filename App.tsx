@@ -360,18 +360,6 @@ function AppShell() {
     error: weatherError,
   } = useWeather(activeEvent, activeEventId, circuitPosition, VENUE_TIMEZONE[venue]);
 
-  /**
-   * The hourly series `skyConditionAt` resolves the map's weather overlay
-   * against — only `'fresh'`/`'stale'` carry `hourly`; every other
-   * `ForecastDisplay` state has none. `[]` degrades honestly: `skyConditionAt`
-   * returns `'unknown'` for an empty series, which `WeatherOverlay` already
-   * renders as nothing, so no special-casing is needed here.
-   */
-  const mapHourly =
-    weatherDisplay.state === 'fresh' || weatherDisplay.state === 'stale'
-      ? weatherDisplay.hourly
-      : [];
-
   /** The field as the entry-list screen displays it — Entry, minus the parts it does not need. */
   const entryRows = useMemo(
     () =>
@@ -840,8 +828,6 @@ function AppShell() {
               controlsTop={activeEvent ? 48 : 0}
               mediaUris={mediaUris}
               position={circuitPosition}
-              hourly={mapHourly}
-              timezone={VENUE_TIMEZONE[venue]}
               placing={where === 'map' && (placing || moving !== null)}
               onMapTap={(at) => {
                 // Never place a spot on the racing surface — push it to the
