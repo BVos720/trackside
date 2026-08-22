@@ -1,19 +1,22 @@
 /**
- * The user's standing gear locker — bodies and lenses, for D4's event dropdown.
+ * The user's standing gear locker — bodies and lenses, for D4's event dropdown
+ * and the profile screen's Gear section (TASKS-profile.md D2).
  *
  * Mirrors useEquipment.ts's shape (reload/useEffect/useCallback), but there is
  * no per-event `eventId` here: a `GearItem` belongs to the user, not to any one
  * event (see the file header on `core/domain/gear.ts`), so this hook always
  * loads the same, single locker regardless of which event is active.
  *
- * Adding/editing gear itself is not this hook's job — that is the profile
- * screen's Gear section (`TASKS-profile.md` D2), which has no add/edit UI of
- * its own yet. This hook only reads the locker for the dropdown to search and
- * toggle against.
+ * `addItem`/`remove` live here rather than on the profile screen directly
+ * because `App.tsx` calls this hook once at the root and hands the same
+ * `items` down to both the profile screen (which writes) and the event
+ * screen's gear dropdown (which only reads) — adding a body here updates the
+ * dropdown's list immediately, no remount required.
  */
 import { useCallback, useEffect, useState } from 'react';
 
-import type { GearItem } from '../../core/domain/gear';
+import { newGearItem, type GearItem, type GearKind } from '../../core/domain/gear';
+import type { UserGearItemId } from '../../core/domain/ids';
 import { gear as gearRepo } from '../../storage-local/repositories/documentRepositories';
 import { LOCAL_USER_ID } from './useSpots';
 
@@ -28,5 +31,43 @@ export function useGear() {
     void reload();
   }, [reload]);
 
-  return { items, reload };
+  /**
+   * Add one body or lens to the locker. `cropFactor` is ignored (forced
+   * `null`) for a lens by `newGearItem` itself — see that function's doc
+   * comment. Blank manufacturer/model is a no-op rather than saving an empty
+   * row.
+   */
+  const addItem = useCallback(
+    async (input: {
+      kind: GearKind;
+      manufacturer: string;
+      model: string;
+      cropFactor?: number | null;
+    }) => {
+      const manufacturer = input.manufacturer.trim();
+      const model = input.model.trim();
+      if (manufacturer === '' || model === '') return;
+      await gearRepo.save(
+        newGearItem({
+          userId: LOCAL_USER_ID,
+          kind: input.kind,
+          manufacturer,
+          model,
+          cropFactor: input.cropFactor ?? null,
+        }),
+      );
+      await reload();
+    },
+    [reload],
+  );
+
+  const remove = useCallback(
+    async (id: UserGearItemId) => {
+      await gearRepo.softDelete(id);
+      await reload();
+    },
+    [reload],
+  );
+
+  return { items, addItem, remove, reload };
 }

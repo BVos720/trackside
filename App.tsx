@@ -349,7 +349,7 @@ function AppShell() {
   } = useEquipment(activeEventId);
 
   /** The user's standing gear locker — the same list regardless of event. */
-  const { items: gearItems } = useGear();
+  const { items: gearItems, addItem: addGearItem, remove: removeGearItem } = useGear();
 
   /** The checklist as the equipment screen displays it. */
   const equipmentRows = useMemo(
@@ -1334,6 +1334,9 @@ function AppShell() {
               setProfileNameState(name);
               void setProfileNamePreference(name);
             }}
+            gearItems={gearItems}
+            onAddGearItem={addGearItem}
+            onRemoveGearItem={removeGearItem}
           />
         ) : (
           // `where` is exhaustively handled by the branches above once
