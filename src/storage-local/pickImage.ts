@@ -51,6 +51,20 @@ export interface PickedImage {
   readonly contentType: string;
   /** The picker's own URI, for showing it before it is written. */
   readonly previewUri: string;
+  /**
+   * Whether the returned bytes are *known* to carry no EXIF block.
+   *
+   * Reported rather than assumed, because the strip is a side effect of the
+   * re-encode and the re-encode has a fallback: `downscale` returns the
+   * original URI when the manipulator throws — deliberately, since a reference
+   * photo you cannot find again is worse than one with its metadata intact. On
+   * that path the bytes still carry GPS and a timestamp.
+   *
+   * Never optimistic. False means "not proven", not "definitely present".
+   * `Media.metadataStripped` gates public serving (§5.1, §9.4), and the only
+   * safe direction to be wrong in is the one that refuses to publish.
+   */
+  readonly metadataStripped: boolean;
 }
 
 export const IMAGE_PICKER_SUPPORTED = true;
@@ -83,6 +97,9 @@ export async function pickImage(): Promise<PickedImage | null> {
   if (!asset) return null;
 
   const stored = await downscale(asset.uri, asset.width, asset.height);
+  // A URI that came back unchanged is the manipulator's failure path, so the
+  // re-encode that strips EXIF never ran.
+  const metadataStripped = stored !== asset.uri;
 
   /*
    * `fetch` on a file:// URI is how a local file becomes a Blob in React
@@ -99,6 +116,7 @@ export async function pickImage(): Promise<PickedImage | null> {
     // The picker's own URI, not the resized copy: this is only for showing the
     // photo before it is written, and the original is already on disk.
     previewUri: asset.uri,
+    metadataStripped,
   };
 }
 

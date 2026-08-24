@@ -216,9 +216,12 @@ export function useSpots(circuitId: CircuitId) {
   /**
    * Attach a reference photo.
    *
-   * `metadataStripped` is false: the bytes are exactly what the user picked.
-   * Nothing may serve this beyond the device until a strip pass has run
-   * (§5.1, §9.4), and the flag is what a future share path checks.
+   * `metadataStripped` is passed in rather than assumed, because only the
+   * picker knows. Native re-encodes every image and so strips EXIF — unless
+   * the manipulator threw and it fell back to the original bytes; web hands
+   * the file through untouched and never strips. Nothing may be served beyond
+   * the device while the flag is false (§5.1, §9.4), so the default is false
+   * and a caller has to state otherwise.
    */
   const addPhoto = useCallback(
     async (
@@ -235,6 +238,11 @@ export function useSpots(circuitId: CircuitId) {
        * finished or tombstoned afterwards.
        */
       tag: string | null = null,
+      /**
+       * Whether these exact bytes are known to carry no EXIF. Defaults to
+       * false: a caller that does not know must not claim they are clean.
+       */
+      metadataStripped = false,
     ) => {
       const key = await mediaStore.put(file, file.type || 'image/jpeg');
       const existing = await repositories.media.listBySpot(spotId);
@@ -267,7 +275,7 @@ export function useSpots(circuitId: CircuitId) {
         capturedBearing: null,
         capturedPitch: null,
         visibility: Visibility.Private,
-        metadataStripped: false,
+        metadataStripped,
         createdAt: at,
         updatedAt: at,
         deletedAt: null,

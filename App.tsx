@@ -489,6 +489,13 @@ function AppShell() {
       isKey: boolean;
       /** For showing it before it is written. Revoked once the spot is saved. */
       previewUri: string | null;
+      /**
+       * The picker's finding for these bytes, held until the spot has an id.
+       *
+       * Not re-derivable later: by the time this is written, the only thing
+       * that ever knew whether the re-encode ran is gone.
+       */
+      metadataStripped: boolean;
     }[]
   >([]);
   const [mediaUris, setMediaUris] = useState<Record<string, string>>({});
@@ -795,7 +802,14 @@ function AppShell() {
       const spot = await create(draft, activeEventId);
       if (activeEventId) await setSpotIncluded(spot.id, true);
       for (const p of pendingPhotos) {
-        await addPhoto(spot.id, p.file, p.kind, p.isKey, activeEvent?.tag ?? null);
+        await addPhoto(
+          spot.id,
+          p.file,
+          p.kind,
+          p.isKey,
+          activeEvent?.tag ?? null,
+          p.metadataStripped,
+        );
         // The preview was only ever a handle on a blob in memory; the bytes
         // now live in the media store under the spot's own id.
         if (p.previewUri?.startsWith('blob:')) URL.revokeObjectURL(p.previewUri);
@@ -809,10 +823,14 @@ function AppShell() {
   /**
    * Photo picking.
    *
-   * `pickImage()` is the platform picker behind a single shape (native and web
-   * both return `{ blob, contentType, previewUri }`), so this stays ignorant of
-   * where the bytes come from. The 1600px/quality-0.7 downscale for on-device
-   * storage lives in pickImage.ts, not here.
+   * `pickImage()` is the platform picker behind a single shape, so this stays
+   * ignorant of where the bytes come from. The 1600px/quality-0.7 downscale for
+   * on-device storage lives in pickImage.ts, not here.
+   *
+   * `metadataStripped` rides along untouched. It is the picker's finding about
+   * these particular bytes, and this is only a courier — inferring it from the
+   * platform here would go wrong on exactly the case that matters, the native
+   * fallback where the re-encode failed and the EXIF survived.
    */
   const onPickPhoto = useCallback(
     async (kind: ReferenceKind | null, isKey: boolean) => {
@@ -820,12 +838,28 @@ function AppShell() {
       if (!picked) return; // User backed out, or permission was refused.
 
       if (activeId) {
-        void addPhoto(activeId, picked.blob, kind, isKey, activeEvent?.tag ?? null);
+        void addPhoto(
+          activeId,
+          picked.blob,
+          kind,
+          isKey,
+          activeEvent?.tag ?? null,
+          picked.metadataStripped,
+        );
       } else {
         // Creating: hold it until the spot has an id.
         setPendingPhotos((p) => [
           ...p,
-          { file: picked.blob, kind, isKey, previewUri: picked.previewUri },
+          {
+            file: picked.blob,
+            kind,
+            isKey,
+            previewUri: picked.previewUri,
+            // Carried through the pending list: the spot has no id yet, and by
+            // the time it does the picker's finding is the only record of
+            // whether these bytes were ever re-encoded.
+            metadataStripped: picked.metadataStripped,
+          },
         ]);
       }
     },

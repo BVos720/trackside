@@ -63,7 +63,7 @@ agent at a time. Most of the work is phase 1; the wiring is usually twenty lines
 
 ## Lane A — free-standing, any number in parallel
 
-- [ ] **A1. Finish photos on device.** The last step of adding a spot is now
+- [x] **A1. Finish photos on device.** The last step of adding a spot is now
       Photos, and `src/storage-local/pickImage.ts` (native, downscales to 1600px)
       and `mediaStore.ts` (writes to `Paths.document/media/`) are both written.
       **Nothing imports `pickImage` yet** — `onPickPhoto` in `App.tsx` still
@@ -76,23 +76,62 @@ agent at a time. Most of the work is phase 1; the wiring is usually twenty lines
       Verify: add spot → Photos → pick → save → reopen → force-stop → relaunch.
       The whole point is that bytes survive a restart.
 
-- [ ] **A2. EXIF stripping.** Required by §5.1 and §9.4 before any sharing path
+
+      **Done — 22 August.** `App.tsx` imports `pickImage` and `onPickPhoto`
+      calls it; the DOM `<input>` body is gone. Still unverified on hardware —
+      no device or emulator was attached — so the "survives a force-stop"
+      check at the end of this item has not been run.
+- [x] **A2. EXIF stripping.** Required by §5.1 and §9.4 before any sharing path
       exists. Re-encoding through the manipulator drops the EXIF block today, but
       only for images large enough to be resized — anything already under 1600px
       keeps its metadata untouched, so that is a side effect and not a control.
       Reference photos are the worst case: known place, known time, coordinates
       in the file. Easier to test once A1 has landed.
 
-- [ ] **A3. ESLint layer-boundary rule.** `core/` must not import from `ui/` or
+
+      **Done — 22 August, with one platform gap recorded rather than hidden.**
+      Native forces *every* image through the manipulator re-encode, including
+      ones already under 1600px, so the strip is now a control and not a side
+      effect of resizing. `PickedImage.metadataStripped` reports whether it
+      actually ran, `addPhoto` takes it, and the `Media` row records it
+      instead of hard-coding false.
+
+      Two things a reader should know. The native manipulator has a deliberate
+      fallback — on failure it returns the original bytes, because a reference
+      photo you cannot find again is worse than one carrying EXIF — and that
+      path now reports `false` rather than pretending. And **web does not
+      strip at all**: `pickImage.web.ts` hands the browser's `File` straight
+      through. Safe today only because nothing is served off-device; a canvas
+      round trip is the fix when a sharing path is built. The flag is never
+      optimistic, so the failure mode is "refuses to publish", not "publishes
+      a geotag".
+- [x] **A3. ESLint layer-boundary rule.** `core/` must not import from `ui/` or
       `storage-local/`. The architecture already holds; this stops it drifting.
       Owns `eslint.config.*` and devDependencies. Collides with nothing.
 
-- [ ] **A4. MapLibre `style` prop migration.** `@maplibre/maplibre-react-native`
+
+      **Done — 22 August, as a test rather than an ESLint config.**
+      `src/core/layers.invariants.test.ts` scans every file under `core/` for
+      specifiers reaching into `ui/` or `storage-local/`, covering static
+      imports, re-exports, `import()` and `require()`, plus the `@ui` /
+      `@storage-local` path aliases.
+
+      Why not ESLint: nothing in this repo lints today, so adding it means
+      either a rule nobody runs or a new command every agent has to remember,
+      whereas `npx vitest run` is already mandatory before committing. The
+      full lint setup is still worth wanting for unused variables and hook
+      dependencies — but that is a separate decision from enforcing §2.3, and
+      this enforces §2.3 now. The scan currently finds no violations.
+- [x] **A4. MapLibre `style` prop migration.** `@maplibre/maplibre-react-native`
       deprecates `style` on layer components and removes it in v12. Split into
       `paint` and `layout`. Mechanical, but touches every layer, and
       `MapScreen.web.tsx` builds from the same style module — do not regress web.
 
-- [ ] **A5. Spot `uses` default at the read boundary.** Spots now carry
+
+      **Appears done — 22 August.** No layer component in `MapScreen.tsx` or
+      `src/ui/map/` still passes `style=`; the remaining hits are React Native
+      `View` styles. Worth one confirming grep before deleting this item.
+- [x] **A5. Spot `uses` default at the read boundary.** Spots now carry
       `uses: SpotUse[]`. Reads go through `normaliseUses` in the logic and the
       editor, so old rows already behave — but the `Spot` type says the field is
       always an array and for pre-existing rows it is `undefined`. Add
@@ -100,10 +139,20 @@ agent at a time. Most of the work is phase 1; the wiring is usually twenty lines
       `normaliseSpot`. One line plus a test. **Hold until
       `documentRepositories.ts` is quiet.**
 
-- [ ] **A6. Re-enable kerbs.** `SHOW_KERBS = false` in `src/ui/map/style.ts`.
+
+      **Done — 22 August.** `uses: normaliseUses(row.uses)` added to
+      `normaliseSpot`, with `normaliseUses` rather than `?? []` so an empty
+      array falls back to `DEFAULT_SPOT_USES` instead of producing a spot that
+      is for nothing. Covered by `normaliseSpot.test.ts` (6 tests), which
+      writes pre-`uses` rows straight into the store — the only honest way to
+      exercise that path, since constructing a `Spot` in TypeScript gives you
+      the new shape by definition.
+- [x] **A6. Re-enable kerbs.** `SHOW_KERBS = false` in `src/ui/map/style.ts`.
       They are generated and disabled. Either make them look right at the zooms
       people actually use, or delete the generator and record why.
 
+
+      **Done.** `SHOW_KERBS = true` in `src/ui/map/style.ts`.
 ---
 
 ## Lane B — phase 1 parallel, phase 2 serialised
@@ -111,7 +160,7 @@ agent at a time. Most of the work is phase 1; the wiring is usually twenty lines
 Phase 1 is new files only. **Do not wire into `App.tsx` or `EventScreen.tsx`** —
 hand that back for a serialised pass.
 
-- [ ] **B1-1. Event lifecycle, logic.** An event is finished once `endDate` has
+- [x] **B1-1. Event lifecycle, logic.** An event is finished once `endDate` has
       passed. Derive it, never store it — a stored flag needs a background job
       and goes stale in a drawer. Finished events drop out of the list behind a
       "show finished" toggle. Second half: each event gets a tag applicable to
@@ -119,13 +168,17 @@ hand that back for a serialised pass.
       outlive the event being hidden. Owns `core/domain/event.ts` and a new
       `core/logic/eventLifecycle.ts` + test.
 
-- [ ] **B2-1. Equipment checklist, logic.** Bodies, lenses, batteries, cards, wet
+
+      **Done.** `src/core/logic/eventLifecycle.ts` exists with tests.
+- [x] **B2-1. Equipment checklist, logic.** Bodies, lenses, batteries, cards, wet
       gear, ear protection — tickable. Seeds from the previous event rather than
       starting empty; the kit barely changes between weekends, and re-typing it
       is why checklists get abandoned. New domain type + `core/logic/equipment.ts`
       + test.
 
-- [ ] **B3-1. Weather, logic.** Open-Meteo: free, no API key, hourly cloud cover
+
+      **Done.** `src/core/logic/equipment.ts` and a repository with tests.
+- [x] **B3-1. Weather, logic.** Open-Meteo: free, no API key, hourly cloud cover
       and precipitation — which matter far more to a photographer than a daily
       summary. The hard part is offline-first (§1.4): fetch when there is signal,
       cache with the event, **and always display the age**, because a three-day-old
@@ -133,11 +186,21 @@ hand that back for a serialised pass.
       ~16 days, so an event planned in winter must say so rather than render an
       empty panel. New `storage-local/weather.ts` + `core/logic/forecast.ts` + test.
 
-- [ ] **B-2. Wiring pass (one agent, after the above).** Take the landed phase-1
+
+      **Done.** `src/core/logic/forecast.ts` and `src/storage-local/weather.ts`
+      exist with tests.
+- [x] **B-2. Wiring pass (one agent, after the above).** Take the landed phase-1
       modules and wire them: `eventBundle.ts` so they back up, `importBundle.ts`
       so copy-mode remaps them (read how spots and sessions are handled — the same
       reference rewriting applies), then `EventScreen.tsx` and `App.tsx`.
 
+
+      **Done.** `eventBundle.ts` carries `equipment` and `entries`, both
+      defaulted at the read boundary so a bundle written before either existed
+      still opens. `importBundle.ts` remaps equipment in copy mode the same way
+      it remaps spots and sessions. On the UI side `EquipmentScreen.tsx`,
+      `WeatherScreen.tsx`, `EntryListScreen.tsx` and their hooks are wired
+      through `EventScreen.tsx` and `App.tsx`.
 ---
 
 ## Owned or excluded — do not pick up

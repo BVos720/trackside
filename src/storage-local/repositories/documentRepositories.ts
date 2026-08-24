@@ -20,6 +20,7 @@ import { setPacked as tickPacked } from '../../core/domain/equipment';
 import type { GearItem } from '../../core/domain/gear';
 import type { Media } from '../../core/domain/media';
 import type { Spot } from '../../core/domain/spot';
+import { normaliseUses } from '../../core/domain/spot';
 import type { UserSpotNote } from '../../core/domain/userSpotNote';
 import {
   type CircuitId,
@@ -170,6 +171,23 @@ function normaliseSpot(row: Spot): Spot {
     isHidden: row.isHidden ?? false,
     // Rows written before events existed belong to the permanent collection.
     eventId: row.eventId ?? null,
+    /*
+     * `uses` arrived after the first spots were saved, so a stored row has
+     * `undefined` where the `Spot` type promises an array.
+     *
+     * Every current *reader* already goes through `normaliseUses`, so nothing
+     * is visibly broken today — which is exactly why this is worth defaulting
+     * here rather than leaving to the call sites. The type says the field is
+     * always an array; the next one to trust that and reach for `.length` or
+     * `.includes` finds `undefined`, which is the white-screen crash this
+     * whole function exists to prevent.
+     *
+     * `normaliseUses` rather than `?? []`, because an empty array is not the
+     * same as an absent field: it falls back to `DEFAULT_SPOT_USES`, so an old
+     * row keeps behaving as it always has instead of becoming a spot that is
+     * for nothing.
+     */
+    uses: normaliseUses(row.uses),
   };
 }
 
