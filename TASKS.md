@@ -29,9 +29,12 @@ it.
   and survived on care, not safety. `git worktree add ../trackside-<task> -b <task>`,
   then `npm install` in it (`node_modules` is gitignored). Metro binds 8081, so a
   second one needs `--port 8082`.
-- **The suite is red and it is not yours.** 9 failures in
-  `src/core/logic/entryList.fixtures.test.ts`, owned by a session mid-repair.
-  Run `npx vitest run --exclude "**/entryList.fixtures.test.ts"`. Do not fix them.
+- **The suite is fully green — run it without exclusions.**
+  `npx vitest run` (554 passing). The 9 `entryList.fixtures.test.ts`
+  failures that earlier revisions of this file told you to skip were stale
+  assertions pinning parser bugs that have since been fixed; the tests were
+  rewritten on 22 August. **Do not re-add `--exclude`** — that file is the
+  only thing checking the parser against real entry lists.
 - **Commit your own files by name.** `git add -A` will sweep up three other
   people's half-finished work.
 - **Do not touch** anything listed under "Owned or excluded" at the bottom.

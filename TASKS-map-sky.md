@@ -46,10 +46,12 @@ two must not run concurrently:
   a second one needs `--port 8082`.
 - **Commit your own files by name.** `git add -A` will sweep up other agents'
   half-finished work. This has bitten this repo before.
-- **The suite has 9 known failures that are not yours.** They are all in
-  `src/core/logic/entryList.fixtures.test.ts`, which pins old parser behaviour
-  the parser has since outgrown. Run
-  `npx vitest run --exclude "**/entryList.fixtures.test.ts"`. Do not fix them.
+- **The suite is fully green — run it without exclusions.**
+  `npx vitest run` (554 passing). The 9 `entryList.fixtures.test.ts`
+  failures that earlier revisions of this file told you to skip were stale
+  assertions pinning parser bugs that have since been fixed; the tests were
+  rewritten on 22 August. **Do not re-add `--exclude`** — that file is the
+  only thing checking the parser against real entry lists.
 - **`npx tsc --noEmit` must be clean before you commit.** No exceptions.
 - **Verify on the emulator, not just in tests.** This is all visual work and a
   passing test proves nothing about whether it looks right. Launch with:
@@ -442,7 +444,7 @@ it, look at it on the emulator, then build.
 ## Done means
 
 - `npx tsc --noEmit` clean.
-- `npx vitest run --exclude "**/entryList.fixtures.test.ts"` green.
+- `npx vitest run` green, no exclusions.
 - Verified **on the emulator**, scrubbing the slider, with the sun moving and
   the frame counter not climbing.
 - **No weather anywhere on the map** — and the event planner's weather still
