@@ -24,7 +24,7 @@
  * editable review (EntryListScreen) is still the last word.
  */
 import { useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import type { TextEntry } from '../../core/logic/entryList';
 import {
@@ -39,6 +39,13 @@ import {
   toggleExcluded,
   type ColumnMapping,
 } from '../../core/logic/columnMapping';
+import type { MappingTemplate } from '../../core/domain/mappingTemplate';
+import type { MappingTemplateId } from '../../core/domain/ids';
+import {
+  decodeMapping,
+  describeMatch,
+  matchTemplates,
+} from '../../core/logic/templateMatch';
 import { HIT_SIZE, color, radius, space, type, weight } from '../theme';
 
 /** How many rows to show as a sample. Enough to see the pattern, few enough to fit. */
@@ -64,16 +71,40 @@ export default function ColumnMapper({
   grid,
   onUse,
   onCancel,
+  templates = [],
+  onSaveTemplate,
+  onTemplateUsed,
 }: {
   /** Rows sliced into cells — `gridOf(rows, findColumns(rows))`. */
   grid: readonly string[][];
   /** Hand the mapped entries to the editable review. */
   onUse: (entries: TextEntry[]) => void;
   onCancel: () => void;
+  /** Layouts saved from previous imports, most recently used first. */
+  templates?: readonly MappingTemplate[];
+  onSaveTemplate?: (name: string, mapping: ColumnMapping) => void;
+  onTemplateUsed?: (id: MappingTemplateId) => void;
 }) {
   const [mapping, setMapping] = useState<ColumnMapping>(emptyMapping);
   /** Which cell's field picker is open, as `row:column`. */
   const [picking, setPicking] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saveName, setSaveName] = useState('');
+  /** Set once a suggestion has been taken or dismissed, so it stops nagging. */
+  const [suggestionHandled, setSuggestionHandled] = useState(false);
+
+  /**
+   * Layouts that might fit this document, best first.
+   *
+   * A suggestion and never an action. A template that has gone stale because
+   * the publisher moved a column produces plausible cars assembled from the
+   * wrong cells — so it fills the mapper in, the preview below shows what it
+   * reads, and the person still presses the button.
+   */
+  const suggestion = useMemo(
+    () => (suggestionHandled ? null : (matchTemplates(grid, templates)[0] ?? null)),
+    [grid, templates, suggestionHandled],
+  );
 
   const columns = useMemo(
     () => Math.max(...grid.map((r) => r.length), 0),
@@ -110,6 +141,33 @@ export default function ColumnMapper({
 
   return (
     <View>
+      {suggestion && (
+        <View style={styles.suggestion}>
+          <Text style={styles.suggestionText}>{describeMatch(suggestion)}</Text>
+          <View style={styles.suggestionActions}>
+            <Pressable
+              onPress={() => setSuggestionHandled(true)}
+              style={({ pressed }) => [styles.secondary, pressed && styles.pressed]}
+            >
+              <Text style={styles.secondaryLabel}>Map by hand</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => {
+                const decoded = decodeMapping(suggestion.template.mapping);
+                // A layout written by an older build, or corrupted, must not
+                // take the screen down — mapping by hand is always there.
+                if (decoded) setMapping(decoded);
+                onTemplateUsed?.(suggestion.template.id);
+                setSuggestionHandled(true);
+              }}
+              style={({ pressed }) => [styles.primary, pressed && styles.pressed]}
+            >
+              <Text style={styles.primaryLabel}>Use this layout</Text>
+            </Pressable>
+          </View>
+        </View>
+      )}
+
       <Text style={styles.label}>CHOOSE COLUMNS</Text>
       <Text style={styles.help}>
         Tap a cell and say what it is. Nothing is saved here — the entries go to
@@ -249,6 +307,53 @@ export default function ColumnMapper({
           </View>
         </View>
       ))}
+
+      {onSaveTemplate && isUsable(mapping) && (
+        <View style={styles.saveBox}>
+          {saving ? (
+            <>
+              <Text style={styles.help}>
+                Name it after the series, not the round — the layout is the same
+                next time.
+              </Text>
+              <TextInput
+                value={saveName}
+                onChangeText={setSaveName}
+                placeholder="WEC entry list"
+                placeholderTextColor={color.textFaint}
+                style={styles.saveInput}
+                autoCapitalize="words"
+                autoCorrect={false}
+              />
+              <View style={styles.suggestionActions}>
+                <Pressable
+                  onPress={() => setSaving(false)}
+                  style={({ pressed }) => [styles.secondary, pressed && styles.pressed]}
+                >
+                  <Text style={styles.secondaryLabel}>Cancel</Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => {
+                    onSaveTemplate(saveName, mapping);
+                    setSaving(false);
+                    setSaveName('');
+                  }}
+                  style={({ pressed }) => [styles.primary, pressed && styles.pressed]}
+                >
+                  <Text style={styles.primaryLabel}>Save layout</Text>
+                </Pressable>
+              </View>
+            </>
+          ) : (
+            <Pressable
+              onPress={() => setSaving(true)}
+              style={({ pressed }) => [styles.btn, pressed && styles.pressed]}
+            >
+              <Text style={styles.btnLabel}>Save this layout for next time</Text>
+            </Pressable>
+          )}
+        </View>
+      )}
 
       <View style={styles.actions}>
         <Pressable
@@ -409,6 +514,36 @@ const styles = StyleSheet.create({
   previewBody: { flex: 1 },
   previewTitle: { color: color.text, fontSize: type.label, fontWeight: weight.bold },
   previewMeta: { color: color.textMuted, fontSize: 11, marginTop: 2 },
+
+  suggestion: {
+    marginTop: space.md,
+    padding: space.sm,
+    borderRadius: radius.md,
+    backgroundColor: color.surface,
+    borderWidth: 1,
+    borderColor: color.accent,
+  },
+  suggestionText: { color: color.text, fontSize: type.label, lineHeight: 18 },
+  suggestionActions: { flexDirection: 'row', gap: space.sm, marginTop: space.sm },
+
+  saveBox: { marginTop: space.md },
+  saveInput: {
+    marginTop: space.xs,
+    minHeight: 44,
+    backgroundColor: color.surfaceRaised,
+    borderRadius: radius.sm,
+    paddingHorizontal: space.sm,
+    color: color.text,
+    fontSize: type.label,
+  },
+  btn: {
+    height: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radius.md,
+    backgroundColor: color.surfaceRaised,
+  },
+  btnLabel: { color: color.text, fontSize: type.label, fontWeight: weight.bold },
 
   actions: { flexDirection: 'row', gap: space.sm, marginTop: space.md },
   secondary: {

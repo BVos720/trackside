@@ -35,6 +35,7 @@ import {
 import { gridOf } from '../../core/logic/columnMapping';
 import Collapsible from '../Collapsible';
 import ColumnMapper from './ColumnMapper';
+import { useMappingTemplates } from '../state/useMappingTemplates';
 import { HIT_SIZE, color, radius, space, type, weight } from '../theme';
 
 export interface SavedEntryRow {
@@ -73,6 +74,13 @@ export default function EntryListScreen({
   const [status, setStatus] = useState<string | null>(null);
   /** The grid being mapped by hand, or null when the parser's reading is in use. */
   const [mapping, setMapping] = useState<string[][] | null>(null);
+  /**
+   * Saved layouts, loaded whether or not the mapper is open.
+   *
+   * Not scoped to the event: a layout is a fact about a series, which is the
+   * whole reason saving one is worth anything.
+   */
+  const layouts = useMappingTemplates();
 
   const progress = useMemo(
     () => ({
@@ -237,6 +245,9 @@ export default function EntryListScreen({
         {mapping !== null && (
           <ColumnMapper
             grid={mapping}
+            templates={layouts.templates}
+            onSaveTemplate={(name, m) => void layouts.save(name, mapping, m)}
+            onTemplateUsed={(id) => void layouts.touch(id)}
             onCancel={() => setMapping(null)}
             onUse={(mapped) => {
               // Straight into the same editable review the parser feeds, so
