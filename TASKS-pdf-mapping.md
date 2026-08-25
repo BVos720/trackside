@@ -80,44 +80,116 @@ existing parser better at once.
 
 ---
 
-## The interaction — tap a row, not fill a form
+## R — The editable review table. Build this first.
 
-The obvious version is a spreadsheet-style header-mapping screen. **Do not
-build that first.** It is a desktop idiom and this is a phone in a paddock.
+> "It should be editable if the parser part kind of fails."
 
-The version that suits the device: **show one representative row, and have the
-human tap the parts.**
+This is the highest-value, lowest-risk piece, and **it needs none of the
+extraction work below**. It sits on top of the parser that exists today.
 
-```
-  Row 4 of 47                      tap each part
+The insight: if every parsed field can be corrected by hand, the parser never
+has to be *right*, only *close*. That changes what all the machinery below is
+for — it stops being a correctness problem and becomes a "how few taps" one.
 
-  007   ASTON MARTIN THOR TEAM   USA   M   Aston Martin Valkyrie   Harry TINCKNELL (GBR)
+- [ ] **R1. Show the parse as an editable list, not a summary.** Today
+      `describeEntryParse()` returns "47 entries, 2 lines to enter by hand" and
+      the user takes it on trust. Show the rows instead: number, class, team,
+      drivers, each tappable and editable in place.
 
-  ↑ tap → [ Car number · Class · Team · Drivers · Ignore ]
-```
+- [ ] **R2. Delete a row, add a row.** The two operations that fix everything
+      the parser can get wrong in a way editing cannot: furniture read as a
+      car (delete), and a car it never saw (add). With these, every fabrication
+      and every silent drop becomes a five-second fix rather than a defect.
 
-Three or four taps maps the whole document, because a tap identifies a
-*column*, and the column applies to every row. Then show the first three parsed
-entries underneath, live, so a wrong tap is visible immediately rather than
-after committing forty cars.
+- [ ] **R3. Show the source line under each row.** `TextEntry.source` is
+      already carried for exactly this. When a field looks wrong, the line it
+      came from is the only way to tell a mis-parse from a typo in the PDF.
 
-- [ ] **P3. The mapping screen.** One row, tappable tokens, a field picker, and
-      a live preview of the first three results. `HIT_SIZE` throughout — this
-      is a tap-accuracy exercise on a moving bus. One-handed.
+- [ ] **R4. Surface `skipped` in the same list.** Lines the parser could not
+      read should appear as empty rows with their source text, ready to fill
+      in — not as a separate "2 lines to enter by hand" count that sends you
+      hunting for them.
 
-- [ ] **P4. Multi-line entries, as a mode not a guess.** Spa Six Hours and NLS
-      both span several lines per record. A single control — "each entry is N
-      lines" — plus tapping fields on each of those lines. That one control is
-      the whole fix for the seven cars that currently vanish, and for NLS's
-      missing teams and drivers, neither of which any recogniser has managed.
-
-- [ ] **P5. Row filtering.** Page headers, footers and section banners repeat.
-      The human should be able to tap one and say "lines like this are not
-      entries" (matched by x-band and shape, not by literal text, or it will
-      not catch the same header on page 2). This is the general form of the
-      four fabrication guards that were hand-coded into `entryList.ts`.
+**Ship R alone and the entry-list feature is usable for all five documents
+today**, including the two the parser gets wrong. Everything below is about
+reducing how much correcting R has to do.
 
 ---
+
+## M — The visual column mapper
+
+> "The best thing is if you would get a PDF preview and can choose columns for
+> certain parts, but idk if that is doable."
+
+It is doable, and it is the right interaction — you see the document you know
+instead of a stripped text row you have to translate in your head.
+
+**Tap a column band, choose what it is.** That is the whole interaction.
+
+```
+   ┌──────────────────────── the page, rendered ────────────────────────┐
+   │ ░░░░░  ▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒  ░░░  ░  ▒▒▒▒▒▒▒▒▒▒  ▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒  │
+   │ 007    ASTON MARTIN THOR  USA   M  Aston Martin  Harry TINCKNELL  │
+   │ 009    ASTON MARTIN THOR  USA   M  Aston Martin  Alex RIBERAS     │
+   │ └──┬─┘ └────────┬───────┘                       └───────┬──────┘  │
+   └────┼────────────┼────────────────────────────────────────┼────────┘
+     Car number    Team                                    Drivers
+```
+
+- Bands are **proposed automatically** by the x-clustering in P2 — the machine
+  half. It proposes the grid and nothing about meaning.
+- **Tap a band → pick a field.** Car number · Class · Team · Drivers · Ignore.
+- **Drag a band edge** when the proposal splits or merges a column wrongly.
+  Dragging a boundary is far more forgiving on a phone than tapping a token.
+- **Live preview** of the first two or three rows underneath, so a wrong
+  assignment shows immediately rather than after committing forty cars.
+
+- [ ] **M1. Render the page.** See "Is the preview actually doable" below —
+      the answer differs per platform and web is free.
+- [ ] **M2. Overlay the proposed bands** from P2, tappable and draggable.
+- [ ] **M3. The field picker and live preview.** `HIT_SIZE` throughout.
+- [ ] **M4. Multi-line entries, as a mode not a guess.** One control — "each
+      entry is N lines" — plus assigning fields on each line. That single
+      control is the whole fix for Spa Six Hours' seven vanished cars and for
+      NLS's missing teams and drivers, neither of which any recogniser has
+      managed.
+- [ ] **M5. Exclude a row by shape.** Tap a page header and say "lines like
+      this are not entries", matched by band and shape rather than literal
+      text — or it will not catch the same header on page 2. This is the
+      general form of the four fabrication guards hand-coded into
+      `entryList.ts`.
+
+---
+
+## Is the preview actually doable
+
+Yes, with a different answer per platform.
+
+**Web — yes, today, with what is already installed.** `pdfjs-dist` is a
+dependency and already renders pages to a canvas; its text layer gives every
+token a bounding box in the same coordinate space. Drawing bands over a
+rendered page is what the pdfjs viewer already does for text selection. No new
+dependency.
+
+**Android — yes, but it needs a small native module.** The platform ships
+`android.graphics.pdf.PdfRenderer` (API 21+), which renders a page to a bitmap
+with no third-party library. That solves the *picture*. Text and positions come
+from either a native extractor or on-device OCR — see P9. The module is small
+and well-trodden; check for an existing Expo package before writing one.
+
+**iOS — same shape via PDFKit**, and academic for now: building for iOS needs
+a paid Apple account (STATUS.md gap 5).
+
+**The honest caveat:** on native this is blocked behind the same wall as
+everything else PDF — `PDF_SUPPORTED = false`, pdfjs needs a DOM and a worker
+bundle Metro will not produce. The mapper does not remove that wall. What it
+does is make **OCR** a good enough way through it, which it is not today: OCR
+returns text with rough boxes and gets structure wrong, which is fatal for a
+parser inferring meaning and survivable when a human assigns it and can edit
+the result.
+
+So the order is: **R works everywhere now. M works on web now. M works on
+native once P9 lands.**
 
 ## Templates — the part that makes it worth building
 
@@ -194,14 +266,19 @@ preference.
 
 ## Suggested order
 
-1. **P1 + P2** — positioned tokens and column clustering. Pure logic, tested
-   against the five fixtures, useful on their own.
-2. **P3** — the tap-a-row screen, entry lists only.
-3. **P4 + P5** — multi-line and row filtering. This is where HTC2, NLS and Spa
-   Six Hours all become correct.
-4. **P6 + P7** — templates.
-5. **P8** — timetables.
-6. **P9** — on-device extraction, reconsidered.
+1. **R1–R4 — the editable review table.** No extraction changes, works on both
+   platforms, and makes all five documents usable immediately. If only one
+   thing gets built, build this.
+2. **P1 + P2** — positioned tokens and column clustering. Pure logic, tested
+   against the five fixtures. Worth doing even if the mapper never gets built:
+   preserving columns is what would let the existing parser split NLS's entrant
+   from its town and read HTC2's second integer.
+3. **M1–M3** — the visual mapper, web first, where it costs no new dependency.
+4. **M4 + M5** — multi-line and row exclusion. This is where HTC2, NLS and Spa
+   Six Hours all become correct rather than corrected.
+5. **P6 + P7** — templates.
+6. **P8** — timetables through the same screen.
+7. **P9** — native page rendering and OCR, which unlocks M on the phone.
 
 ## Done means
 
