@@ -113,11 +113,31 @@ the SVG sprites to PNG (Android cannot decode SVG in that path).
 
 ## Not done
 
-> **Offline has never been tested end to end.** Airplane mode also cuts a *dev*
-> build off from Metro, which serves the JS bundle, so the app cannot start at
-> all. A real test needs a preview build (`eas build --profile preview`) that
-> embeds the bundle. What *is* verified: every glyph stack resolves locally,
-> zero glyph failures, labels render.
+> **Offline verified end to end — 25 August.** On the emulator, with the
+> network genuinely unreachable (`svc wifi disable`, `svc data disable`,
+> airplane mode, `ping 8.8.8.8` → *Network is unreachable*) and Metro killed.
+>
+> The build was a **local release APK** — `npx expo run:android --variant release`
+> — not EAS. Release is signed with the debug keystore here, so no account and
+> no cloud build are needed, and `--variant release` embeds the JS bundle, which
+> is the whole point: a dev build cannot be tested this way because airplane
+> mode also cuts it off from Metro and it fails for the wrong reason.
+>
+> What ran with no network: the app started from the embedded bundle; the
+> basemap rendered from the bundled `.pmtiles` (Nordschleife geometry, terrain,
+> forest, roads); circuit metrics resolved (6.08 × 6.34 km, 29.19 km surface);
+> stored spots loaded from the KV store; the sun dial and the sky scrubber both
+> worked. No glyph errors, no tile failures, no *Unable to load script*.
+>
+> **Not observed:** map *labels* — none were visible at the zoom the app opens
+> at, and it was not zoomed in to check. No glyph failures appeared in the log,
+> so this is untested rather than broken. **Also untested offline:** the PDF
+> bridge, which needs a file picked by hand. Its assets ship in the APK
+> (`res/hz.pdfjs`, `res/xA.pdfjs`) and it fetches nothing by design, but that is
+> an argument rather than an observation.
+>
+> Note this build is **minified with ProGuard**, unlike debug. Anything that
+> breaks only here is a real finding about what ships.
 
 ### Next up
 1. **Import a bundle back.** Saving works; reading one in does not.
