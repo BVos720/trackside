@@ -65,13 +65,30 @@ the function returns. **Return the tokens instead of the joined string** and
 columns become recoverable — which is what makes both the mapping UI and the
 existing parser better at once.
 
-- [ ] **P1. Return positioned tokens.** `extractPdfLines` gains a sibling —
+- [x] **P1. Return positioned tokens.** `extractPdfLines` gains a sibling —
       `extractPdfRows` — returning `{ y, tokens: { x, width, text }[] }[]`.
       Keep the joined-string version: `timetableText.ts` is tested against it
       and works, and this must not be a rewrite of a working parser.
       Owns `pdfText.web.ts` / `pdfText.ts` only. No UI.
 
-- [ ] **P2. Cluster tokens into columns.** Pure logic in `core/logic/`: given
+**P1 and P2 done — 25 August, and measured against all five documents.**
+`extractPdfRows` keeps the positions; `extractPdfLines` is unchanged byte for
+byte. `core/logic/pdfColumns.ts` finds the bands. Captured
+`entry-lists/*.rows.json` fixtures — the same pdfjs pass the app runs, taken
+*before* the whitespace collapse the `.txt` siblings were taken after.
+
+| Document | Columns | Result |
+|---|---|---|
+| WEC | 11 | 35 cars, every driver in its own column — better than the string parser, which cannot find the first driver's left boundary |
+| ELMS | 11 | 47 cars, every field separated |
+| NLS | 5 | **Recovers the team and town `entryList.ts` had to leave null**, and isolates the running page header that made it read 120 where the document says 110 |
+| HTC2 | 2 | Partial — later columns do not align across rows. But it separates the row index from the car number, which is the KNOWN BUG in `entryList.fixtures.test.ts` |
+| Spa Six Hours | 0 | Multi-line records, no consistent bands. Reports none rather than a grid over prose |
+
+The empty answer is a supported outcome, not a failure: it routes to R's
+editable review instead of to a table that looks authoritative and is wrong.
+
+- [x] **P2. Cluster tokens into columns.** Pure logic in `core/logic/`: given
       the rows, find the x-bands that most rows share. This is the machine half
       of the co-work — it proposes the grid, and proposes nothing about meaning.
       Must degrade honestly: a document with no consistent bands (prose, or a
@@ -91,24 +108,31 @@ The insight: if every parsed field can be corrected by hand, the parser never
 has to be *right*, only *close*. That changes what all the machinery below is
 for — it stops being a correctness problem and becomes a "how few taps" one.
 
-- [ ] **R1. Show the parse as an editable list, not a summary.** Today
+- [x] **R1. Show the parse as an editable list, not a summary.** Today
       `describeEntryParse()` returns "47 entries, 2 lines to enter by hand" and
       the user takes it on trust. Show the rows instead: number, class, team,
       drivers, each tappable and editable in place.
 
-- [ ] **R2. Delete a row, add a row.** The two operations that fix everything
+- [x] **R2. Delete a row, add a row.** The two operations that fix everything
       the parser can get wrong in a way editing cannot: furniture read as a
       car (delete), and a car it never saw (add). With these, every fabrication
       and every silent drop becomes a five-second fix rather than a defect.
 
-- [ ] **R3. Show the source line under each row.** `TextEntry.source` is
+- [x] **R3. Show the source line under each row.** `TextEntry.source` is
       already carried for exactly this. When a field looks wrong, the line it
       came from is the only way to tell a mis-parse from a typo in the PDF.
 
-- [ ] **R4. Surface `skipped` in the same list.** Lines the parser could not
+- [x] **R4. Surface `skipped` in the same list.** Lines the parser could not
       read should appear as empty rows with their source text, ready to fill
       in — not as a separate "2 lines to enter by hand" count that sends you
       hunting for them.
+
+**Done — 25 August.** `EntryListScreen.tsx` rewritten: every field editable
+in place, rows deletable, "+ Add a car the list missed", the source line under
+each row, and unreadable lines as blank rows in the same list rather than a
+separate section. Logic in `core/logic/entryReview.ts` with 23 tests — which
+carries more weight than usual here, since this repo has no component tests and
+none of this has run on a phone.
 
 **Ship R alone and the entry-list feature is usable for all five documents
 today**, including the two the parser gets wrong. Everything below is about
