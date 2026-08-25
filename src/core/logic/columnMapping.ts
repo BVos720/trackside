@@ -37,17 +37,28 @@ export const EntryField = {
 } as const;
 export type EntryField = (typeof EntryField)[keyof typeof EntryField];
 
-export interface FieldAssignment {
+/**
+ * Generic over the field set, so the same machinery reads a timetable.
+ *
+ * Entry lists and timetables differ in *what* the columns mean and in nothing
+ * else: both are a grid, both need rows grouped into records, both need
+ * furniture excluded by shape. Parameterising the field name is what lets the
+ * timetable side (timetableMapping.ts) reuse all of it rather than growing a
+ * second copy that drifts.
+ *
+ * Defaults to `EntryField`, so every existing caller is unchanged.
+ */
+export interface FieldAssignment<F extends string = EntryField> {
   /** Offset within the record, 0 for a single-line list. */
   readonly row: number;
   readonly column: number;
-  readonly field: EntryField;
+  readonly field: F;
 }
 
-export interface ColumnMapping {
+export interface ColumnMapping<F extends string = EntryField> {
   /** How many grid rows make one entry. 1 for an ordinary table. */
   readonly rowsPerEntry: number;
-  readonly assignments: readonly FieldAssignment[];
+  readonly assignments: readonly FieldAssignment<F>[];
   /**
    * Row shapes that are not records — headers, footers, section banners.
    *
@@ -143,11 +154,38 @@ export function readNumber(cellText: string): string | null {
 }
 
 /** True when the mapping says this row is furniture. */
-export function isExcluded(
+export function isExcluded<F extends string>(
   cells: readonly string[],
-  mapping: ColumnMapping,
+  mapping: ColumnMapping<F>,
 ): boolean {
   return mapping.excluded.includes(rowSignature(cells));
+}
+
+export const cellAt = (
+  group: readonly string[][],
+  row: number,
+  column: number,
+): string => group[row]?.[column]?.trim() ?? '';
+
+/**
+ * The grid split into records, furniture removed.
+ *
+ * Excluded rows are dropped *before* grouping, so a header sitting in the
+ * middle of a multi-line document does not shunt every record after it by one
+ * row — which would corrupt the rest of the list in a way that still looks
+ * plausible on screen.
+ */
+export function groupRows<F extends string>(
+  grid: readonly string[][],
+  mapping: ColumnMapping<F>,
+): string[][][] {
+  const rows = grid.filter((cells) => !isExcluded(cells, mapping));
+  const stride = Math.max(1, Math.trunc(mapping.rowsPerEntry));
+  const out: string[][][] = [];
+  for (let start = 0; start + stride <= rows.length; start += stride) {
+    out.push(rows.slice(start, start + stride));
+  }
+  return out;
 }
 
 const cell = (grid: readonly string[][], row: number, column: number): string =>
@@ -171,15 +209,11 @@ export function applyMapping(
   grid: readonly string[][],
   mapping: ColumnMapping,
 ): TextEntry[] {
-  const rows = grid.filter((cells) => !isExcluded(cells, mapping));
-  const stride = Math.max(1, Math.trunc(mapping.rowsPerEntry));
   if (mapping.assignments.length === 0) return [];
 
   const out: TextEntry[] = [];
 
-  for (let start = 0; start + stride <= rows.length; start += stride) {
-    const group = rows.slice(start, start + stride);
-
+  for (const group of groupRows(grid, mapping)) {
     let number = '';
     let className = '';
     let team = '';
@@ -232,14 +266,14 @@ export function applyMapping(
 }
 
 /** The field a column is assigned at a given row offset, or Ignore. */
-export function fieldAt(
-  mapping: ColumnMapping,
+export function fieldAt<F extends string>(
+  mapping: ColumnMapping<F>,
   row: number,
   column: number,
-): EntryField {
+): F | 'ignore' {
   return (
     mapping.assignments.find((a) => a.row === row && a.column === column)?.field ??
-    EntryField.Ignore
+    'ignore'
   );
 }
 
@@ -250,27 +284,27 @@ export function fieldAt(
  * ever holds what the user actually chose — which keeps `applyMapping` from
  * having to distinguish "assigned to nothing" from "never assigned".
  */
-export function assign(
-  mapping: ColumnMapping,
+export function assign<F extends string>(
+  mapping: ColumnMapping<F>,
   row: number,
   column: number,
-  field: EntryField,
-): ColumnMapping {
+  field: F,
+): ColumnMapping<F> {
   const rest = mapping.assignments.filter(
     (a) => !(a.row === row && a.column === column),
   );
   return {
     ...mapping,
     assignments:
-      field === EntryField.Ignore ? rest : [...rest, { row, column, field }],
+      field === 'ignore' ? rest : [...rest, { row, column, field }],
   };
 }
 
 /** Add or remove a row shape from the exclusion list. */
-export function toggleExcluded(
-  mapping: ColumnMapping,
+export function toggleExcluded<F extends string>(
+  mapping: ColumnMapping<F>,
   cells: readonly string[],
-): ColumnMapping {
+): ColumnMapping<F> {
   const sig = rowSignature(cells);
   return {
     ...mapping,
@@ -280,9 +314,18 @@ export function toggleExcluded(
   };
 }
 
-/** True once the mapping can produce anything at all. */
-export function isUsable(mapping: ColumnMapping): boolean {
-  return mapping.assignments.some((a) => a.field === EntryField.Number);
+/**
+ * True once the mapping can produce anything at all.
+ *
+ * `required` is the field without which a record is meaningless — the car
+ * number for an entry list, the start time for a timetable. Everything else is
+ * optional detail; this is the one that decides whether there is a record.
+ */
+export function isUsable<F extends string>(
+  mapping: ColumnMapping<F>,
+  required: string = EntryField.Number,
+): boolean {
+  return mapping.assignments.some((a) => a.field === required);
 }
 
 /** One line for the mapping screen: what this mapping would read. */
