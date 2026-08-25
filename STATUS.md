@@ -129,9 +129,10 @@ the SVG sprites to PNG (Android cannot decode SVG in that path).
 > stored spots loaded from the KV store; the sun dial and the sky scrubber both
 > worked. No glyph errors, no tile failures, no *Unable to load script*.
 >
-> **Not observed:** map *labels* — none were visible at the zoom the app opens
-> at, and it was not zoomed in to check. No glyph failures appeared in the log,
-> so this is untested rather than broken. **Also untested offline:** the PDF
+> Labels render too, checked by zooming in: "Antoniusbuche" and "Tiergarten"
+> drawn from the bundled glyph stacks with no network.
+>
+> **Untested offline:** the PDF
 > bridge, which needs a file picked by hand. Its assets ship in the APK
 > (`res/hz.pdfjs`, `res/xA.pdfjs`) and it fetches nothing by design, but that is
 > an argument rather than an observation.
