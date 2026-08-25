@@ -1,0 +1,8 @@
+# The bundled pdfjs library and its worker are third-party build output, not
+# source. Git's line-ending conversion would rewrite them on checkout — 1.7MB
+# of minified JavaScript, altered on a fresh clone for no reason, in files the
+# WebView bridge reads verbatim and inlines into a page.
+#
+# `-text` turns that off entirely: what was committed is what lands on disk.
+assets/pdfjs/*.pdfjs -text
+public/pdf.worker.min.mjs -text
