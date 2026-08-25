@@ -248,16 +248,34 @@ native once P9 lands.**
 Mapping a document once is a chore. Mapping the *same series* every round is a
 reason to stop using the app.
 
-- [ ] **P6. Save the mapping as a named template.** "WEC entry list",
+- [x] **P6. Save the mapping as a named template.** "WEC entry list",
       "NLS Teilnehmerliste". A domain entity — UUID v7, tombstones, `syncState`,
       the same rules as everything else in `core/domain/`.
 
-- [ ] **P7. Recognise a document a template already fits.** Match on the column
+- [x] **P7. Recognise a document a template already fits.** Match on the column
       structure, not the filename — publishers rename files constantly and keep
       their layout for years. Apply it, show the result, and let the human
       confirm or re-map. **Never apply silently**: a template that has gone
       stale because the publisher changed their layout produces confident
       nonsense, which is the one failure this whole design exists to avoid.
+
+**P6 and P7 done — 25 August, including the UI.** `MappingTemplate` domain
+type, `core/logic/templateMatch.ts`, a repository on
+`trackside.mappingtemplates.v1`, and a `useMappingTemplates` hook feeding the
+mapper. 20 + 10 tests.
+
+Matched on **structure, not filename** — publishers rename files constantly and
+keep layouts for years. Column count must agree exactly, then row-shape
+overlap, weighted so a document that has *gained* a section still matches while
+one *missing* what the template relies on does not. Proved on the fixtures: a
+template made from the WEC list fits ELMS and is refused for NLS, which is the
+direction that would do damage.
+
+**Never applied automatically**, which was the explicit instruction and is also
+the only defensible design: automatic cannot be right consistently, and a
+template gone stale produces plausible cars from the wrong cells. The banner
+offers "Use this layout" or "Map by hand"; either way the live preview shows
+what it reads and a person presses Use.
 
 That is the shape where this stops being a chore: the first WEC weekend costs
 twenty seconds, and every one after that costs a glance.
