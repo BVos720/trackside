@@ -28,6 +28,7 @@
     "react-native-get-random-values": "~1.11.0",
     "react-native-safe-area-context": "~5.7.0",
     "react-native-web": "^0.21.2",
+    "react-native-webview": "^13.16.1",
     "suncalc": "^2.0.1",
     "uuid": "^14.0.1"
   },
@@ -54,9 +55,10 @@
     "scenery": "node scripts/extract-scenery.mjs",
     "paths": "node scripts/extract-paths.mjs",
     "pdfworker": "node -e \"require('fs').copyFileSync('node_modules/pdfjs-dist/build/pdf.worker.min.mjs','public/pdf.worker.min.mjs')\"",
-    "postinstall": "npm run pdfworker",
+    "postinstall": "npm run pdfworker && npm run pdfjsassets",
     "sprites": "node scripts/build-sprites.mjs",
-    "glyphs": "node scripts/extract-glyphs.mjs"
+    "glyphs": "node scripts/extract-glyphs.mjs",
+    "pdfjsassets": "node scripts/copy-pdfjs.mjs"
   },
   "private": true
 }

@@ -33,6 +33,9 @@ import {
   type ReviewRow,
 } from '../../core/logic/entryReview';
 import { gridOf } from '../../core/logic/columnMapping';
+import { findColumns } from '../../core/logic/pdfColumns';
+import { pickPdf } from '../../storage-local/pickPdf';
+import { PdfBridge } from '../../storage-local/pdfBridge';
 import Collapsible from '../Collapsible';
 import ColumnMapper from './ColumnMapper';
 import { useMappingTemplates } from '../state/useMappingTemplates';
@@ -81,6 +84,8 @@ export default function EntryListScreen({
    * whole reason saving one is worth anything.
    */
   const layouts = useMappingTemplates();
+  /** Bytes waiting to be read by the bridge, or null when nothing is loading. */
+  const [pdfBytes, setPdfBytes] = useState<Uint8Array | null>(null);
 
   const progress = useMemo(
     () => ({
@@ -124,6 +129,23 @@ export default function EntryListScreen({
       .filter((l) => l !== '');
     setMapping(gridOf(lines.map((text) => ({ tokens: [{ x: 0, width: 0, text }] })), []));
     setStatus(null);
+  };
+
+  /**
+   * Open a PDF and go straight to the mapper.
+   *
+   * Deliberately not through the parser first. A PDF still has its column
+   * positions, and those are the thing the parser has to throw away — sending
+   * it down the string path would discard the one advantage the file has over
+   * a paste, and then ask the user to correct the result.
+   */
+  const onPickPdf = () => {
+    void (async () => {
+      const picked = await pickPdf();
+      if (!picked) return; // Backed out of the picker.
+      setStatus(`Reading ${picked.name}…`);
+      setPdfBytes(picked.bytes);
+    })();
   };
 
   const patch = (key: string, change: Partial<ReviewRow>) =>
@@ -230,6 +252,32 @@ export default function EntryListScreen({
         >
           <Text style={styles.btnLabel}>Read pasted text</Text>
         </Pressable>
+
+        {pdfBytes && (
+          <PdfBridge
+            bytes={pdfBytes}
+            onRows={(rows) => {
+              setPdfBytes(null);
+              // Columns first: a PDF is the one input that still has them, and
+              // gridOf falls back to whole lines when a document has none.
+              setMapping(gridOf(rows, findColumns(rows)));
+              setStatus(null);
+            }}
+            onError={(message) => {
+              setPdfBytes(null);
+              setStatus(message);
+            }}
+          />
+        )}
+
+        {mapping === null && (
+          <Pressable
+            onPress={onPickPdf}
+            style={({ pressed }) => [styles.btn, pressed && styles.pressed]}
+          >
+            <Text style={styles.btnLabel}>Open a PDF</Text>
+          </Pressable>
+        )}
 
         {mapping === null && (
           <Pressable

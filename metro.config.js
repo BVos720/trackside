@@ -19,6 +19,21 @@ const config = getDefaultConfig(__dirname);
  * extension registered the files are absent from the build and the map renders
  * unnamed roads on device while looking correct on web.
  */
-config.resolver.assetExts.push('pmtiles', 'pbf');
+/**
+ * ...and `.pdfjs` for the pdfjs library itself.
+ *
+ * pdfjs cannot run in React Native's JS context — it needs a DOM — but it runs
+ * perfectly inside a WebView, which has one. So the library ships as an
+ * *asset*, is read at runtime and inlined into the page the WebView loads
+ * (see pdfBridge.tsx). That is what makes reading a PDF work on the phone.
+ *
+ * The extension is renamed from .mjs deliberately: Metro treats .mjs as
+ * source and would try to parse a 1.2MB minified bundle as a module. A
+ * registered asset extension it has no opinion about is the way past that.
+ *
+ * Copied out of node_modules by `npm run pdfjsassets`, which postinstall runs,
+ * so a fresh clone does not need the files committed.
+ */
+config.resolver.assetExts.push('pmtiles', 'pbf', 'pdfjs');
 
 module.exports = config;
