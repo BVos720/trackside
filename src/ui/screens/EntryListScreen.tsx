@@ -27,11 +27,14 @@ import { parseEntryList, describeEntryParse, type TextEntry } from '../../core/l
 import {
   blankRow,
   readyRows,
+  rowFromEntry,
   rowsFromParse,
   toEntry,
   type ReviewRow,
 } from '../../core/logic/entryReview';
+import { gridOf } from '../../core/logic/columnMapping';
 import Collapsible from '../Collapsible';
+import ColumnMapper from './ColumnMapper';
 import { HIT_SIZE, color, radius, space, type, weight } from '../theme';
 
 export interface SavedEntryRow {
@@ -68,6 +71,8 @@ export default function EntryListScreen({
   const [rows, setRows] = useState<ReviewRow[]>([]);
   const [editing, setEditing] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
+  /** The grid being mapped by hand, or null when the parser's reading is in use. */
+  const [mapping, setMapping] = useState<string[][] | null>(null);
 
   const progress = useMemo(
     () => ({
@@ -89,6 +94,28 @@ export default function EntryListScreen({
     setRows(rowsFromParse(r, nextKey));
     setEditing(null);
     setStatus(describeEntryParse(r));
+  };
+
+  /**
+   * Hand the pasted text to the mapper instead of the parser.
+   *
+   * Pasted text carries no positions, so every line becomes one cell and the
+   * useful control is "how many rows make one car" — which is what reads the
+   * documents the parser loses cars from. A PDF picked on web would come in
+   * through `extractPdfRows` with real columns; the screen is the same either
+   * way, which is why it takes a grid rather than a file.
+   */
+  const onMap = () => {
+    if (raw.trim() === '') {
+      setStatus('Nothing to map — paste an entry list first.');
+      return;
+    }
+    const lines = raw
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter((l) => l !== '');
+    setMapping(gridOf(lines.map((text) => ({ tokens: [{ x: 0, width: 0, text }] })), []));
+    setStatus(null);
   };
 
   const patch = (key: string, change: Partial<ReviewRow>) =>
@@ -196,9 +223,35 @@ export default function EntryListScreen({
           <Text style={styles.btnLabel}>Read pasted text</Text>
         </Pressable>
 
+        {mapping === null && (
+          <Pressable
+            onPress={onMap}
+            style={({ pressed }) => [styles.btn, pressed && styles.pressed]}
+          >
+            <Text style={styles.btnLabel}>Say what each part is instead</Text>
+          </Pressable>
+        )}
+
         {status && <Text style={styles.status}>{status}</Text>}
 
-        {rows.length > 0 && (
+        {mapping !== null && (
+          <ColumnMapper
+            grid={mapping}
+            onCancel={() => setMapping(null)}
+            onUse={(mapped) => {
+              // Straight into the same editable review the parser feeds, so
+              // there is one place where entries are checked and corrected.
+              setRows(mapped.map((e) => rowFromEntry(e, nextKey())));
+              setMapping(null);
+              setEditing(null);
+              setStatus(
+                `Mapped ${mapped.length} car${mapped.length === 1 ? '' : 's'}. Check them below.`,
+              );
+            }}
+          />
+        )}
+
+        {rows.length > 0 && mapping === null && (
           <>
             <Text style={styles.label}>REVIEW</Text>
             <Text style={styles.help}>

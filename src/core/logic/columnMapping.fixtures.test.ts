@@ -230,3 +230,72 @@ describe('Spa Six Hours — the seven cars that vanish', () => {
     expect(entries.length).toBeLessThan(35);
   });
 });
+
+/**
+ * Pasted text through the mapper.
+ *
+ * The path that works on the phone. Pasted text carries no positions, so every
+ * line becomes one cell and the useful control is how many rows make a car —
+ * which is the whole of what the parser cannot do here.
+ */
+describe('pasted text, mapped by hand', () => {
+  /** What `EntryListScreen.onMap` builds from a paste. */
+  const pasteGrid = (text: string) =>
+    gridOf(
+      text
+        .split(/\r?\n/)
+        .map((l) => l.trim())
+        .filter((l) => l !== '')
+        .map((t) => ({ tokens: [{ x: 0, width: 0, text: t }] })),
+      [],
+    );
+
+  const threeLine: ColumnMapping = {
+    rowsPerEntry: 3,
+    assignments: [
+      { row: 0, column: 0, field: EntryField.Number },
+      { row: 1, column: 0, field: EntryField.Team },
+      { row: 2, column: 0, field: EntryField.Drivers },
+    ],
+    excluded: [],
+  };
+
+  it('reads a three-line record the parser cannot see at all', () => {
+    // Verbatim from spa-six-hours-2025.txt, lines 12-14. Car 4 is one of the
+    // seven that vanish today — not in `entries`, not in `skipped`.
+    const grid = pasteGrid(
+      [
+        '# 4',
+        'MASERATI 250F 2508 1954 2500 Front engine F.6',
+        'RETTENMAIER Rebeca (DEU)',
+      ].join('\n'),
+    );
+
+    const entries = applyMapping(grid, threeLine);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      number: '4',
+      team: 'MASERATI 250F 2508 1954 2500 Front engine F.6',
+      drivers: ['RETTENMAIER Rebeca (DEU)'],
+    });
+  });
+
+  it('gives every line one cell', () => {
+    expect(pasteGrid('a\nb\nc')).toEqual([['a'], ['b'], ['c']]);
+  });
+
+  it('drops blank lines rather than letting them shift the rhythm', () => {
+    // A stray blank in a multi-line paste would otherwise push every record
+    // after it out of step — silently, and plausibly.
+    expect(pasteGrid('a\n\n  \nb')).toEqual([['a'], ['b']]);
+  });
+
+  it('still reads an ordinary one-line paste', () => {
+    const grid = pasteGrid('7 Toyota Gazoo Racing\n8 Ferrari AF Corse');
+    const entries = applyMapping(
+      grid,
+      single([[0, EntryField.Number]]),
+    );
+    expect(entries.map((e) => e.number)).toEqual(['7', '8']);
+  });
+});
