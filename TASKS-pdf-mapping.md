@@ -189,7 +189,7 @@ hold their rhythm, which the editable review makes visible instead of silent.
 - **Live preview** of the first two or three rows underneath, so a wrong
   assignment shows immediately rather than after committing forty cars.
 
-- [ ] **M1. Render the page.** See "Is the preview actually doable" below —
+- [x] **M1. Render the page.** See "Is the preview actually doable" below —
       the answer differs per platform and web is free.
 
       **Deliberately not done yet — 25 August.** The mapper ships showing the
@@ -289,7 +289,7 @@ text on a row is the session name, which is the location, and which is a
 duration — and it guesses well, because two `HH:MM` times are a strong anchor
 that entry lists have no equivalent of.
 
-- [ ] **P8. Point the mapper at timetables too.** Same rows, same tapping,
+- [x] **P8. Point the mapper at timetables too.** Same rows, same tapping,
       different field set (Day · Start · End · Session · Location · Ignore).
 
 **Do not replace `timetableText.ts` with it.** That parser is tested against
@@ -300,25 +300,42 @@ for the model path.
 
 ---
 
-## What this does *not* solve
+## On-device PDF reading — solved, through a WebView
 
-**Native PDF text extraction is still missing.** `PDF_SUPPORTED = false` in
-`src/storage-local/pdfText.ts`; pdfjs needs a DOM and a worker bundle Metro
-will not produce. On a phone this is still paste-only, and none of the above
-changes that.
+**Done — 25 August.** This section used to say native extraction was still
+missing and offered a native text module *or* OCR. Neither was needed.
 
-But it lowers the bar for solving it. **OCR from a screenshot becomes viable
-once a human is doing the classification** — OCR gives you text and rough
-positions and gets the structure wrong, which is fatal for a parser that must
-infer meaning and survivable for one where a person assigns it. That reframes
-STATUS.md's "native text module *or* OCR" from a toss-up into a clear
-preference.
+`pdfText.ts` says pdfjs cannot run on the phone because it needs a DOM and a
+worker bundle Metro will not produce. Both are true of React Native's JS
+context and **neither is true inside a WebView**, which is a browser: it has a
+DOM, it has `Blob` and `URL.createObjectURL`, and pdfjs runs in it exactly as
+it does on web — the same library already in this project, producing the same
+positioned rows the fixtures were captured through.
 
-- [ ] **P9. Revisit on-device extraction after P1–P3 land**, with OCR as the
-      leading candidate rather than the fallback.
+`src/storage-local/pdfBridge.tsx`, with a `.web.tsx` sibling that needs no
+WebView because it is already a browser. Four things worth knowing:
+
+- **Nothing is fetched.** pdfjs and its worker ship as bundled assets, are
+  read off disk at mount and inlined into the page, with the worker as a blob
+  URL minted inside it. No CDN, no `file://` cross-reference for Android to
+  refuse, no network call in the path — §1.4 means the importer works with no
+  signal.
+- **The extension is renamed** `.mjs` → `.pdfjs`, because Metro treats `.mjs`
+  as source and would try to parse a 1.2MB minified bundle as a module.
+- **A PDF goes straight to the mapper**, not through the string parser. It is
+  the one input that still has its column positions, and the parser exists to
+  throw those away.
+- **Failure is reported, never returned as emptiness.** A PDF that yields no
+  rows and one that failed to open look identical from outside, and the second
+  must not be shown as "this document has no entries in it".
+
+> **UNVERIFIED ON DEVICE.** It typechecks and the suite is green, but nothing
+> here has run on the emulator. `react-native-webview` is a native module, so
+> it needs a fresh dev build: `npx expo run:android`, which per TASKS.md needs
+> **JDK 17** — Android Studio ships 25 and it dies at the CMake step. This is
+> the first thing to check on the next build.
 
 ---
-
 ## Honest costs
 
 - **This is UI work**, and the UI is this app's thinnest layer. P3 is the
