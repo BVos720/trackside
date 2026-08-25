@@ -148,6 +148,27 @@ reducing how much correcting R has to do.
 It is doable, and it is the right interaction — you see the document you know
 instead of a stripped text row you have to translate in your head.
 
+**M2–M5 done — 25 August.** `ColumnMapper.tsx` plus
+`core/logic/columnMapping.ts` (37 tests). Tap a cell, say what it is, watch the
+entries appear underneath; a rows-per-car stepper for taller records, and
+"Not a car" to exclude a row shape everywhere it occurs.
+
+Measured against the real documents — every one of these is a defect recorded
+elsewhere in the repo, closed by taps rather than code:
+
+| Document | What the mapper does |
+|---|---|
+| WEC | 35 cars, drivers whole **including the first**, which the string parser clips because the car model runs into it with no boundary |
+| ELMS | 47 cars from the same taps — the case for templates below |
+| NLS | **110**, exactly the `Teilnehmer: 110` the file prints, after excluding the page header and one stray `325i`. Team recovered, which `entryList.ts` withholds on principle |
+| HTC2 | car **7**, not 3 — the KNOWN BUG in `entryList.fixtures.test.ts` |
+| Spa Six Hours | reads a three-line record whose number sits alone on a line, which today vanishes with no trace |
+
+Two limits recorded rather than papered over. `325i` is a car number by shape
+and not by meaning and no rule can tell the difference — that is the human
+step working, not a gap. And a fixed stride drifts on documents that do not
+hold their rhythm, which the editable review makes visible instead of silent.
+
 **Tap a column band, choose what it is.** That is the whole interaction.
 
 ```
@@ -170,14 +191,21 @@ instead of a stripped text row you have to translate in your head.
 
 - [ ] **M1. Render the page.** See "Is the preview actually doable" below —
       the answer differs per platform and web is free.
-- [ ] **M2. Overlay the proposed bands** from P2, tappable and draggable.
-- [ ] **M3. The field picker and live preview.** `HIT_SIZE` throughout.
-- [ ] **M4. Multi-line entries, as a mode not a guess.** One control — "each
+
+      **Deliberately not done yet — 25 August.** The mapper ships showing the
+      sliced *grid* instead. A page-render mapper needs pdfjs, which runs on
+      web and not on the phone, so it would be a feature Branco cannot use
+      where he uses the app. The grid is the structure the page has, and it
+      works on both. This stays worth doing on web as a nicer skin over the
+      same controls — not a prerequisite for them.
+- [x] **M2. Overlay the proposed bands** from P2, tappable and draggable.
+- [x] **M3. The field picker and live preview.** `HIT_SIZE` throughout.
+- [x] **M4. Multi-line entries, as a mode not a guess.** One control — "each
       entry is N lines" — plus assigning fields on each line. That single
       control is the whole fix for Spa Six Hours' seven vanished cars and for
       NLS's missing teams and drivers, neither of which any recogniser has
       managed.
-- [ ] **M5. Exclude a row by shape.** Tap a page header and say "lines like
+- [x] **M5. Exclude a row by shape.** Tap a page header and say "lines like
       this are not entries", matched by band and shape rather than literal
       text — or it will not catch the same header on page 2. This is the
       general form of the four fabrication guards hand-coded into
