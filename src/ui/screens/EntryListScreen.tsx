@@ -270,13 +270,32 @@ export default function EntryListScreen({
           />
         )}
 
-        {mapping === null && PDF_BRIDGE_SUPPORTED && (
-          <Pressable
-            onPress={onPickPdf}
-            style={({ pressed }) => [styles.btn, pressed && styles.pressed]}
-          >
-            <Text style={styles.btnLabel}>Open a PDF</Text>
-          </Pressable>
+        {mapping === null && (
+          <>
+            <Pressable
+              onPress={PDF_BRIDGE_SUPPORTED ? onPickPdf : undefined}
+              disabled={!PDF_BRIDGE_SUPPORTED}
+              style={({ pressed }) => [
+                styles.btn,
+                !PDF_BRIDGE_SUPPORTED && styles.disabled,
+                pressed && styles.pressed,
+              ]}
+            >
+              <Text style={styles.btnLabel}>Open a PDF</Text>
+            </Pressable>
+            {/*
+              Shown disabled rather than hidden. A button that vanishes leaves
+              no way to tell "this app cannot do that" from "I cannot find it",
+              and this one is only missing because the binary predates the
+              WebView it needs.
+            */}
+            {!PDF_BRIDGE_SUPPORTED && (
+              <Text style={styles.help}>
+                Reading PDFs needs a newer build of the app. Paste the text
+                below for now — it reaches the same place.
+              </Text>
+            )}
+          </>
         )}
 
         {mapping === null && (
@@ -467,6 +486,7 @@ function Field({
 
 const styles = StyleSheet.create({
   pressed: { opacity: 0.7 },
+  disabled: { opacity: 0.4 },
 
   progressRow: {
     flexDirection: 'row',

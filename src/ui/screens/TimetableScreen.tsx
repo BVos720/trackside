@@ -25,7 +25,8 @@ import {
   parseTimetableLines,
   type TextSession,
 } from '../../core/logic/timetableText';
-import { extractPdfLines, PDF_SUPPORTED } from '../../storage-local/pdfText';
+import { rowText } from '../../storage-local/pdfText';
+import { PdfBridge, PDF_BRIDGE_SUPPORTED } from '../../storage-local/pdfBridge';
 import { pickPdf } from '../../storage-local/pickPdf';
 import Collapsible from '../Collapsible';
 import { color, radius, space, type, weight } from '../theme';
@@ -123,6 +124,9 @@ export default function TimetableScreen({
   const [skipped, setSkipped] = useState<string[]>([]);
   const [chosen, setChosen] = useState<Set<string>>(new Set());
   const [status, setStatus] = useState<string | null>(null);
+  /** Bytes waiting on the bridge, and the filename to report them under. */
+  const [pdfBytes, setPdfBytes] = useState<Uint8Array | null>(null);
+  const [pdfName, setPdfName] = useState<string | null>(null);
   const [showAll, setShowAll] = useState(false);
   /**
    * Which day sections are open.
@@ -180,21 +184,9 @@ export default function TimetableScreen({
       const picked = await pickPdf();
       // Null is a cancelled dialog, which is not worth a status message.
       if (!picked) return;
-
-      if (!PDF_SUPPORTED) {
-        setStatus(
-          `Picked ${picked.name}, but reading PDFs on the phone is not ` +
-            'supported yet — copy the text and use “Read pasted text”.',
-        );
-        return;
-      }
-
-      setStatus('Reading PDF…');
-      try {
-        applyParse(await extractPdfLines(picked.bytes), picked.name);
-      } catch (e) {
-        setStatus(e instanceof Error ? e.message : String(e));
-      }
+      setStatus(`Reading ${picked.name}…`);
+      setPdfName(picked.name);
+      setPdfBytes(picked.bytes);
     })();
   };
 
@@ -374,10 +366,33 @@ export default function TimetableScreen({
       )}
 
       <Collapsible title="Import" hint="From a PDF, or pasted text">
+      {pdfBytes && (
+        <PdfBridge
+          bytes={pdfBytes}
+          onRows={(rows) => {
+            setPdfBytes(null);
+            // Back to lines for `parseTimetableLines`, which reads all three
+            // real Spa documents correctly and stays the first thing tried.
+            applyParse(
+              rows.map(rowText).filter((l) => l !== ''),
+              pdfName ?? 'the PDF',
+            );
+          }}
+          onError={(message) => {
+            setPdfBytes(null);
+            setStatus(message);
+          }}
+        />
+      )}
       <View style={styles.row}>
         <Pressable
-          onPress={onPickPdf}
-          style={({ pressed }) => [styles.btn, pressed && styles.pressed]}
+          onPress={PDF_BRIDGE_SUPPORTED ? onPickPdf : undefined}
+          disabled={!PDF_BRIDGE_SUPPORTED}
+          style={({ pressed }) => [
+            styles.btn,
+            !PDF_BRIDGE_SUPPORTED && styles.btnDisabled,
+            pressed && styles.pressed,
+          ]}
         >
           <Text style={styles.btnLabel}>Upload PDF</Text>
         </Pressable>
@@ -388,9 +403,10 @@ export default function TimetableScreen({
           <Text style={styles.btnLabel}>Read pasted text</Text>
         </Pressable>
       </View>
-      {!PDF_SUPPORTED && (
+      {!PDF_BRIDGE_SUPPORTED && (
         <Text style={styles.help}>
-          PDF reading is desktop-only for now. On a phone, paste the text.
+          Reading PDFs needs a newer build of the app. Paste the text for now —
+          it goes through the same parser.
         </Text>
       )}
 
@@ -554,6 +570,7 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: color.background },
   content: { padding: space.md, paddingBottom: space.xxl },
   pressed: { opacity: 0.7 },
+  btnDisabled: { opacity: 0.4 },
 
   kicker: {
     color: color.accent,
