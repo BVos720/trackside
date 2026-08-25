@@ -39,6 +39,7 @@ export type SessionId = Branded<'SessionId'>;
 export type EventDayId = Branded<'EventDayId'>;
 export type EventId = Branded<'EventId'>;
 export type EntryId = Branded<'EntryId'>;
+export type MappingTemplateId = Branded<'MappingTemplateId'>;
 export type PlanId = Branded<'PlanId'>;
 export type PlanStopId = Branded<'PlanStopId'>;
 export type UserGearItemId = Branded<'UserGearItemId'>;
@@ -58,6 +59,7 @@ export type EntityId =
   | EventDayId
   | EventId
   | EntryId
+  | MappingTemplateId
   | PlanId
   | PlanStopId
   | UserGearItemId

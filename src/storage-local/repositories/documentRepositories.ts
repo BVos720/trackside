@@ -18,6 +18,8 @@ import { setPhotographed as tick } from '../../core/domain/entry';
 import type { EquipmentItem } from '../../core/domain/equipment';
 import { setPacked as tickPacked } from '../../core/domain/equipment';
 import type { GearItem } from '../../core/domain/gear';
+import type { MappingTemplate } from '../../core/domain/mappingTemplate';
+import { markUsed } from '../../core/domain/mappingTemplate';
 import type { Media } from '../../core/domain/media';
 import type { Spot } from '../../core/domain/spot';
 import { normaliseUses } from '../../core/domain/spot';
@@ -28,6 +30,7 @@ import {
   type EquipmentItemId,
   type EventDayId,
   type EventId,
+  type MappingTemplateId,
   type MediaId,
   type SessionId,
   type SpotId,
@@ -42,6 +45,7 @@ import type { IEntryRepository } from '../../core/repositories/entryRepository';
 import type { IEquipmentRepository } from '../../core/repositories/equipmentRepository';
 import type { IGearRepository } from '../../core/repositories/gearRepository';
 import type { IEventRepository } from '../../core/repositories/eventRepository';
+import type { IMappingTemplateRepository } from '../../core/repositories/mappingTemplateRepository';
 import type {
   IEventDayRepository,
   ISessionRepository,
@@ -61,6 +65,7 @@ const DAYS_KEY = 'trackside.eventdays.v1';
 const SESSIONS_KEY = 'trackside.sessions.v1';
 const EVENTS_KEY = 'trackside.events.v1';
 const ENTRIES_KEY = 'trackside.entries.v1';
+const TEMPLATES_KEY = 'trackside.mappingtemplates.v1';
 const EQUIPMENT_KEY = 'trackside.equipment.v1';
 const GEAR_KEY = 'trackside.gear.v1';
 
@@ -437,6 +442,43 @@ class SessionRepository implements ISessionRepository {
   }
 }
 
+class MappingTemplateRepository implements IMappingTemplateRepository {
+  async listAll(): Promise<MappingTemplate[]> {
+    const rows = await readAll<MappingTemplate>(TEMPLATES_KEY);
+    // Most recently used first — see the note on the interface. Never used
+    // sorts last rather than first: a layout that has not read a document yet
+    // is the least likely answer, not the most.
+    return live(rows).sort((a, b) =>
+      (b.lastUsedAt ?? '').localeCompare(a.lastUsedAt ?? ''),
+    );
+  }
+
+  async get(id: MappingTemplateId): Promise<MappingTemplate | null> {
+    const rows = await readAll<MappingTemplate>(TEMPLATES_KEY);
+    return rows.find((t) => t.id === id) ?? null;
+  }
+
+  async save(template: MappingTemplate): Promise<void> {
+    await update<MappingTemplate>(TEMPLATES_KEY, (rows) => upsert(rows, template));
+  }
+
+  async touch(id: MappingTemplateId, at: string = nowUtc()): Promise<void> {
+    // Read and write inside one queued mutation: this fires as an import
+    // starts, alongside whatever else that screen is writing.
+    await update<MappingTemplate>(TEMPLATES_KEY, (rows) =>
+      rows.map((t) => (t.id === id ? markUsed(t, at as Utc) : t)),
+    );
+  }
+
+  async softDelete(id: MappingTemplateId, at: string = nowUtc()): Promise<void> {
+    await update<MappingTemplate>(TEMPLATES_KEY, (rows) =>
+      rows.map((t) =>
+        t.id === id ? { ...t, deletedAt: at as Utc, updatedAt: at as Utc } : t,
+      ),
+    );
+  }
+}
+
 class EntryRepository implements IEntryRepository {
   async listByEvent(eventId: EventId): Promise<Entry[]> {
     const rows = await readAll<Entry>(ENTRIES_KEY);
@@ -781,6 +823,8 @@ class EventRepository implements IEventRepository {
 
 export const events: IEventRepository = new EventRepository();
 export const entries: IEntryRepository = new EntryRepository();
+export const mappingTemplates: IMappingTemplateRepository =
+  new MappingTemplateRepository();
 export const equipment: IEquipmentRepository = new EquipmentRepository();
 export const gear: IGearRepository = new GearRepository();
 export const eventDays: IEventDayRepository = new EventDayRepository();
