@@ -30,9 +30,9 @@
  * ── Everything is inlined, nothing is fetched ─────────────────────────────
  * §1.4: the importer has to work with no signal. pdfjs and its worker ship as
  * bundled assets (see metro.config.js), are read off disk at mount, and are
- * inlined into the page — the worker as a blob URL minted inside the page
- * itself. There is no CDN, no `file://` cross-reference for Android to refuse,
- * and no network call anywhere in the path.
+ * inlined into the page as blob URLs minted inside it. There is no CDN, no
+ * `file://` cross-reference for Android to refuse, and no network call anywhere
+ * in the path — the page's own address is unreachable by construction.
  *
  * ── It reports failure rather than returning nothing ──────────────────────
  * A PDF that yields no rows and a PDF that failed to open look identical from
@@ -55,7 +55,7 @@ import type { PdfRow } from './pdfText';
  * once bricked the app on a stale dev build.
  */
 type WebViewProps = {
-  source: { html: string };
+  source: { html: string; baseUrl?: string };
   originWhitelist: string[];
   onMessage: (event: { nativeEvent: { data: string } }) => void;
   onShouldStartLoadWithRequest: () => boolean;
@@ -234,7 +234,23 @@ export function PdfBridge({
   return (
     <View style={{ width: 1, height: 1, opacity: 0, position: 'absolute' }}>
       <WebView
-        source={{ html }}
+        /*
+         * A real origin, and the reason the worker runs at all.
+         *
+         * Without a baseUrl the document is `about:blank`, whose origin is
+         * `null` — and a blob URL minted in a null-origin page cannot be used
+         * to construct a Worker. Chromium says so plainly ("Refused to
+         * cross-origin redirects of the top-level worker script") and pdfjs
+         * falls back to its "fake worker", which then cannot load its own
+         * script either. The import stalls with no error, which is the worst
+         * shape of failure there is.
+         *
+         * With an origin, the blob is same-origin and the real worker starts.
+         * Nothing is ever fetched from this address — see
+         * `onShouldStartLoadWithRequest` below, which refuses every
+         * navigation. It exists only so the page has an origin to be.
+         */
+        source={{ html, baseUrl: 'https://trackside.invalid/' }}
         originWhitelist={['*']}
         onMessage={onMessage}
         // Nothing here loads a URL, so navigation is refused outright rather

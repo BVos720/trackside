@@ -79,6 +79,7 @@ export default function TimetableScreen({
   embedded = false,
   sessions = [],
   onRemoveSession,
+  onUpdateSession,
 }: {
   circuitLabel: string;
   /**
@@ -118,6 +119,17 @@ export default function TimetableScreen({
     end: string;
   }[];
   onRemoveSession?: (id: string) => void;
+  /**
+   * Correct a saved session in place.
+   *
+   * A parsed timetable is a reading of somebody's PDF, and both can be wrong.
+   * Without this the only repair is Remove and retype, which for one wrong
+   * character means losing the row.
+   */
+  onUpdateSession?: (
+    id: string,
+    patch: { title?: string; start?: string; end?: string },
+  ) => void;
 }) {
   const [raw, setRaw] = useState('');
   const [parsed, setParsed] = useState<PendingSession[]>([]);
@@ -127,6 +139,9 @@ export default function TimetableScreen({
   /** Bytes waiting on the bridge, and the filename to report them under. */
   const [pdfBytes, setPdfBytes] = useState<Uint8Array | null>(null);
   const [pdfName, setPdfName] = useState<string | null>(null);
+  /** The saved session open for editing, as its id. */
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [draft, setDraft] = useState({ title: '', start: '', end: '' });
   const [showAll, setShowAll] = useState(false);
   /**
    * Which day sections are open.
@@ -332,27 +347,103 @@ export default function TimetableScreen({
                   </Pressable>
 
                   {open &&
-                    rows.map((row) => (
-                      <View key={row.id} style={styles.savedRow}>
-                        <Text style={styles.savedTime}>
-                          {row.start}–{row.end}
-                        </Text>
-                        <View style={styles.savedBody}>
-                          <Text style={styles.savedTitle} numberOfLines={1}>
-                            {row.title}
-                          </Text>
+                    rows.map((row) => {
+                      const editing = editingId === row.id;
+                      return (
+                        <View key={row.id}>
+                          <View style={styles.savedRow}>
+                            <Pressable
+                              onPress={() => {
+                                if (!onUpdateSession) return;
+                                if (editing) {
+                                  setEditingId(null);
+                                  return;
+                                }
+                                // Seeded from what is on screen, so opening the
+                                // editor never looks like it cleared the row.
+                                setDraft({
+                                  title: row.title,
+                                  start: row.start,
+                                  end: row.end,
+                                });
+                                setEditingId(row.id);
+                              }}
+                              style={({ pressed }) => [
+                                styles.savedTap,
+                                pressed && styles.pressed,
+                              ]}
+                            >
+                              <Text style={styles.savedTime}>
+                                {row.start}–{row.end}
+                              </Text>
+                              <View style={styles.savedBody}>
+                                <Text style={styles.savedTitle} numberOfLines={1}>
+                                  {row.title}
+                                </Text>
+                              </View>
+                            </Pressable>
+                            {onRemoveSession && (
+                              <Pressable
+                                onPress={() => onRemoveSession(row.id)}
+                                hitSlop={8}
+                                style={({ pressed }) => pressed && styles.pressed}
+                              >
+                                <Text style={styles.savedRemove}>Remove</Text>
+                              </Pressable>
+                            )}
+                          </View>
+
+                          {editing && onUpdateSession && (
+                            <View style={styles.editor}>
+                              <View style={styles.editorTimes}>
+                                <TextInput
+                                  value={draft.start}
+                                  onChangeText={(v) =>
+                                    setDraft((d) => ({ ...d, start: v }))
+                                  }
+                                  placeholder="09:00"
+                                  placeholderTextColor={color.textFaint}
+                                  style={styles.timeInput}
+                                  keyboardType="numbers-and-punctuation"
+                                />
+                                <Text style={styles.editorDash}>–</Text>
+                                <TextInput
+                                  value={draft.end}
+                                  onChangeText={(v) =>
+                                    setDraft((d) => ({ ...d, end: v }))
+                                  }
+                                  placeholder="09:30"
+                                  placeholderTextColor={color.textFaint}
+                                  style={styles.timeInput}
+                                  keyboardType="numbers-and-punctuation"
+                                />
+                              </View>
+                              <TextInput
+                                value={draft.title}
+                                onChangeText={(v) =>
+                                  setDraft((d) => ({ ...d, title: v }))
+                                }
+                                placeholder="Session name"
+                                placeholderTextColor={color.textFaint}
+                                style={styles.titleInput}
+                              />
+                              <Pressable
+                                onPress={() => {
+                                  onUpdateSession(row.id, draft);
+                                  setEditingId(null);
+                                }}
+                                style={({ pressed }) => [
+                                  styles.saveBtn,
+                                  pressed && styles.pressed,
+                                ]}
+                              >
+                                <Text style={styles.btnLabel}>Save</Text>
+                              </Pressable>
+                            </View>
+                          )}
                         </View>
-                        {onRemoveSession && (
-                          <Pressable
-                            onPress={() => onRemoveSession(row.id)}
-                            hitSlop={8}
-                            style={({ pressed }) => pressed && styles.pressed}
-                          >
-                            <Text style={styles.savedRemove}>Remove</Text>
-                          </Pressable>
-                        )}
-                      </View>
-                    ))}
+                      );
+                    })}
                 </View>
               );
             });
@@ -646,6 +737,45 @@ const styles = StyleSheet.create({
   savedTitle: { color: color.text, fontSize: type.label, fontWeight: weight.bold },
   savedDay: { color: color.textFaint, fontSize: 10, marginTop: 1 },
   savedRemove: { color: color.textMuted, fontSize: 11, fontWeight: weight.bold },
+  // The tappable part of a saved row: times and title, but not Remove.
+  savedTap: { flexDirection: 'row', alignItems: 'center', gap: space.sm, flex: 1 },
+
+  editor: {
+    marginTop: space.xs,
+    marginBottom: space.sm,
+    padding: space.sm,
+    borderRadius: radius.md,
+    backgroundColor: color.surface,
+    gap: space.xs,
+  },
+  editorTimes: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
+  editorDash: { color: color.textMuted, fontSize: type.label },
+  timeInput: {
+    flex: 1,
+    minHeight: 44,
+    backgroundColor: color.surfaceRaised,
+    borderRadius: radius.sm,
+    paddingHorizontal: space.sm,
+    color: color.text,
+    fontSize: type.label,
+    fontVariant: ['tabular-nums'],
+  },
+  titleInput: {
+    minHeight: 44,
+    backgroundColor: color.surfaceRaised,
+    borderRadius: radius.sm,
+    paddingHorizontal: space.sm,
+    color: color.text,
+    fontSize: type.label,
+  },
+  saveBtn: {
+    marginTop: space.xs,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radius.md,
+    backgroundColor: color.surfaceRaised,
+  },
 
   back: {
     color: color.textMuted,

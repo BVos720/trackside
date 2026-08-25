@@ -327,6 +327,7 @@ function AppShell() {
     days: sessionDayLabels,
     addMany,
     remove: removeSession,
+    update: updateSession,
     reload: reloadSessions,
   } = useSessions(circuitId, activeEventDays, activeEventId);
 
@@ -1197,6 +1198,9 @@ function AppShell() {
                 )
               }
               onRemoveSession={(id) => void removeSession(asId(id))}
+              onUpdateSession={(id, patch) =>
+                void updateSession(asId(id), patch)
+              }
               entries={entryRows}
               onCommitEntries={(rows) => void addParsedEntries(rows)}
               onTogglePhotographed={(id, photographed) =>

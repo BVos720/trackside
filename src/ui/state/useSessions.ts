@@ -144,6 +144,55 @@ export function useSessions(
     [circuitId, eventDates, eventId, reload],
   );
 
+  /**
+   * Correct a saved session.
+   *
+   * A parsed timetable is a reading of somebody's PDF, and both halves of that
+   * can be wrong: the document itself carries mistakes, and the parser gets
+   * the odd title from the wrong column. Without this the only repair is
+   * Remove and retype, which for one wrong character means losing the row.
+   *
+   * The times arrive as local `HH:MM` because that is what the screen shows
+   * and what a person types. They are written back onto the session's own
+   * date, so editing 14:00 to 14:30 cannot silently move a session to another
+   * day — §0.1's instants stay UTC, and only the clock face changes.
+   */
+  const update = useCallback(
+    async (
+      id: SessionId,
+      patch: { title?: string; start?: string; end?: string },
+    ) => {
+      const existing = rows.find((s) => s.id === id);
+      if (!existing) return;
+
+      const onSameDay = (iso: Utc, hhmm: string | undefined): Utc => {
+        if (!hhmm) return iso;
+        const m = /^(\d{1,2}):(\d{2})$/.exec(hhmm.trim());
+        if (!m) return iso;
+        const h = Number(m[1]);
+        const min = Number(m[2]);
+        // Out of range is a typo, and a session at 25:00 is worse than one
+        // left alone.
+        if (h > 23 || min > 59) return iso;
+        const d = new Date(iso);
+        if (Number.isNaN(d.getTime())) return iso;
+        d.setHours(h, min, 0, 0);
+        return d.toISOString() as Utc;
+      };
+
+      const title = patch.title?.trim();
+      await sessionRepo.save({
+        ...existing,
+        seriesName: title === undefined || title === '' ? existing.seriesName : title,
+        startTime: onSameDay(existing.startTime, patch.start),
+        endTime: onSameDay(existing.endTime, patch.end),
+        updatedAt: nowUtc(),
+      });
+      await reload();
+    },
+    [rows, reload],
+  );
+
   const remove = useCallback(
     async (id: SessionId) => {
       await sessionRepo.softDelete(id);
@@ -152,5 +201,5 @@ export function useSessions(
     [reload],
   );
 
-  return { sessions: rows, days, addMany, remove, reload };
+  return { sessions: rows, days, addMany, update, remove, reload };
 }

@@ -48,6 +48,7 @@ export default function EventScreen({
   sessions,
   onCommitSessions,
   onRemoveSession,
+  onUpdateSession,
   entries,
   onCommitEntries,
   onTogglePhotographed,
@@ -79,6 +80,10 @@ export default function EventScreen({
   sessions: SavedSessionRow[];
   onCommitSessions: (rows: PendingSession[]) => void;
   onRemoveSession: (id: string) => void;
+  onUpdateSession: (
+    id: string,
+    patch: { title?: string; start?: string; end?: string },
+  ) => void;
   entries: readonly SavedEntryRow[];
   onCommitEntries: (rows: TextEntry[]) => void;
   onTogglePhotographed: (id: string, photographed: boolean) => void;
@@ -183,6 +188,7 @@ export default function EventScreen({
           savedCount={sessions.length}
           sessions={sessions}
           onRemoveSession={onRemoveSession}
+          onUpdateSession={onUpdateSession}
           onCommit={onCommitSessions}
           onBack={onBack}
         />
