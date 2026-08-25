@@ -14,6 +14,19 @@
  * mounted, and pretending otherwise behind an `async` façade would mean a
  * hidden global WebView and a queue, which is more machinery and less honest.
  *
+ * ── Why the WebView is required lazily ────────────────────────────────────
+ * `react-native-webview` is a *native* module: the JS half arrives with a
+ * Metro reload, the native half only with a rebuilt binary. A plain top-level
+ * import therefore takes the **whole app** down on any dev build older than
+ * the day it was added — `TurboModuleRegistry.getEnforcing('RNCWebViewModule')
+ * could not be found`, thrown while the module graph loads, long before any
+ * PDF is picked. Which is exactly what happened the first time this shipped.
+ *
+ * A feature that cannot run should disable itself, not prevent the app from
+ * starting. So the module is required inside a `try`, `PDF_BRIDGE_SUPPORTED`
+ * reports what was found, and callers ask before offering the button. Pasting
+ * has always worked and still does.
+ *
  * ── Everything is inlined, nothing is fetched ─────────────────────────────
  * §1.4: the importer has to work with no signal. pdfjs and its worker ship as
  * bundled assets (see metro.config.js), are read off disk at mount, and are
@@ -24,17 +37,52 @@
  * ── It reports failure rather than returning nothing ──────────────────────
  * A PDF that yields no rows and a PDF that failed to open look identical from
  * the outside, and the second must not be presented as "this document has no
- * entries in it". Anything unexpected comes back through `onError`, and the
- * caller falls back to pasting — which still works and always has.
+ * entries in it". Anything unexpected comes back through `onError`.
  */
 import { useEffect, useMemo, useState } from 'react';
 import { View } from 'react-native';
-import { WebView, type WebViewMessageEvent } from 'react-native-webview';
 import { Asset } from 'expo-asset';
 import { File } from 'expo-file-system';
 
 import { bytesToBase64 } from './pdfBase64';
 import type { PdfRow } from './pdfText';
+
+/**
+ * The WebView, if this binary has one.
+ *
+ * `require` rather than `import` so the failure is catchable: an ES import is
+ * hoisted and its throw cannot be contained, which is the whole reason this
+ * once bricked the app on a stale dev build.
+ */
+type WebViewProps = {
+  source: { html: string };
+  originWhitelist: string[];
+  onMessage: (event: { nativeEvent: { data: string } }) => void;
+  onShouldStartLoadWithRequest: () => boolean;
+  javaScriptEnabled: boolean;
+  onError: () => void;
+};
+
+let WebViewComponent: React.ComponentType<WebViewProps> | null = null;
+try {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const mod = require('react-native-webview') as {
+    WebView?: React.ComponentType<WebViewProps>;
+  };
+  WebViewComponent = mod.WebView ?? null;
+} catch {
+  // Native half missing — an older dev build. Reported, not thrown.
+  WebViewComponent = null;
+}
+
+/**
+ * Whether this build can read a PDF at all.
+ *
+ * False on a dev build predating `react-native-webview`. Callers must check it
+ * before offering the option, so the user is told the feature needs a rebuild
+ * rather than shown a button that explodes.
+ */
+export const PDF_BRIDGE_SUPPORTED = WebViewComponent !== null;
 
 /**
  * The page that does the work.
@@ -95,8 +143,6 @@ try {
 </script></body></html>`;
 }
 
-export const PDF_BRIDGE_SUPPORTED = true;
-
 /**
  * Mount with bytes; it calls back once with rows or with an error.
  *
@@ -127,6 +173,12 @@ export function PdfBridge({
     let cancelled = false;
 
     void (async () => {
+      if (WebViewComponent === null) {
+        onError(
+          'Reading PDFs needs a newer build of the app. Paste the text instead.',
+        );
+        return;
+      }
       if (base64 === null) {
         onError('That file was too large to read on this device.');
         return;
@@ -156,7 +208,7 @@ export function PdfBridge({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [base64]);
 
-  const onMessage = (event: WebViewMessageEvent) => {
+  const onMessage = (event: { nativeEvent: { data: string } }) => {
     try {
       const payload: unknown = JSON.parse(event.nativeEvent.data);
       const result = payload as { ok?: boolean; rows?: PdfRow[]; error?: string };
@@ -167,7 +219,8 @@ export function PdfBridge({
     }
   };
 
-  if (html === null) return null;
+  if (html === null || WebViewComponent === null) return null;
+  const WebView = WebViewComponent;
 
   return (
     <View style={{ width: 1, height: 1, opacity: 0, position: 'absolute' }}>

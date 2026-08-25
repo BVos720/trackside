@@ -35,7 +35,7 @@ import {
 import { gridOf } from '../../core/logic/columnMapping';
 import { findColumns } from '../../core/logic/pdfColumns';
 import { pickPdf } from '../../storage-local/pickPdf';
-import { PdfBridge } from '../../storage-local/pdfBridge';
+import { PdfBridge, PDF_BRIDGE_SUPPORTED } from '../../storage-local/pdfBridge';
 import Collapsible from '../Collapsible';
 import ColumnMapper from './ColumnMapper';
 import { useMappingTemplates } from '../state/useMappingTemplates';
@@ -270,7 +270,7 @@ export default function EntryListScreen({
           />
         )}
 
-        {mapping === null && (
+        {mapping === null && PDF_BRIDGE_SUPPORTED && (
           <Pressable
             onPress={onPickPdf}
             style={({ pressed }) => [styles.btn, pressed && styles.pressed]}
