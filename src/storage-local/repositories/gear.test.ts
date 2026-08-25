@@ -1,7 +1,7 @@
 /**
  * The gear locker, through the store.
  *
- * Mirrors equipment.test.ts: scoped to a user rather than an event, and with
+ * Scoped to a user rather than an event, and with
  * no per-item tick to test, but otherwise the same read-modify-write every
  * repository here does.
  */

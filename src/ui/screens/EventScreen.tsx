@@ -24,13 +24,11 @@ import { formatDateRange } from '../DateRangePicker';
 import { MENU_CLEARANCE, color, radius, space, type, weight } from '../theme';
 import Collapsible from '../Collapsible';
 import EntryListScreen, { type SavedEntryRow } from './EntryListScreen';
-import EquipmentScreen, { type SavedEquipmentRow } from './EquipmentScreen';
 import GearScreen from './GearScreen';
 import PlannerScreen from './PlannerScreen';
 import TimetableScreen, { type PendingSession } from './TimetableScreen';
 import WeatherScreen from './WeatherScreen';
 import type { TextEntry } from '../../core/logic/entryList';
-import type { EquipmentCategory } from '../../core/logic/equipment';
 import type { ForecastDisplay } from '../../core/logic/forecast';
 
 export interface SavedSessionRow {
@@ -54,10 +52,6 @@ export default function EventScreen({
   onCommitEntries,
   onTogglePhotographed,
   onRemoveEntry,
-  equipment,
-  onTogglePacked,
-  onAddEquipmentItem,
-  onRemoveEquipmentItem,
   gearItems,
   onToggleGear,
   weatherDisplay,
@@ -89,10 +83,6 @@ export default function EventScreen({
   onCommitEntries: (rows: TextEntry[]) => void;
   onTogglePhotographed: (id: string, photographed: boolean) => void;
   onRemoveEntry: (id: string) => void;
-  equipment: readonly SavedEquipmentRow[];
-  onTogglePacked: (id: string, packed: boolean) => void;
-  onAddEquipmentItem: (name: string, category: EquipmentCategory | null) => void;
-  onRemoveEquipmentItem: (id: string) => void;
   /** The user's whole gear locker — not filtered to this event; see GearScreen. */
   gearItems: readonly GearItem[];
   onToggleGear: (id: UserGearItemId, included: boolean) => void;
@@ -237,44 +227,32 @@ export default function EventScreen({
         />
       </Collapsible>
 
-      <Collapsible
-        title="Equipment"
-        badge={
-          equipment.length > 0
-            ? `${equipment.filter((i) => i.packed).length}/${equipment.length}`
-            : null
-        }
-        hint={
-          equipment.length === 0
-            ? 'Nothing yet — starts from your last event automatically'
-            : 'What to pack, and what is already in the bag'
-        }
-      >
-        <EquipmentScreen
-          items={equipment}
-          onTogglePacked={onTogglePacked}
-          onAddItem={onAddEquipmentItem}
-          onRemoveItem={onRemoveEquipmentItem}
-        />
-      </Collapsible>
+{/*
+        Gear appears only once there is some.
 
-      <Collapsible
-        title="Gear"
-        badge={selectedGearIds.size || null}
-        hint={
-          gearItems.length === 0
-            ? 'No gear recorded yet — add it in your profile'
-            : selectedGearIds.size === 0
+        An empty section that tells you to go somewhere else is a row of
+        chrome on a screen that already has six, and it is on the page you
+        look at during a race weekend rather than the one where gear is
+        actually managed. The profile screen is where it is added; this is
+        only where it is picked from.
+      */}
+      {gearItems.length > 0 && (
+        <Collapsible
+          title="Gear"
+          badge={selectedGearIds.size || null}
+          hint={
+            selectedGearIds.size === 0
               ? 'Nothing attached — search and tap to add'
               : 'Bodies and lenses carried for this event'
-        }
-      >
-        <GearScreen
-          items={gearItems}
-          selectedIds={selectedGearIds}
-          onToggle={onToggleGear}
-        />
-      </Collapsible>
+          }
+        >
+          <GearScreen
+            items={gearItems}
+            selectedIds={selectedGearIds}
+            onToggle={onToggleGear}
+          />
+        </Collapsible>
+      )}
 
       <Collapsible
         title="Plan"

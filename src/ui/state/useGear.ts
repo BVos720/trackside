@@ -2,8 +2,7 @@
  * The user's standing gear locker — bodies and lenses, for D4's event dropdown
  * and the profile screen's Gear section (TASKS-profile.md D2).
  *
- * Mirrors useEquipment.ts's shape (reload/useEffect/useCallback), but there is
- * no per-event `eventId` here: a `GearItem` belongs to the user, not to any one
+ * No per-event `eventId` here, unlike the event-scoped hooks beside it: a `GearItem` belongs to the user, not to any one
  * event (see the file header on `core/domain/gear.ts`), so this hook always
  * loads the same, single locker regardless of which event is active.
  *

@@ -1,8 +1,7 @@
 /**
  * The gear dropdown, embedded in the event screen — `TASKS-profile.md` D4/D5.
  *
- * Mirrors EquipmentScreen.tsx's shape (a list plus a control underneath), but
- * this is a *selection* over a standing inventory, not an add-item form: the
+ * A *selection* over a standing inventory, not an add-item form: the
  * locker itself is built once in the profile screen (D2), and this widget
  * only says which of those items are carried for the active event. Search
  * matters once the list is long, so this is a text-filtered multi-select
@@ -12,8 +11,7 @@
  * The task calls this "the fiddliest control in the app so far" and asks for
  * `HIT_SIZE` throughout — not the 44/48px used elsewhere in this file's
  * siblings. The search input and every row below are sized to `HIT_SIZE`
- * (56) rather than the smaller heights `EquipmentScreen.tsx` gets away with,
- * because a search-and-tap flow under a moving map is exactly the "driveable
+ * (56), because a search-and-tap flow under a moving map is exactly the "driveable
  * with a thumb" case §5.14 is about.
  */
 import { useMemo, useState } from 'react';

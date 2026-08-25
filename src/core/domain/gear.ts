@@ -6,13 +6,15 @@
  * now. This is that entity.
  *
  * ── Belongs to the user, not to an event ────────────────────────────────────
- * Unlike `EquipmentItem` (`./equipment.ts`), which is *this weekend's* packing
- * list and is deliberately reset per event, a `GearItem` is a standing fact:
- * "I own a Canon R7". It does not get reseeded, retyped or reset — it is
- * added once and referenced from wherever it is needed (an event's gear
- * dropdown, a future per-spot suggestion). `EquipmentItem`'s own file header
- * already flags this split; this is the "different, later concept" it points
- * at.
+ * A `GearItem` is a standing fact: "I own a Canon R7". It does not get
+ * reseeded, retyped or reset — it is added once, in the profile screen, and
+ * referenced from wherever it is needed (an event's gear picker, a future
+ * per-spot suggestion).
+ *
+ * There was once a per-event packing checklist beside this, reset every
+ * weekend. It was removed on 25 August: two overlapping lists of kit on one
+ * screen is one more than anybody maintains, and this is the half that earns
+ * its place, because a body's crop factor is a fact the app can compute with.
  *
  * ── Why a body's crop factor matters enough to store ────────────────────────
  * `Spot.shotSettings` (`./spot.ts` §5.6) stores focal length as a full-frame
@@ -23,7 +25,7 @@
  * is what makes that rendering possible; see `../logic/gear.ts` for the
  * conversion itself.
  *
- * ── Kind is a closed set, like `EquipmentCategory` ──────────────────────────
+ * ── Kind is a closed set ───────────────────────────────────────────────────
  * A gear item is a body or a lens — nothing else is in scope for D2/D3. Free
  * text would let "Canon R7" and "body" both live in the same field with no
  * way to tell them apart programmatically, which is exactly what `cropFactor`

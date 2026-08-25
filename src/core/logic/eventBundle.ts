@@ -20,7 +20,6 @@
  * mangling old data.
  */
 import type { Entry } from '../domain/entry';
-import type { EquipmentItem } from '../domain/equipment';
 import type { Event } from '../domain/event';
 import type { Session } from '../domain/planning';
 import type { Spot } from '../domain/spot';
@@ -46,14 +45,6 @@ export interface EventBundle {
    */
   readonly entries: readonly Entry[];
   /**
-   * The equipment checklist, packed state included.
-   *
-   * Same reasoning as `entries`: the list of items can be retyped, but which
-   * of them are already in the bag cannot be reconstructed, and losing that
-   * mid-weekend means starting the packing count again.
-   */
-  readonly equipment: readonly EquipmentItem[];
-  /**
    * Day headings the sessions hang off, as `{ id, date, label }`.
    *
    * Carried because a session's `eventDayId` is meaningless without them, and
@@ -71,7 +62,6 @@ export function buildEventBundle(input: {
   /** Optional: an event that never had a list pasted into it has none. */
   entries?: readonly Entry[];
   /** Optional: an event with no checklist yet — the very first one — has none. */
-  equipment?: readonly EquipmentItem[];
   at?: Date;
 }): EventBundle {
   return {
@@ -81,7 +71,6 @@ export function buildEventBundle(input: {
     spots: input.spots,
     sessions: input.sessions,
     entries: input.entries ?? [],
-    equipment: input.equipment ?? [],
     days: input.days,
   };
 }
@@ -172,9 +161,6 @@ export function readEventBundle(text: string): BundleReadResult {
       // Defaulted, not rejected: every bundle written before entry lists
       // existed has no such key, and those files must still open.
       entries: Array.isArray(doc.entries) ? doc.entries : [],
-      // Same reasoning: bundles written before the equipment checklist
-      // existed have no such key either.
-      equipment: Array.isArray(doc.equipment) ? doc.equipment : [],
       days: Array.isArray(doc.days) ? doc.days : [],
     },
     error: null,
@@ -196,10 +182,5 @@ export function describeBundle(bundle: EventBundle): string {
     );
   }
   // Named only when there is a checklist — most first events have none yet.
-  if (bundle.equipment.length > 0) {
-    parts.push(
-      `${bundle.equipment.length} equipment item${bundle.equipment.length === 1 ? '' : 's'}`,
-    );
-  }
   return parts.join(' · ');
 }

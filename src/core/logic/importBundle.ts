@@ -30,12 +30,10 @@
  */
 import { newEntityBase, nowUtc } from '../domain/common';
 import type { Entry } from '../domain/entry';
-import type { EquipmentItem } from '../domain/equipment';
 import type { Event, PlanStop } from '../domain/event';
 import {
   newId,
   type EntryId,
-  type EquipmentItemId,
   type EventDayId,
   type EventId,
   type SessionId,
@@ -66,17 +64,6 @@ function entriesOf(bundle: EventBundle): readonly Entry[] {
 }
 
 /**
- * The bundle's equipment checklist, defaulted at the read boundary.
- *
- * Same reasoning as `entriesOf` immediately above: `EventBundle.equipment` is
- * not optional in the type, but a file written before the checklist existed
- * has no such key, and this file must not crash reading it.
- */
-function equipmentOf(bundle: EventBundle): readonly EquipmentItem[] {
-  return bundle.equipment ?? [];
-}
-
-/**
  * What a restore of this bundle would run into locally.
  *
  * `deleted` is called out separately from `live` because restoring over a
@@ -103,7 +90,6 @@ export interface ImportPlan {
   readonly days: readonly EventDay[];
   readonly sessions: readonly Session[];
   readonly entries: readonly Entry[];
-  readonly equipment: readonly EquipmentItem[];
   /**
    * Things the user should be told before committing.
    *
@@ -214,11 +200,6 @@ function planRestore(bundle: EventBundle, local: LocalState): ImportPlan {
     // the same rule as the entries above, for the same reason: restoring the
     // checklist without which items are already packed hands back a count
     // that has to be redone.
-    equipment: equipmentOf(bundle).map((i) => ({
-      ...i,
-      updatedAt: at,
-      syncState: 'local' as const,
-    })),
     warnings,
   };
 }
@@ -291,14 +272,6 @@ function planCopy(bundle: EventBundle): ImportPlan {
         `${ticked === 1 ? 'is' : 'are'} already marked as photographed.`,
     );
   }
-  const packed = equipmentOf(bundle).filter((i) => i.packed).length;
-  if (packed > 0) {
-    warnings.push(
-      `${packed} item${packed === 1 ? '' : 's'} on the checklist ` +
-        `${packed === 1 ? 'is' : 'are'} already marked as packed.`,
-    );
-  }
-
   const lostStops = bundle.event.stops.length - stops.length;
   if (lostStops > 0) {
     warnings.push(
@@ -349,24 +322,6 @@ function planCopy(bundle: EventBundle): ImportPlan {
     entries: entriesOf(bundle).map((e) => ({
       ...e,
       id: newId<EntryId>(),
-      eventId,
-      ...base,
-      deletedAt: null,
-    })),
-    /*
-     * Equipment follows the event it was reminted for, same as entries just
-     * above and for the same reason: leaving the original `eventId` would
-     * give the copy a checklist that belongs to the event it was copied
-     * from, and packing an item in one would pack it in both.
-     *
-     * `packed` is carried, not cleared — copy mode is as often "keep both
-     * versions" of your own event as it is "open someone else's", and
-     * clearing would silently undo a weekend's packing to tidy up a
-     * cosmetic wrongness in the other case.
-     */
-    equipment: equipmentOf(bundle).map((i) => ({
-      ...i,
-      id: newId<EquipmentItemId>(),
       eventId,
       ...base,
       deletedAt: null,
@@ -483,11 +438,6 @@ export function describeImport(plan: ImportPlan): string {
   if (plan.entries.length > 0) {
     bits.push(
       `${plan.entries.length} entr${plan.entries.length === 1 ? 'y' : 'ies'}`,
-    );
-  }
-  if (plan.equipment.length > 0) {
-    bits.push(
-      `${plan.equipment.length} equipment item${plan.equipment.length === 1 ? '' : 's'}`,
     );
   }
   return `${bits.join(', ')}.`;

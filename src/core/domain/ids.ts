@@ -43,7 +43,6 @@ export type MappingTemplateId = Branded<'MappingTemplateId'>;
 export type PlanId = Branded<'PlanId'>;
 export type PlanStopId = Branded<'PlanStopId'>;
 export type UserGearItemId = Branded<'UserGearItemId'>;
-export type EquipmentItemId = Branded<'EquipmentItemId'>;
 export type UserId = Branded<'UserId'>;
 
 /** Any branded id, for code that is generic over entity type. */
@@ -63,7 +62,6 @@ export type EntityId =
   | PlanId
   | PlanStopId
   | UserGearItemId
-  | EquipmentItemId
   | UserId;
 
 /**

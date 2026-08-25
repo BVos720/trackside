@@ -65,7 +65,6 @@ import {
 } from './src/ui/map/style';
 import { useSessions } from './src/ui/state/useSessions';
 import { useEntries } from './src/ui/state/useEntries';
-import { useEquipment } from './src/ui/state/useEquipment';
 import { useGear } from './src/ui/state/useGear';
 import { useWeather } from './src/ui/state/useWeather';
 import { snapBesideTrack } from './src/core/logic/track';
@@ -339,29 +338,8 @@ function AppShell() {
     reload: reloadEntries,
   } = useEntries(activeEventId);
 
-  const {
-    items: checklist,
-    addItem: addEquipmentItem,
-    setPacked: setEquipmentPacked,
-    remove: removeEquipmentItem,
-    seedForNewEvent: seedEquipmentForNewEvent,
-    reload: reloadEquipment,
-  } = useEquipment(activeEventId);
-
   /** The user's standing gear locker — the same list regardless of event. */
   const { items: gearItems, addItem: addGearItem, remove: removeGearItem } = useGear();
-
-  /** The checklist as the equipment screen displays it. */
-  const equipmentRows = useMemo(
-    () =>
-      checklist.map((i) => ({
-        id: i.id,
-        name: i.name,
-        category: i.category,
-        packed: i.packed,
-      })),
-    [checklist],
-  );
 
   /**
    * The circuit's position and timezone, for the weather fetch.
@@ -632,7 +610,6 @@ function AppShell() {
             spots: visibleSpots,
             sessions: savedSessions,
             entries: fieldEntries,
-            equipment: checklist,
             days: Object.entries(sessionDayLabels).map(([id, label]) => ({
               id,
               date: label,
@@ -654,7 +631,6 @@ function AppShell() {
     visibleSpots,
     savedSessions,
     fieldEntries,
-    checklist,
     sessionDayLabels,
   ]);
 
@@ -723,7 +699,6 @@ function AppShell() {
         reloadSpots(),
         reloadSessions(),
         reloadEntries(),
-        reloadEquipment(),
       ]);
       activate(plan.event.id);
       setWhere('event');
@@ -735,7 +710,6 @@ function AppShell() {
       reloadSpots,
       reloadSessions,
       reloadEntries,
-      reloadEquipment,
       activate,
     ],
   );
@@ -1159,11 +1133,6 @@ function AppShell() {
               if (key && key !== venue) setVenue(key);
               void (async () => {
                 const event = await createEvent(name, from, to, [], forCircuit);
-                // Seeded from the most recent previous event's checklist —
-                // the entire point of the feature, see core/logic/equipment.ts.
-                // `eventList` here is the list as it stood before this event
-                // existed, which is exactly what "previous" means.
-                await seedEquipmentForNewEvent(eventList, event);
                 if (!seedFromSpots) return;
                 // Copies, not references: the event owns them, so nothing done
                 // here can damage the collection they came from.
@@ -1234,14 +1203,6 @@ function AppShell() {
                 void setEntryPhotographed(asId(id), photographed)
               }
               onRemoveEntry={(id) => void removeEntry(asId(id))}
-              equipment={equipmentRows}
-              onTogglePacked={(id, packed) =>
-                void setEquipmentPacked(asId(id), packed)
-              }
-              onAddEquipmentItem={(name, category) =>
-                void addEquipmentItem(name, category)
-              }
-              onRemoveEquipmentItem={(id) => void removeEquipmentItem(asId(id))}
               gearItems={gearItems}
               onToggleGear={(id, included) =>
                 void setGearIncluded(id, included)
@@ -1290,8 +1251,7 @@ function AppShell() {
                     spots: visibleSpots,
                     sessions: savedSessions,
                     entries: fieldEntries,
-                    equipment: checklist,
-                    days: Object.entries(sessionDayLabels).map(
+                            days: Object.entries(sessionDayLabels).map(
                       ([id, label]) => ({ id, date: label, label }),
                     ),
                   });

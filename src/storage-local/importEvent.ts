@@ -18,7 +18,6 @@
 import type { ImportPlan, LocalState } from '../core/logic/importBundle';
 import {
   entries,
-  equipment,
   eventDays,
   events,
   repositories,
@@ -49,6 +48,5 @@ export async function applyImport(plan: ImportPlan): Promise<void> {
   for (const session of plan.sessions) await sessions.save(session);
   for (const spot of plan.spots) await spots.save(spot);
   await entries.saveMany(plan.entries);
-  await equipment.saveMany(plan.equipment);
   await events.save(plan.event);
 }
