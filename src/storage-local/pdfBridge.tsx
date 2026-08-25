@@ -90,19 +90,28 @@ export const PDF_BRIDGE_SUPPORTED = WebViewComponent !== null;
  * Written as a string rather than a bundled .html file because expo-asset
  * copies every asset to its own hashed path, so a page and its script cannot
  * find each other by relative URL. Inlining sidesteps that entirely.
+ *
+ * ── Both halves load as modules, from blob URLs ───────────────────────────
+ * pdfjs 6 ships as ES modules. Pasting one inline was the first attempt and it
+ * fails in two ways at once: an `export` declaration is only legal at a
+ * module's top level, so inside the `try` below it is
+ * `SyntaxError: Unexpected token 'export'`; and the module build never defines
+ * the `pdfjsLib` global that a script-tag build would.
+ *
+ * Minting a blob URL and `import()`ing it treats the library as what it is.
+ * The worker gets the same treatment for the same reason, and neither touches
+ * the network — §1.4.
  */
 function buildHtml(library: string, worker: string, base64: string): string {
   return `<!doctype html>
 <html><head><meta charset="utf-8"></head><body><script type="module">
 const post = (payload) => window.ReactNativeWebView.postMessage(JSON.stringify(payload));
+const asUrl = (source) =>
+  URL.createObjectURL(new Blob([source], { type: 'text/javascript' }));
 
 try {
-  ${library}
-
-  // The worker as a blob minted in here. pdfjs 6 refuses to run without a
-  // workerSrc, and there is no URL on the device it could be served from.
-  const blob = new Blob([${JSON.stringify(worker)}], { type: 'text/javascript' });
-  pdfjsLib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(blob);
+  const pdfjsLib = await import(asUrl(${JSON.stringify(library)}));
+  pdfjsLib.GlobalWorkerOptions.workerSrc = asUrl(${JSON.stringify(worker)});
 
   const raw = atob(${JSON.stringify(base64)});
   const bytes = new Uint8Array(raw.length);
