@@ -3,21 +3,36 @@
  *
  * Two halves, like the timetable: the field itself, ticked off as you go
  * round the paddock; and underneath it, how the field got there. Pasted text
- * only for now — PDF extraction is not wired up on device yet (see job #6 in
- * HANDOFF-entry-lists.md).
+ * only for now — PDF extraction is not wired up on device yet (see
+ * TASKS-pdf-mapping.md).
  *
- * ── The confirmation step is the point ─────────────────────────────────────
+ * ── The review is editable, and that is the point ─────────────────────────
  * Same rule as TimetableScreen, spec §5.3: nothing is written until Add is
- * pressed. It matters more here — the parser fabricates the odd entry out of
- * document furniture (HANDOFF-entry-lists.md job #2), so every row starts
- * ticked *in the review* but is still a claim to check, not a fact to accept.
+ * pressed. But a checkbox is only half a confirmation step — it lets you
+ * reject a wrong row, not correct one, so a car with the right number and a
+ * mangled team is a choice between keeping something wrong and losing it
+ * entirely.
+ *
+ * Every field here is editable, and rows can be added and deleted. That
+ * changes what the parser is for: it no longer has to be *right*, only close,
+ * because the last word belongs to the person holding the phone. The two
+ * documents it still reads wrong — HTC2's row index, and the Spa Six Hours
+ * cars whose number sits alone on a line — become a few seconds of typing
+ * instead of a defect (see TASKS-pdf-mapping.md, section R).
  */
 import { useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { parseEntryList, describeEntryParse, type TextEntry } from '../../core/logic/entryList';
+import {
+  blankRow,
+  readyRows,
+  rowsFromParse,
+  toEntry,
+  type ReviewRow,
+} from '../../core/logic/entryReview';
 import Collapsible from '../Collapsible';
-import { color, radius, space, type, weight } from '../theme';
+import { HIT_SIZE, color, radius, space, type, weight } from '../theme';
 
 export interface SavedEntryRow {
   readonly id: string;
@@ -27,6 +42,16 @@ export interface SavedEntryRow {
   readonly drivers: readonly string[];
   readonly photographed: boolean;
 }
+
+/**
+ * Keys for the review rows.
+ *
+ * Minted here rather than in `core/`: a key is a rendering concern — React
+ * needs one stable per row across edits and deletions — and `entryReview`
+ * stays pure by taking them rather than generating them.
+ */
+let keySeed = 0;
+const nextKey = () => `r${keySeed++}`;
 
 export default function EntryListScreen({
   entries,
@@ -40,9 +65,8 @@ export default function EntryListScreen({
   onCommit: (rows: TextEntry[]) => void;
 }) {
   const [raw, setRaw] = useState('');
-  const [parsed, setParsed] = useState<TextEntry[]>([]);
-  const [skipped, setSkipped] = useState<string[]>([]);
-  const [chosen, setChosen] = useState<Set<number>>(new Set());
+  const [rows, setRows] = useState<ReviewRow[]>([]);
+  const [editing, setEditing] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
 
   const progress = useMemo(
@@ -53,42 +77,52 @@ export default function EntryListScreen({
     [entries],
   );
 
+  /** Rows that would actually be written: included, and carrying a number. */
+  const ready = useMemo(() => readyRows(rows), [rows]);
+
   const onRead = () => {
-    const lines = raw.split(/\r?\n/).filter((l) => l.trim() !== '');
-    if (lines.length === 0) {
+    if (raw.trim() === '') {
       setStatus('Nothing to read — paste an entry list first.');
       return;
     }
     const r = parseEntryList(raw);
-    setParsed([...r.entries]);
-    setSkipped([...r.skipped]);
-    // Every row starts checked — the parser does not guess, but it does
-    // occasionally read document furniture as a car (see the header note), so
-    // this is still a review, not a fait accompli.
-    setChosen(new Set(r.entries.map((_, i) => i)));
+    setRows(rowsFromParse(r, nextKey));
+    setEditing(null);
     setStatus(describeEntryParse(r));
   };
 
-  const toggle = (i: number) =>
-    setChosen((s) => {
-      const next = new Set(s);
-      if (next.has(i)) next.delete(i);
-      else next.add(i);
-      return next;
-    });
+  const patch = (key: string, change: Partial<ReviewRow>) =>
+    setRows((rs) => rs.map((r) => (r.key === key ? { ...r, ...change } : r)));
+
+  const toggle = (key: string) =>
+    setRows((rs) =>
+      rs.map((r) => (r.key === key ? { ...r, include: !r.include } : r)),
+    );
+
+  const remove = (key: string) => {
+    setRows((rs) => rs.filter((r) => r.key !== key));
+    setEditing((e) => (e === key ? null : e));
+  };
+
+  const addBlank = () => {
+    const row = blankRow(nextKey());
+    setRows((rs) => [...rs, row]);
+    // Straight into the editor: an empty row you then have to find and tap is
+    // two steps for something that only exists to be typed into.
+    setEditing(row.key);
+  };
 
   const commit = () => {
-    const rows = parsed.filter((_, i) => chosen.has(i));
-    if (rows.length === 0) {
-      setStatus('Nothing selected.');
+    if (ready.length === 0) {
+      setStatus('Nothing to add — tick at least one row with a number.');
       return;
     }
-    onCommit(rows);
-    setParsed([]);
-    setSkipped([]);
-    setChosen(new Set());
+    onCommit(ready.map(toEntry));
+    const n = ready.length;
+    setRows([]);
+    setEditing(null);
     setRaw('');
-    setStatus(`Added ${rows.length} entr${rows.length === 1 ? 'y' : 'ies'}.`);
+    setStatus(`Added ${n} entr${n === 1 ? 'y' : 'ies'}.`);
   };
 
   return (
@@ -164,67 +198,157 @@ export default function EntryListScreen({
 
         {status && <Text style={styles.status}>{status}</Text>}
 
-        {parsed.length > 0 && (
+        {rows.length > 0 && (
           <>
             <Text style={styles.label}>REVIEW</Text>
             <Text style={styles.help}>
-              Nothing is saved until you press Add. Uncheck anything that is not
-              a car — a title, a date, a page footer.
+              Nothing is saved until you press Add. Tap a row to correct it,
+              untick anything that is not a car, and add one the list missed.
             </Text>
 
-            {parsed.map((p, i) => {
-              const on = chosen.has(i);
+            {rows.map((r) => {
+              const open = editing === r.key;
+              const unread = r.number.trim() === '';
               return (
-                <Pressable
-                  key={i}
-                  onPress={() => toggle(i)}
-                  style={({ pressed }) => [
+                <View
+                  key={r.key}
+                  style={[
                     styles.reviewRow,
-                    on && styles.reviewRowOn,
-                    pressed && styles.pressed,
+                    r.include && !unread && styles.reviewRowOn,
+                    unread && styles.reviewRowUnread,
                   ]}
                 >
-                  <Text style={[styles.tick, on && styles.tickOn]}>
-                    {on ? '✓' : '○'}
-                  </Text>
-                  <Text style={styles.number}>{p.number || '—'}</Text>
-                  <View style={styles.rowBody}>
-                    <Text style={styles.rowTitle} numberOfLines={1}>
-                      {p.team ?? (p.drivers.length > 0 ? p.drivers.join(' / ') : p.source)}
-                    </Text>
-                    <Text style={styles.rowMeta} numberOfLines={1}>
-                      {[p.className, p.team && p.drivers.length > 0 ? p.drivers.join(' / ') : null]
-                        .filter(Boolean)
-                        .join(' · ') || p.source}
-                    </Text>
+                  <View style={styles.reviewHead}>
+                    <Pressable
+                      onPress={() => toggle(r.key)}
+                      hitSlop={10}
+                      style={({ pressed }) => [styles.tickTap, pressed && styles.pressed]}
+                    >
+                      <Text style={[styles.tick, r.include && styles.tickOn]}>
+                        {r.include ? '✓' : '○'}
+                      </Text>
+                    </Pressable>
+
+                    <Pressable
+                      onPress={() => setEditing(open ? null : r.key)}
+                      style={({ pressed }) => [styles.reviewBody, pressed && styles.pressed]}
+                    >
+                      <Text style={styles.rowTitle} numberOfLines={1}>
+                        {r.number.trim() === '' ? 'No number' : r.number}
+                        {r.team.trim() !== '' ? `  ${r.team}` : ''}
+                      </Text>
+                      <Text style={styles.rowMeta} numberOfLines={1}>
+                        {[r.className, r.drivers].filter((s) => s.trim() !== '').join(' · ') ||
+                          'Tap to fill in'}
+                      </Text>
+                    </Pressable>
+
+                    <Text style={styles.chevron}>{open ? '⌃' : '⌄'}</Text>
                   </View>
-                </Pressable>
+
+                  {/*
+                    The source line, always shown rather than only as a
+                    fallback. When a field looks wrong it is the only way to
+                    tell a mis-parse from a typo in the document itself.
+                  */}
+                  {r.source !== '' && (
+                    <Text style={styles.source} numberOfLines={open ? 3 : 1}>
+                      {r.source}
+                    </Text>
+                  )}
+
+                  {open && (
+                    <View style={styles.editor}>
+                      <Field
+                        label="Number"
+                        value={r.number}
+                        onChange={(v) => patch(r.key, { number: v })}
+                        placeholder="7"
+                      />
+                      <Field
+                        label="Class"
+                        value={r.className}
+                        onChange={(v) => patch(r.key, { className: v })}
+                        placeholder="Hypercar"
+                      />
+                      <Field
+                        label="Team"
+                        value={r.team}
+                        onChange={(v) => patch(r.key, { team: v })}
+                        placeholder="Toyota Gazoo Racing"
+                      />
+                      <Field
+                        label="Drivers"
+                        value={r.drivers}
+                        onChange={(v) => patch(r.key, { drivers: v })}
+                        placeholder="Conway / Kobayashi / Lopez"
+                      />
+                      <View style={styles.editorActions}>
+                        <Pressable
+                          onPress={() => remove(r.key)}
+                          style={({ pressed }) => [styles.danger, pressed && styles.pressed]}
+                        >
+                          <Text style={styles.dangerLabel}>Delete row</Text>
+                        </Pressable>
+                        <Pressable
+                          onPress={() => setEditing(null)}
+                          style={({ pressed }) => [styles.done, pressed && styles.pressed]}
+                        >
+                          <Text style={styles.btnLabel}>Done</Text>
+                        </Pressable>
+                      </View>
+                    </View>
+                  )}
+                </View>
               );
             })}
 
-            {skipped.length > 0 && (
-              <>
-                <Text style={styles.label}>COULD NOT READ</Text>
-                <Text style={styles.help}>
-                  Shown rather than dropped, so nothing goes missing quietly.
-                </Text>
-                {skipped.map((l, i) => (
-                  <Text key={i} style={styles.skipped} numberOfLines={1}>
-                    {l}
-                  </Text>
-                ))}
-              </>
-            )}
+            <Pressable
+              onPress={addBlank}
+              style={({ pressed }) => [styles.btn, pressed && styles.pressed]}
+            >
+              <Text style={styles.btnLabel}>+ Add a car the list missed</Text>
+            </Pressable>
 
             <Pressable
               onPress={commit}
               style={({ pressed }) => [styles.primary, pressed && styles.pressed]}
             >
-              <Text style={styles.primaryLabel}>Add {chosen.size} entr{chosen.size === 1 ? 'y' : 'ies'}</Text>
+              <Text style={styles.primaryLabel}>
+                Add {ready.length} entr{ready.length === 1 ? 'y' : 'ies'}
+              </Text>
             </Pressable>
           </>
         )}
       </Collapsible>
+    </View>
+  );
+}
+
+/** One labelled text input in the row editor. */
+function Field({
+  label,
+  value,
+  onChange,
+  placeholder,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder: string;
+}) {
+  return (
+    <View style={styles.field}>
+      <Text style={styles.fieldLabel}>{label}</Text>
+      <TextInput
+        value={value}
+        onChangeText={onChange}
+        placeholder={placeholder}
+        placeholderTextColor={color.textFaint}
+        style={styles.input}
+        autoCapitalize="words"
+        autoCorrect={false}
+      />
     </View>
   );
 }
@@ -285,6 +409,13 @@ const styles = StyleSheet.create({
 
   tick: { color: color.textFaint, fontSize: 16, width: 18 },
   tickOn: { color: color.accent, fontWeight: weight.bold },
+  // Gloves (§5.14): the glyph is small, the target it sits in is not.
+  tickTap: {
+    minWidth: 32,
+    minHeight: HIT_SIZE - 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 
   paste: {
     marginTop: space.sm,
@@ -317,9 +448,6 @@ const styles = StyleSheet.create({
   },
 
   reviewRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space.sm,
     marginTop: space.sm,
     padding: space.sm,
     borderRadius: radius.md,
@@ -328,12 +456,63 @@ const styles = StyleSheet.create({
     borderColor: 'transparent',
   },
   reviewRowOn: { borderColor: color.accent },
+  // A row with no number cannot be added yet, and says so without shouting.
+  reviewRowUnread: { borderColor: color.undocumented, borderStyle: 'dashed' },
+  reviewHead: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
+  reviewBody: { flex: 1, minHeight: HIT_SIZE - 20, justifyContent: 'center' },
+  chevron: { color: color.textFaint, fontSize: 14, width: 14, textAlign: 'center' },
 
-  skipped: {
-    color: color.undocumented,
+  source: {
+    color: color.textFaint,
     fontSize: 11,
     marginTop: space.xs,
     fontStyle: 'italic',
+  },
+
+  editor: {
+    marginTop: space.sm,
+    paddingTop: space.sm,
+    borderTopWidth: 1,
+    borderTopColor: color.border,
+    gap: space.xs,
+  },
+  field: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
+  fieldLabel: {
+    color: color.textFaint,
+    fontSize: 11,
+    fontWeight: weight.bold,
+    width: 56,
+  },
+  input: {
+    flex: 1,
+    minHeight: 44,
+    backgroundColor: color.surfaceRaised,
+    borderRadius: radius.sm,
+    paddingHorizontal: space.sm,
+    color: color.text,
+    fontSize: type.label,
+  },
+  editorActions: {
+    flexDirection: 'row',
+    gap: space.sm,
+    marginTop: space.xs,
+  },
+  danger: {
+    flex: 1,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radius.md,
+    backgroundColor: color.surfaceRaised,
+  },
+  dangerLabel: { color: color.danger, fontSize: type.label, fontWeight: weight.bold },
+  done: {
+    flex: 1,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radius.md,
+    backgroundColor: color.surfaceRaised,
   },
 
   primary: {
