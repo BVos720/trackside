@@ -1245,6 +1245,7 @@ function AppShell() {
                     setSheet({ kind: 'overview', id });
                   }}
                   onToggleHidden={(id, hidden) => void setHidden(id, hidden)}
+                  onDelete={(id) => void remove(id)}
                 />
               </View>
             )}

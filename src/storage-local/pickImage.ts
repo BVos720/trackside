@@ -82,10 +82,22 @@ export async function pickImage(): Promise<PickedImage | null> {
 
   const result = await ImagePicker.launchImageLibraryAsync({
     mediaTypes: ['images'],
-    // No editing step. A reference photo's job is to show where to stand, and
-    // a crop applied in a hurry removes exactly the context that makes it
-    // useful — the path, the fence line, the post number.
-    allowsEditing: false,
+    /*
+     * The system crop step, so a photo can be reframed to fit.
+     *
+     * This used to be false, on the reasoning that a crop applied in a hurry
+     * removes exactly the context that makes a reference photo useful — the
+     * path, the fence line, the post number. That reasoning still holds for a
+     * crop you did not intend, which is why the step is *offered* rather than
+     * imposed: the picker opens on the whole frame and tapping through without
+     * dragging keeps it whole.
+     *
+     * What changed is the evidence. Reframing was asked for directly, from a
+     * phone, after using the app — and a stored photo is displayed in a fixed
+     * frame it may not suit, which nothing downstream could correct because
+     * the bytes were already committed uncropped.
+     */
+    allowsEditing: true,
     // Quality is applied at the resize below instead, on the already-scaled
     // image. Compressing here as well would be two lossy passes for one result.
     quality: 1,

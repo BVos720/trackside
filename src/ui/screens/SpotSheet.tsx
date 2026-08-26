@@ -8,11 +8,13 @@
  * taken in-app — not typed in. A ±15° stepper was a worse answer than no answer,
  * because a hand-guessed bearing looks identical to a measured one downstream.
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Image,
   Pressable,
+  Animated,
   KeyboardAvoidingView,
+  PanResponder,
   Platform,
   ScrollView,
   StyleSheet,
@@ -350,6 +352,78 @@ export default function SpotSheet({
   const pendingReferences = pendingPhotos.filter((p) => !p.isKey);
   const pendingCount = pendingPhotos.length;
 
+  /**
+   * How far the sheet has been dragged down from its resting position.
+   *
+   * ── Why the grabber was decorative until now ──────────────────────────
+   * The bar at the top of this sheet looks exactly like every draggable sheet
+   * on the phone, so it was reasonable to expect it to drag — and it did
+   * nothing. A control that looks interactive and is not is worse than no
+   * control, because you spend the first few tries assuming you did it wrong.
+   *
+   * ── Built on PanResponder rather than a gesture library ───────────────
+   * `react-native-gesture-handler` and Reanimated are not dependencies here,
+   * and adding a native module costs a rebuild and a new set of ways for the
+   * build to break — which is expensive when signing keys are rationed.
+   * PanResponder and Animated ship with React Native and are already used by
+   * SkyControl, so this adds no surface at all.
+   *
+   * ── Down only ─────────────────────────────────────────────────────────
+   * Dragging up is clamped to zero. The sheet already sizes itself to its
+   * content up to 82% of the screen, so there is nothing above to reveal, and
+   * a sheet that can be flung into empty space feels broken rather than
+   * flexible.
+   */
+  const dragY = useRef(new Animated.Value(0)).current;
+
+  const settle = (toValue: number) =>
+    Animated.spring(dragY, {
+      toValue,
+      useNativeDriver: true,
+      bounciness: 0,
+      speed: 14,
+    }).start();
+
+  const drag = useRef(
+    PanResponder.create({
+      /*
+       * Claim the gesture only once it is clearly a vertical drag.
+       *
+       * Returning true from onStartShouldSet would swallow taps on the
+       * grabber's own row. The 6px threshold, and requiring vertical movement
+       * to exceed horizontal, keeps a scroll inside the body and a stray
+       * finger on a field from being read as a drag on the sheet.
+       */
+      onMoveShouldSetPanResponder: (_e, g) =>
+        Math.abs(g.dy) > 6 && Math.abs(g.dy) > Math.abs(g.dx),
+
+      onPanResponderMove: (_e, g) => {
+        dragY.setValue(Math.max(0, g.dy));
+      },
+
+      onPanResponderRelease: (_e, g) => {
+        /*
+         * Dismiss on a decisive gesture, not merely a large one.
+         *
+         * Either dragged more than 140px, or flung faster than 0.8px/ms —
+         * velocity matters because a short sharp flick is how people close
+         * these, and requiring distance alone makes the sheet feel sticky.
+         */
+        if (g.dy > 140 || g.vy > 0.8) {
+          onCancel();
+          // Reset behind the dismissal so reopening does not start mid-drag.
+          dragY.setValue(0);
+        } else {
+          settle(0);
+        }
+      },
+
+      // A gesture taken away by the OS (a call, the app backgrounding) must
+      // not leave the sheet stranded half-open.
+      onPanResponderTerminate: () => settle(0),
+    }),
+  ).current;
+
   return (
     /*
       The keyboard must push the sheet, not cover it.
@@ -368,7 +442,21 @@ export default function SpotSheet({
       style={styles.sheet}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      <View style={styles.grabber} />
+      <Animated.View
+        style={{ transform: [{ translateY: dragY }] }}
+        {...drag.panHandlers}
+      >
+        {/*
+          The grab area is deliberately larger than the bar it draws.
+
+          The visible grabber is a few pixels tall, which is nowhere near a
+          reliable target for a gloved hand — §5.14. The padding around it is
+          part of the control even though nothing is drawn there.
+        */}
+        <View style={styles.grabArea}>
+          <View style={styles.grabber} />
+        </View>
+      </Animated.View>
 
       <ScrollView
         style={styles.body}
@@ -938,6 +1026,11 @@ function makeStyles(color: Theme['color']) {
       borderTopRightRadius: radius.lg,
       borderTopWidth: 1,
       borderColor: color.border,
+    },
+    grabArea: {
+      paddingTop: space.sm,
+      paddingBottom: space.sm,
+      alignItems: 'center',
     },
     grabber: {
       alignSelf: 'center',
