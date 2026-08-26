@@ -941,6 +941,21 @@ function AppShell() {
       <StatusBar style="light" />
 
       <View style={styles.body}>
+        {/*
+          One boundary per screen, not just the one at the root.
+
+          The root boundary in App() catches everything, but when it fires it
+          replaces the entire app — including the menu — so a screen that throws
+          leaves nowhere to go but a restart. This one wraps only the body, and
+          MainMenu is rendered as its sibling below, so a failed screen still
+          leaves you able to navigate out of it.
+
+          `key={where}` is what makes it recover. React error boundaries stay
+          in the error state until they are remounted, and changing the key on
+          navigation is exactly that — so moving to another screen clears it
+          without needing the "try to carry on" button.
+        */}
+        <ErrorBoundary key={where} label={where}>
         {where === 'map' || where === 'list' ? (
           <>
             <MapScreen
@@ -1437,6 +1452,7 @@ function AppShell() {
           // but a ternary chain still needs a final expression.
           null
         )}
+        </ErrorBoundary>
       </View>
 
 

@@ -93,6 +93,14 @@ export function installGlobalErrorHandler(): void {
 
 interface Props {
   readonly children: ReactNode;
+  /**
+   * What failed, for the header — a screen name.
+   *
+   * Worth having because the same component guards the whole app and each
+   * screen individually, and "the spots list threw" is a materially different
+   * report from "the app threw".
+   */
+  readonly label?: string;
 }
 
 interface State {
@@ -146,12 +154,20 @@ export default class ErrorBoundary extends Component<Props, State> {
         <ScrollView contentContainerStyle={styles.content}>
           <Text style={styles.kicker}>
             {caught.source === 'render' ? 'RENDER ERROR' : 'RUNTIME ERROR'}
+            {this.props.label ? ` · ${this.props.label.toUpperCase()}` : ''}
           </Text>
-          <Text style={styles.title}>Something in the app failed</Text>
+          <Text style={styles.title}>
+            {this.props.label
+              ? `The ${this.props.label} screen failed`
+              : 'Something in the app failed'}
+          </Text>
           <Text style={styles.lede}>
-            This screen is here so the failure is visible instead of the app
-            vanishing. Screenshot it — the message and the first few stack lines
-            are what identify the bug.
+            This is here so the failure is visible instead of the app vanishing.
+            Screenshot it — the message and the first few stack lines are what
+            identify the bug.
+            {this.props.label
+              ? ' The menu still works, so you can move to another screen.'
+              : ''}
           </Text>
 
           <Text style={styles.label}>MESSAGE</Text>
