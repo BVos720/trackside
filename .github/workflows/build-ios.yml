@@ -40,7 +40,7 @@ jobs:
           # Creëer de Payload map (vereist voor een geldig .ipa bestand)
           mkdir Payload
           mv "$APP_NAME" Payload/
-          zip -q -r app.ipa Payload
+          zip -q -r -y app.ipa Payload
 
       - name: Upload het .ipa bestand naar GitHub Artifacts
         uses: actions/upload-artifact@v4
