@@ -46,6 +46,42 @@ import { buffer, mask, union, featureCollection } from '@turf/turf';
  */
 const CORRIDOR_METRES = 300;
 
+/**
+ * Courses that share a site with the main circuit but are not it.
+ *
+ * ── Why the Overpass query alone is not enough ────────────────────────────
+ * The query already drops `sport=karting`, and at most venues that is the whole
+ * problem. It is not at Suzuka: its kart track carries no `sport` tag at all, so
+ * it arrives as ordinary `highway=raceway` and gets drawn as though it were
+ * part of the GP circuit. Fuji has the same trouble twice over, with a drift
+ * course and a short circuit sitting inside the same bounding box.
+ *
+ * The result is a map showing loops that no session is ever run on, which is
+ * worse than it sounds for this app: the circuit outline is what someone reads
+ * to work out where a corner is, and an extra loop beside it is an assertion
+ * that there is racing there.
+ *
+ * ── Why by name and not by geometry ───────────────────────────────────────
+ * "Keep the largest connected component" is the tempting general rule and it
+ * is wrong here. The Nürburgring's raceway ways are not one component — the
+ * Nordschleife and the GP-Strecke are separately mapped and only meet at the
+ * junction — so a connectivity rule would silently throw away most of the
+ * circuit this app was built for.
+ *
+ * Names are what actually distinguishes these. Both scripts and both languages
+ * are matched because OSM carries whichever the local mappers used, and a
+ * Japanese venue is generally tagged in Japanese.
+ *
+ * Add to this list rather than hand-editing the generated GeoJSON: the files in
+ * assets/circuits are build output and the next extraction overwrites them.
+ */
+const SECONDARY_COURSE =
+  /カート|kart|ドリフト|drift|ショートサーキット|short\s*circuit|南コース|south\s*course/i;
+
+function isSecondaryCourse(name) {
+  return typeof name === 'string' && SECONDARY_COURSE.test(name);
+}
+
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, '..');
 const OUT_DIR = join(root, 'assets', 'circuits');
@@ -116,7 +152,9 @@ for (const key of keys) {
   console.log(`\n=== ${key} — ${venue.label} ===`);
 
   const data = await overpass(query(venue.bbox));
-  const ways = data.elements.filter((e) => e.type === 'way' && e.geometry);
+  const ways = data.elements
+    .filter((e) => e.type === 'way' && e.geometry)
+    .filter((e) => !isSecondaryCourse(e.tags?.name));
 
   const features = ways.map((w) => ({
     type: 'Feature',
