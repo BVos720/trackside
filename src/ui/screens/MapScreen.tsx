@@ -28,6 +28,7 @@ import {
 } from 'react-native';
 import { Asset } from 'expo-asset';
 import { prepareGlyphs } from '../../storage-local/glyphs';
+import { localTerrainTemplate } from '../../storage-local/terrainCache';
 import { getMapSceneryEnabled } from '../../storage-local/preferences';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -58,6 +59,7 @@ import { useHeading } from '../state/useHeading';
 import type { LatLon } from '../../core/domain/common';
 import {
   REMOTE_GLYPHS_URL,
+  TERRAIN_TILES,
   SCENERY_SPRITES,
   SPOTS_SOURCE,
   VENUE_VIEW,
@@ -204,6 +206,19 @@ export default function MapScreen({
    * Null until ready, and null forever if the copy fails — the style then keeps
    * the remote URL, so labels degrade to needing signal rather than vanishing.
    */
+  /**
+   * A `file://` template for this venue's downloaded elevation tiles, or null.
+   *
+   * Re-resolved per venue rather than once, because a download that finishes
+   * while the app is open should take effect on the next style rebuild — and
+   * toggling 3D rebuilds the style anyway, so the next tilt picks it up without
+   * any explicit invalidation.
+   */
+  const terrainTiles = useMemo(
+    () => localTerrainTemplate(venue) ?? TERRAIN_TILES,
+    [venue],
+  );
+
   const [glyphsUrl, setGlyphsUrl] = useState<string | null>(null);
   useEffect(() => {
     void (async () => setGlyphsUrl(await prepareGlyphs()))();
@@ -275,8 +290,9 @@ export default function MapScreen({
             is3D,
             glyphsUrl ?? REMOTE_GLYPHS_URL,
             sceneryEnabled,
+            terrainTiles,
           ) as never),
-    [tilesUri, venue, is3D, glyphsUrl, sceneryEnabled],
+    [tilesUri, venue, is3D, glyphsUrl, sceneryEnabled, terrainTiles],
   );
 
   if (error !== null) {

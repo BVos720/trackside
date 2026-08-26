@@ -7,10 +7,16 @@
  * tell them apart before committing.
  */
 import { useMemo } from 'react';
+import { useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View, Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { VENUE_VIEW, circuitMetricsFor, type VenueKey } from '../map/style';
+import {
+  downloadTerrain,
+  terrainStatus,
+  type TerrainStatus,
+} from '../../storage-local/terrainCache';
 import {
   MENU_CLEARANCE,
   radius,
@@ -60,8 +66,8 @@ export default function CircuitScreen({
         const active = key === venue;
 
         return (
+          <View key={key}>
           <Pressable
-            key={key}
             onPress={() => onChange(key)}
             style={({ pressed }) => [
               styles.row,
@@ -82,6 +88,8 @@ export default function CircuitScreen({
             </View>
             {active && <Text style={styles.tick}>✓</Text>}
           </Pressable>
+          <TerrainRow venue={key} bounds={v.bounds} styles={styles} />
+          </View>
         );
       })}
 
@@ -91,6 +99,78 @@ export default function CircuitScreen({
         make up the lap is a call for you, not the extractor.
       </Text>
     </ScrollView>
+  );
+}
+
+/**
+ * Download state for one venue's elevation tiles.
+ *
+ * ── Why this is on the circuit list ───────────────────────────────────────
+ * This is the screen where you decide which circuit you are going to, which is
+ * the moment you still have a connection and the last one where downloading is
+ * free of consequence. Burying it in settings would mean finding out in the
+ * Eifel that the hills are flat.
+ *
+ * ── Why it says how many tiles ────────────────────────────────────────────
+ * A spinner with no end is indistinguishable from a hang, and this is a few
+ * dozen small requests — genuinely finite, so it is shown as finite. A run that
+ * stops halfway leaves what it got and says so; pressing again resumes rather
+ * than restarting, because every tile already on disk is skipped.
+ */
+function TerrainRow({
+  venue,
+  bounds,
+  styles,
+}: {
+  venue: VenueKey;
+  bounds: (typeof VENUE_VIEW)[VenueKey]['bounds'];
+  styles: ReturnType<typeof makeStyles>;
+}) {
+  const [status, setStatus] = useState<TerrainStatus | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    void (async () => setStatus(await terrainStatus(venue, bounds)))();
+  }, [venue, bounds]);
+
+  const run = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const result = await downloadTerrain(venue, bounds, (have, need) =>
+        setStatus({ have, need, complete: have === need }),
+      );
+      setStatus(result);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Nothing to offer until the count is known, and nothing to offer on web —
+  // terrainStatus reports need: 0 there. See terrainCache.web.ts.
+  if (status === null || status.need === 0) return null;
+
+  if (status.complete && !busy) {
+    return (
+      <Text style={styles.terrainDone}>
+        3D terrain saved · works with no signal
+      </Text>
+    );
+  }
+
+  return (
+    <Pressable
+      onPress={() => void run()}
+      style={({ pressed }) => [styles.terrainBtn, pressed && styles.pressed]}
+    >
+      <Text style={styles.terrainLabel}>
+        {busy
+          ? `Downloading 3D terrain… ${status.have}/${status.need}`
+          : status.have > 0
+            ? `Resume 3D terrain (${status.have}/${status.need})`
+            : `Download 3D terrain (${status.need} tiles)`}
+      </Text>
+    </Pressable>
   );
 }
 
@@ -129,6 +209,24 @@ function makeStyles(color: Theme['color']) {
     },
     rowActive: { borderColor: color.accent },
     rowText: { flex: 1 },
+    terrainBtn: {
+      marginTop: -space.xs,
+      marginBottom: space.sm,
+      marginHorizontal: space.sm,
+      paddingVertical: space.sm,
+      paddingHorizontal: space.md,
+      borderRadius: radius.sm,
+      backgroundColor: color.surface,
+      alignItems: 'center',
+    },
+    terrainLabel: { color: color.accent, fontSize: type.label, fontWeight: weight.bold },
+    terrainDone: {
+      color: color.textFaint,
+      fontSize: type.label,
+      marginTop: -space.xs,
+      marginBottom: space.sm,
+      marginHorizontal: space.md,
+    },
     rowTitle: { color: color.text, fontSize: type.body, fontWeight: weight.bold },
     rowSub: { color: color.textMuted, fontSize: type.label, marginTop: 2 },
     tick: { color: color.accent, fontSize: 18, fontWeight: weight.bold },

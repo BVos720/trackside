@@ -559,6 +559,23 @@ export function buildMapStyle(
    * memory, not merely skipped at paint time.
    */
   includeScenery = true,
+  /**
+   * Override the elevation tile template.
+   *
+   * Native passes a `file://` template once a venue's DEM has been downloaded
+   * (`storage-local/terrainCache.ts`); everything else falls through to the
+   * public endpoint. The two are interchangeable because a raster-dem source
+   * only ever substitutes {z}/{x}/{y} into a string — it does not care whether
+   * that resolves over the network or off the disk.
+   *
+   * This is what makes 3D work at a circuit. The basemap has always been
+   * bundled, so the map itself survives having no signal; terrain did not, and
+   * hillshading simply vanished the moment you left wifi. Now it survives too,
+   * but only for a venue somebody chose to download first — which is why the
+   * UI has to show that state rather than leave it to be discovered in the
+   * Eifel.
+   */
+  terrainTiles: string = TERRAIN_TILES,
 ): unknown {
   const generated = layers(BASEMAP_SOURCE, namedFlavor('dark'), {
     lang: 'en',
@@ -893,7 +910,7 @@ export function buildMapStyle(
       ...(omitSpots ? {} : { [SPOTS_SOURCE]: { type: 'geojson', data: spots } }),
       [TERRAIN_SOURCE]: {
         type: 'raster-dem',
-        tiles: [TERRAIN_TILES],
+        tiles: [terrainTiles],
         encoding: 'terrarium',
         tileSize: 256,
         maxzoom: 14,
