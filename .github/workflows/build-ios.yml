@@ -1,19 +1,49 @@
 name: Build iOS App
-on: [push] # Bouwt de app elke keer als je code naar GitHub pusht
+
+on: [push]
 
 jobs:
   build:
-    runs-on: macos-latest # Dit is de magie: GitHub geeft je een tijdelijke Mac!
-
+    runs-on: macos-latest
+    
     steps:
-    - name: Code ophalen
-      uses: actions/checkout@v4
+      - name: Code ophalen
+        uses: actions/checkout@v4
 
-    # Hier komen de stappen om je app te bouwen (bijv. 'flutter build ios --no-codesign')
-    # Je bouwt hem 'unsigned' (zonder certificaat), omdat je dit pas op Windows gaat doen.
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20' # Gebruikt de juiste Node.js versie om waarschuwingen te voorkomen
 
-    - name: Bewaar het .ipa bestand
-      uses: actions/upload-artifact@v4
-      with:
-        name: ios-app
-        path: build/ios/iphoneos/JeAppNaam.ipa # Het pad naar je gebouwde app
+      - name: Installeer dependencies
+        run: npm install
+
+      - name: Expo Prebuild (Genereer iOS map)
+        run: npx expo prebuild --platform ios
+
+      - name: Bouw de iOS app (Unsigned)
+        run: |
+          cd ios
+          # Zoek automatisch de naam van de gegenereerde workspace
+          WORKSPACE_NAME=$(ls | grep '\.xcworkspace$' | head -1)
+          SCHEME_NAME=$(basename "$WORKSPACE_NAME" .xcworkspace)
+          
+          # Bouw de app zonder handtekening
+          xcodebuild -workspace "$WORKSPACE_NAME" -scheme "$SCHEME_NAME" -configuration Release -sdk iphoneos -derivedDataPath build CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO
+
+      - name: Verpak de app in een .ipa bestand
+        run: |
+          cd ios/build/Build/Products/Release-iphoneos
+          # Zoek de gegenereerde .app map
+          APP_NAME=$(ls | grep '\.app$' | head -1)
+          
+          # Creëer de Payload map (vereist voor een geldig .ipa bestand)
+          mkdir Payload
+          mv "$APP_NAME" Payload/
+          zip -q -r app.ipa Payload
+
+      - name: Upload het .ipa bestand naar GitHub Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-app
+          path: ios/build/Build/Products/Release-iphoneos/app.ipa
