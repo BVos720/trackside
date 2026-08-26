@@ -955,7 +955,20 @@ function AppShell() {
           navigation is exactly that — so moving to another screen clears it
           without needing the "try to carry on" button.
         */}
-        <ErrorBoundary key={where} label={where}>
+        {/*
+          Keyed on the *branch*, not on `where`.
+
+          Map and list are the same arm of the ternary below — the spots panel
+          renders over a still-mounted MapScreen. Keying on `where` would
+          remount the boundary when that panel opens, taking the whole map with
+          it: a fresh style, the pmtiles archive reopened, and 13k tree points
+          re-parsed, on an operation that today costs nothing. Opening the spot
+          list is not navigation away from the map.
+        */}
+        <ErrorBoundary
+          key={where === 'map' || where === 'list' ? 'map' : where}
+          label={where}
+        >
         {where === 'map' || where === 'list' ? (
           <>
             <MapScreen
