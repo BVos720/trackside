@@ -441,8 +441,21 @@ export default function ProfileScreen({
         </Text>
       </Collapsible>
 
-      {__DEV__ && (
-        <Collapsible title="Developer" hint="Only visible in a debug build">
+      {/*
+        Not gated on `__DEV__`.
+
+        The builds this is actually tested on are Release — the GitHub Actions
+        workflow builds `-configuration Release` and the result is sideloaded,
+        so `__DEV__` is false and a debug-only section would never once appear
+        on the device it exists to serve.
+
+        MUST BE GATED BEFORE ANY PUBLIC RELEASE. It wipes everything with two
+        taps and no undo. A build going to TestFlight or the App Store needs
+        this behind a real gate — a hidden gesture, or a flag set at build
+        time. It is listed in TASKS-launch.md for that reason.
+      */}
+      {(
+        <Collapsible title="Developer" hint="Wipes everything — no undo">
           <Text style={styles.help}>
             Testing a bug usually means getting the app back to a known empty
             state. On a sideloaded build that otherwise means deleting and
