@@ -178,12 +178,13 @@ hand that back for a serialised pass.
 
 
       **Done.** `src/core/logic/equipment.ts` and a repository with tests.
-- [x] **B3-1. Weather, logic.** Open-Meteo: free, no API key, hourly cloud cover
+- [x] **B3-1. Weather, logic.** MET Norway: free for commercial use, no API
+      key, hourly cloud cover
       and precipitation — which matter far more to a photographer than a daily
       summary. The hard part is offline-first (§1.4): fetch when there is signal,
       cache with the event, **and always display the age**, because a three-day-old
       forecast shown as current is worse than none. Forecasts do not exist beyond
-      ~16 days, so an event planned in winter must say so rather than render an
+      ~9 days, so an event planned in winter must say so rather than render an
       empty panel. New `storage-local/weather.ts` + `core/logic/forecast.ts` + test.
 
 

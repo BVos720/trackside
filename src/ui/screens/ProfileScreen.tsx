@@ -375,7 +375,72 @@ export default function ProfileScreen({
           </Text>
         </Pressable>
       </Collapsible>
+
+      <Collapsible title="Credits" hint="Where the map and weather come from">
+        <Text style={styles.help}>
+          Trackside is built on open data. These credits are a condition of the
+          licences that data is published under, not a courtesy.
+        </Text>
+
+        <Credit
+          styles={styles}
+          source="Map data"
+          body={
+            '© OpenStreetMap contributors, under the Open Database Licence. ' +
+            'The offline map bundled with this app is built from that data ' +
+            'using Protomaps.'
+          }
+        />
+        <Credit
+          styles={styles}
+          source="Weather"
+          body={
+            'Forecasts from the Norwegian Meteorological Institute (MET ' +
+            'Norway), under the Norwegian Licence for Open Government Data.'
+          }
+        />
+        <Credit
+          styles={styles}
+          source="Elevation"
+          body={
+            'Terrain and hillshading from the Terrain Tiles open dataset on ' +
+            'AWS, derived from public national elevation surveys.'
+          }
+        />
+
+        <Text style={styles.help}>
+          None of them endorse Trackside, and none of them are responsible for
+          what it shows you.
+        </Text>
+      </Collapsible>
     </ScrollView>
+  );
+}
+
+/**
+ * One attribution line.
+ *
+ * ── Why this is on a settings page and not only in PRIVACY.md ─────────────
+ * ODbL requires the credit to be reasonably visible to someone *using* the
+ * map, and MET Norway's terms ask for the same. A licence file in a repository
+ * nobody opens does not satisfy either. This is the app's attribution notice —
+ * the equivalent of the small print in the corner of a web map, which there is
+ * no room for on a phone screen that is mostly map.
+ */
+function Credit({
+  styles,
+  source,
+  body,
+}: {
+  styles: ReturnType<typeof makeStyles>;
+  source: string;
+  body: string;
+}) {
+  return (
+    <View style={styles.credit}>
+      <Text style={styles.creditSource}>{source}</Text>
+      <Text style={styles.creditBody}>{body}</Text>
+    </View>
   );
 }
 
@@ -625,6 +690,19 @@ function makeStyles(color: Theme['color']) {
       fontSize: type.label,
       lineHeight: 17,
       marginBottom: space.sm,
+    },
+
+    credit: { marginTop: space.sm },
+    creditSource: {
+      color: color.text,
+      fontSize: type.label,
+      fontWeight: weight.bold,
+    },
+    creditBody: {
+      color: color.textMuted,
+      fontSize: type.label,
+      lineHeight: 18,
+      marginTop: 2,
     },
     /**
      * Three options in a row, each `HIT_SIZE` tall — §5.14, and this

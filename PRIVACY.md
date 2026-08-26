@@ -49,20 +49,26 @@ side. **Export an event bundle from the app if you want a copy you keep.**
 
 ## What leaves your device
 
-Nothing about you is transmitted. Three network requests occur, each tied to a
-specific feature:
+Nothing about you is transmitted. Three network requests are possible, each
+tied to a specific feature, and two of them only under a condition you control:
 
 ### 1. Weather forecasts — only when you ask for one
 
 When you request a forecast for an event, your device sends the **coordinates
-of that event** and its timezone to **Open-Meteo** (`api.open-meteo.com`) to
-retrieve cloud cover and precipitation. No name, no device identifier, no
-account — Open-Meteo requires no API key and we hold no credentials with them.
+of that event** to the **Norwegian Meteorological Institute** (MET Norway,
+`api.met.no`) to retrieve cloud cover and precipitation. No name, no device
+identifier, no account — MET Norway requires no API key and we hold no
+credentials with them.
 
 The coordinates sent are the *event's* location — a circuit — not your live
-position.
+position, and they are rounded to four decimal places (roughly 11 metres)
+before being sent, as MET Norway asks callers to do.
 
-Open-Meteo's privacy policy: <https://open-meteo.com/en/terms>
+The request identifies **the app**, not you: it carries a header naming
+Trackside and its public source repository, which is a condition of MET
+Norway's free service and contains nothing about the person using it.
+
+MET Norway's privacy policy: <https://www.met.no/en/About-us/privacy>
 
 ### 2. 3D terrain — only when you switch it on
 
@@ -74,10 +80,13 @@ of the world you are looking at.
 Terrain is a planning feature intended for use at home. It is off at a circuit
 and requires a connection, so it does not run in the field.
 
-### 3. Map icons
+### 3. Map label fonts — only if the bundled copies fail
 
-The map style requests its icon sheet from **protomaps**
-(`protomaps.github.io`). No information about you is included.
+The fonts used to draw map labels ship **inside the app**. If unpacking them on
+your device fails, the map falls back to requesting them from **Protomaps**
+(`protomaps.github.io`) so that labels still appear rather than the map
+rendering nameless. No information about you is included, and on a normal
+install this request never happens.
 
 ### In every case
 
@@ -89,6 +98,29 @@ neither receive nor store it.
 **The map itself, its labels, and the circuit data are bundled inside the app**
 and are not downloaded. Trackside is designed to work with no signal, which is
 also why so little leaves the device.
+
+---
+
+## Credits and data sources
+
+Trackside is built on open data, and the licences of that data require it to be
+credited. These are also shown inside the app.
+
+- **Map data** © **OpenStreetMap** contributors, available under the
+  [Open Database Licence](https://www.openstreetmap.org/copyright). The map
+  tiles bundled with the app are built from OpenStreetMap data using
+  [Protomaps](https://protomaps.com) (BSD-3-Clause).
+- **Weather forecasts** from the **Norwegian Meteorological Institute**
+  (MET Norway), used under the
+  [Norwegian Licence for Open Government Data](https://data.norge.no/nlod/en/2.0)
+  and [MET's API terms](https://api.met.no/doc/TermsOfService).
+- **Elevation data** for 3D terrain from the
+  [Terrain Tiles](https://registry.opendata.aws/terrain-tiles/) public dataset
+  on AWS, itself derived from public-domain and openly licensed national
+  elevation surveys.
+
+None of these providers endorse Trackside, and none of them are responsible for
+what it shows you.
 
 ---
 

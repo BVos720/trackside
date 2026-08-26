@@ -101,7 +101,7 @@ function summaryLine(summary: DaySummary): string {
 /**
  * The cloud-cover columns.
  *
- * An hour Open-Meteo did not report is drawn as a stub in the "undocumented"
+ * An hour the forecast did not report is drawn as a stub in the "undocumented"
  * grey rather than as a zero — a gap in the data is not a clear sky (§0.2),
  * and a full-height bar would be a worse lie in the other direction.
  */

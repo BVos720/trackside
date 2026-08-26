@@ -237,8 +237,38 @@ function normaliseFontStacks(layers: unknown[]): void {
 export const REMOTE_GLYPHS_URL =
   'https://protomaps.github.io/basemaps-assets/fonts/{fontstack}/{range}.pbf';
 
-export const SPRITE_URL =
-  'https://protomaps.github.io/basemaps-assets/sprites/v4/dark';
+/**
+ * There is deliberately no `sprite` in the style.
+ *
+ * ── What used to be here ──────────────────────────────────────────────────
+ * `sprite: 'https://protomaps.github.io/basemaps-assets/sprites/v4/dark'`,
+ * which MapLibre fetches as a PNG atlas plus a JSON index every time a style
+ * loads. Nothing in this app ever drew from it. The only generated layers that
+ * reference an icon are `pois`, `places_locality`, `places_country`,
+ * `roads_shields` and `roads_oneway` — every one of which is filtered out
+ * below, because the only basemap text this map shows is the circuit's own
+ * corner names.
+ *
+ * So it was two round trips on every map load, for pixels that could not be
+ * painted. Three reasons that had to go, in increasing order of seriousness:
+ *
+ *   • **§1.4.** An offline-first map should not reach for the network to draw
+ *     something it does not draw.
+ *   • **Privacy.** PRIVACY.md enumerates every request this app makes. A
+ *     silent fetch to a third party that is not in that list makes the
+ *     document wrong, which is worse than the request itself.
+ *   • **It is not our host to use.** protomaps.github.io is GitHub Pages, and
+ *     GitHub's terms do not cover it as an asset CDN for someone else's
+ *     shipping app.
+ *
+ * The app's *own* icons — the trees, the heading arrow — never came from here.
+ * They are registered by name from bundled PNGs (`SCENERY_SPRITES` above,
+ * via `<Images>` on native and `addImage` on web), which is why removing
+ * this changes nothing on screen.
+ *
+ * If a future layer ever does need basemap icons, bundle the sheet the way
+ * `npm run glyphs` bundles the fonts. Do not point this back at a URL.
+ */
 
 /**
  * Circuit geometry, sourced from OSM rather than the basemap.
@@ -847,7 +877,6 @@ export function buildMapStyle(
   const style = {
     version: 8,
     glyphs: glyphsUrl,
-    sprite: SPRITE_URL,
     sources: {
       [BASEMAP_SOURCE]: {
         type: 'vector',

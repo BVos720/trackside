@@ -1,8 +1,8 @@
 /**
  * Weather forecasts — B3-1. Fetch + cache boundary, spec §1.4.
  *
- * Talks to Open-Meteo (https://open-meteo.com/en/docs, free, no API key) and
- * persists the result against an event. `core/logic/forecast.ts` is the pure
+ * Talks to MET Norway's Locationforecast (https://api.met.no/, free, no API
+ * key) and persists the result against an event. `core/logic/forecast.ts` is the pure
  * counterpart: it decides what a cached forecast *means* (fresh, stale,
  * too-far-out, nothing yet) — this file only ever moves bytes, the same split
  * `ollama.ts` uses for the timetable extractor.
@@ -11,9 +11,9 @@
  * A daily "partly cloudy, high 19°" tells a photographer nothing about
  * whether the 14:00 session is backlit or flat. What matters here is the
  * cloud cover and rain *for the hours the event is actually running*, which
- * is why the Open-Meteo call below asks for `hourly=cloud_cover,precipitation`
- * and nothing else — no daily block, no current-conditions block, no fields
- * this app has no use for.
+ * is why this file reads only `cloud_area_fraction` and
+ * `precipitation_amount` out of the response and ignores the rest of it —
+ * no temperature, no wind, no fields this app has no use for.
  *
  * ── Cached per event, not per circuit ───────────────────────────────────────
  * Two events at the same circuit months apart want independent forecasts —
@@ -31,23 +31,54 @@
  * misleading is `fetchedAt`: every cached forecast carries it, and
  * `core/logic/forecast.ts` is what turns "old" into a fact the UI states
  * rather than hides.
+ *
+ * ── Why MET Norway rather than Open-Meteo ──────────────────────────────────
+ * This used to call Open-Meteo. Its free tier is non-commercial, so the
+ * moment Trackside charges for anything — and the plan is that it will, see
+ * TASKS-premium.md — that call stops being licensed. MET Norway's
+ * Locationforecast is free for commercial use too, needs no key either, and
+ * its conditions are ones this app should meet regardless: an identifying
+ * User-Agent, no hammering, and visible credit. See `metno.ts` for the
+ * response-shape differences that came with the switch.
  */
 import type { LatLon } from '../core/domain/common';
 import type { EventId } from '../core/domain/ids';
 import type { CachedForecast, HourlyForecastPoint } from '../core/logic/forecast';
 import { kv } from './kv';
+import { parseMetNoForecast, toCircuitLocalTime } from './metno';
 
-const API_URL = 'https://api.open-meteo.com/v1/forecast';
+const API_URL = 'https://api.met.no/weatherapi/locationforecast/2.0/compact';
 
 /**
- * Open-Meteo's own forecast ceiling. Requested in full every time: this file
- * does not know an event's dates (only its id, for the cache key), so it
- * always asks for the widest window Open-Meteo will give it and lets
- * `resolveForecastDisplay` decide which hours of that window are relevant —
- * and refuse to fetch at all — see `MAX_FORECAST_HORIZON_DAYS` there, which
- * this intentionally matches.
+ * Who is calling, as MET Norway's terms require.
+ *
+ * They block generic and absent User-Agents outright — this is not a courtesy
+ * header, it is the condition of use, and it must carry a way to reach whoever
+ * is responsible if a client starts misbehaving. The repository URL serves
+ * that purpose without putting a personal email address into every outbound
+ * request.
+ *
+ * See https://api.met.no/doc/TermsOfService. Keep the version in step with
+ * `app.json` when it changes; MET use it to identify badly-behaved releases.
+ *
+ * On web this header is unsettable — browsers forbid overriding User-Agent —
+ * so the browser sends its own, which is identifying enough not to be blocked.
+ * Nothing to work around; the native builds are what matter here.
  */
-const FORECAST_DAYS = 16;
+const USER_AGENT = 'Trackside/1.0 (https://github.com/BVos720/trackside)';
+
+/**
+ * Coordinates, truncated the way MET Norway asks for.
+ *
+ * They request no more than four decimals, because otherwise every phone
+ * standing a few metres apart misses their cache and asks the models for an
+ * answer that would have been identical. Four decimals is around 11 metres —
+ * orders of magnitude finer than any weather model's grid, so nothing is lost
+ * by rounding, and their rate limiting is friendlier to clients that comply.
+ */
+function coordinate(value: number): string {
+  return value.toFixed(4);
+}
 
 const CACHE_KEY_PREFIX = 'trackside.weather.';
 const CACHE_KEY_VERSION = 'v1';
@@ -57,75 +88,36 @@ function cacheKey(eventId: EventId): string {
 }
 
 /**
- * A fetch to Open-Meteo failed — no signal, DNS down, a non-2xx response, or
+ * A fetch to MET Norway failed — no signal, DNS down, a non-2xx response, or
  * a response shaped nothing like the documented one. Always catchable:
  * offline is the expected failure mode for this app (spec §1.4), not a bug,
  * so nothing in this file lets it propagate as an unhandled rejection.
  */
 export class WeatherFetchError extends Error {
   constructor(cause: string) {
-    super(`Could not fetch a forecast from Open-Meteo (${cause}).`);
+    super(`Could not fetch a forecast from MET Norway (${cause}).`);
     this.name = 'WeatherFetchError';
   }
-}
-
-/** The shape of the fields this app actually reads from Open-Meteo's response. Everything else it returns is ignored. */
-interface OpenMeteoResponse {
-  readonly hourly?: {
-    readonly time?: unknown;
-    readonly cloud_cover?: unknown;
-    readonly precipitation?: unknown;
-  };
-}
-
-/**
- * Pull the three parallel arrays Open-Meteo returns into one array of points.
- *
- * Defensive rather than trusting: this app has no control over a third-party
- * API's response shape, and a malformed or short array here must degrade to
- * "fewer hours" rather than crash the fetch. `time` missing or non-string
- * drops that hour entirely — a point with no time is not placeable against
- * the event's days, so it is not useful data, it is noise.
- */
-function parseHourly(body: OpenMeteoResponse): HourlyForecastPoint[] {
-  const times = body.hourly?.time;
-  if (!Array.isArray(times)) return [];
-  const clouds = Array.isArray(body.hourly?.cloud_cover) ? body.hourly.cloud_cover : [];
-  const precipitation = Array.isArray(body.hourly?.precipitation)
-    ? body.hourly.precipitation
-    : [];
-
-  const points: HourlyForecastPoint[] = [];
-  for (let i = 0; i < times.length; i++) {
-    const time = times[i];
-    if (typeof time !== 'string' || time === '') continue;
-    const cloud = clouds[i];
-    const rain = precipitation[i];
-    points.push({
-      time,
-      cloudCoverPercent: typeof cloud === 'number' ? cloud : null,
-      precipitationMm: typeof rain === 'number' ? rain : null,
-    });
-  }
-  return points;
 }
 
 /**
  * Fetch the hourly forecast for a position, in that position's own local
  * time.
  *
- * `timezone` is the circuit's IANA zone (`Circuit.timezone`), passed through
- * explicitly rather than Open-Meteo's `timezone=auto`: a plan built at home
- * for a circuit abroad must show session times in *that circuit's* local
- * time regardless of where the phone answering this fetch happens to be —
- * the same reasoning `Circuit.timezone`'s own doc comment gives, and the
- * reason `HourlyForecastPoint.time` in `core/logic/forecast.ts` is documented
- * as local rather than UTC.
+ * `timezone` is the circuit's IANA zone (`Circuit.timezone`). MET Norway
+ * answers in UTC and offers no way to ask otherwise, so `metno.ts` converts
+ * every hour into that zone on the way through. It has to be the circuit's
+ * zone and not the phone's: a plan built at home for a circuit abroad must
+ * show session times in *that circuit's* local time regardless of where the
+ * phone answering this fetch happens to be — the same reasoning
+ * `Circuit.timezone`'s own doc comment gives, and the reason
+ * `HourlyForecastPoint.time` in `core/logic/forecast.ts` is documented as
+ * local rather than UTC.
  *
  * Throws `WeatherFetchError` on any failure — no network, a non-OK response,
- * or a response with no usable `hourly.time`. Callers wanting the
- * offline-first fallback behaviour should use `refreshForecast` instead of
- * calling this directly.
+ * or a response with no usable hours. Callers wanting the offline-first
+ * fallback behaviour should use `refreshForecast` instead of calling this
+ * directly.
  */
 export async function fetchForecast(input: {
   readonly position: LatLon;
@@ -133,15 +125,14 @@ export async function fetchForecast(input: {
   readonly now?: Date;
 }): Promise<CachedForecast> {
   const url = new URL(API_URL);
-  url.searchParams.set('latitude', String(input.position.latitude));
-  url.searchParams.set('longitude', String(input.position.longitude));
-  url.searchParams.set('hourly', 'cloud_cover,precipitation');
-  url.searchParams.set('forecast_days', String(FORECAST_DAYS));
-  url.searchParams.set('timezone', input.timezone);
+  url.searchParams.set('lat', coordinate(input.position.latitude));
+  url.searchParams.set('lon', coordinate(input.position.longitude));
 
   let response: Response;
   try {
-    response = await fetch(url.toString());
+    response = await fetch(url.toString(), {
+      headers: { 'User-Agent': USER_AGENT },
+    });
   } catch (e) {
     throw new WeatherFetchError(e instanceof Error ? e.message : String(e));
   }
@@ -150,18 +141,30 @@ export async function fetchForecast(input: {
     throw new WeatherFetchError(`HTTP ${response.status}`);
   }
 
-  let body: OpenMeteoResponse;
+  let body: unknown;
   try {
-    body = (await response.json()) as OpenMeteoResponse;
+    body = await response.json();
   } catch (e) {
     throw new WeatherFetchError(
       `bad response body: ${e instanceof Error ? e.message : String(e)}`,
     );
   }
 
-  const hourly = parseHourly(body);
+  const hourly = parseMetNoForecast(body, input.timezone);
   if (hourly.length === 0) {
-    throw new WeatherFetchError('response had no usable hourly data');
+    // Two very different failures land here, and they must not read the same.
+    // "They sent nothing usable" is a server-side problem that will pass. "This
+    // device cannot resolve the circuit's timezone" is an engine limitation —
+    // the conversion in metno.ts needs Intl with timezone data — and it would
+    // otherwise be indistinguishable from being offline, on a device where
+    // weather silently never works and no bug report could explain why.
+    const zoneResolves =
+      toCircuitLocalTime('2026-01-01T12:00:00Z', input.timezone) !== null;
+    throw new WeatherFetchError(
+      zoneResolves
+        ? 'response had no usable hourly data'
+        : `this device could not resolve the timezone ${input.timezone}`,
+    );
   }
 
   return {

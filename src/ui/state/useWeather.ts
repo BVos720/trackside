@@ -20,7 +20,7 @@
  *
  *   - the event's dates being close enough to forecast at all — the
  *     `too-far-out` state never fetches, so an event in November does not
- *     poll Open-Meteo every time it is opened;
+ *     poll the forecast service every time it is opened;
  *   - there being nothing usable cached, or what is cached having gone stale
  *     (`resolveForecastDisplay` decides which, against the clock);
  *   - `RETRY_COOLDOWN_MS` having passed since the last attempt, so a circuit

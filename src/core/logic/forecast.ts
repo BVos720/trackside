@@ -28,36 +28,42 @@
 import { parseIsoDate, type Event } from '../domain/event';
 
 /**
- * Open-Meteo does not forecast beyond this many days out (its documented
- * `forecast_days` ceiling). An event planned further ahead than this cannot
- * have a forecast yet, full stop — `weather.ts` should not even attempt the
- * fetch, and this file must say so as an explicit state.
+ * MET Norway does not forecast beyond this many days out. An event planned
+ * further ahead than this cannot have a forecast yet, full stop — `weather.ts`
+ * should not even attempt the fetch, and this file must say so as an explicit
+ * state.
+ *
+ * Nine, not sixteen: Locationforecast runs to roughly nine and a half days,
+ * where Open-Meteo (which this app used to call, see `weather.ts`) ran to
+ * sixteen. Rounded down rather than up, because the cost of the two errors is
+ * not symmetrical — claiming a forecast exists and then showing an empty
+ * panel is worse than saying plainly that the event is too far out.
  */
-export const MAX_FORECAST_HORIZON_DAYS = 16;
+export const MAX_FORECAST_HORIZON_DAYS = 9;
 
 /**
  * A cached forecast younger than this counts as fresh rather than merely
- * usable. Three hours: Open-Meteo's underlying models refresh a few times a
- * day, so a forecast pulled this session is still describing the same
- * weather; anything older is shown, but flagged.
+ * usable. Three hours: the underlying models refresh a few times a day, so a
+ * forecast pulled this session is still describing the same weather; anything
+ * older is shown, but flagged.
  */
 export const DEFAULT_FRESH_WITHIN_MINUTES = 180;
 
 /** One hour's worth of the two numbers a photographer actually needs. */
 export interface HourlyForecastPoint {
   /**
-   * Local time for the circuit, ISO 8601 without a UTC offset — Open-Meteo's
-   * own `hourly.time` shape when a `timezone` is requested, e.g.
-   * `'2026-08-21T14:00'`. Kept in the circuit's local time rather than
+   * Local time for the circuit, ISO 8601 without a UTC offset, e.g.
+   * `'2026-08-21T14:00'`. MET Norway answers in UTC; `metno.ts` converts on
+   * the way in. Kept in the circuit's local time rather than
    * converted to UTC: "cloud cover at 14:00" is what a session sheet says,
    * and re-deriving that from a UTC instant would need the circuit's
    * timezone threaded through here too, for a value this file never
    * computes with — it only filters and displays.
    */
   readonly time: string;
-  /** Percent, 0–100. Null when Open-Meteo omitted the hour. */
+  /** Percent, 0–100. Null when the forecast omitted it for that hour. */
   readonly cloudCoverPercent: number | null;
-  /** Millimetres. Null when Open-Meteo omitted the hour. */
+  /** Millimetres. Null when the forecast omitted it for that hour. */
   readonly precipitationMm: number | null;
 }
 
@@ -83,7 +89,7 @@ export type ForecastDisplay =
   /** The event has no dates yet, so there is no window to forecast for. */
   | { readonly state: 'no-dates' }
   /**
-   * The event's first day is further out than Open-Meteo forecasts. Fetching
+   * The event's first day is further out than the provider forecasts. Fetching
    * now would be pointless — there is nothing to show until closer to the
    * date, and a caller should not treat this the same as "we tried and have
    * nothing" (`no-data-yet`).
@@ -261,7 +267,7 @@ export function resolveForecastDisplay(input: {
  * decision about what the numbers mean, it is pure, and it is worth a test.
  * ──────────────────────────────────────────────────────────────────────────── */
 
-/** One event day's worth of hours, in the order Open-Meteo returned them. */
+/** One event day's worth of hours, in the order the provider returned them. */
 export interface ForecastDay {
   /** Local `YYYY-MM-DD`. */
   readonly date: string;
@@ -273,7 +279,7 @@ export interface ForecastDay {
  *
  * An event spans days and a chart of 48 undifferentiated columns says nothing;
  * a photographer picks a day and reads that day. Order follows the series
- * rather than being re-sorted: Open-Meteo returns time-ascending, and imposing
+ * rather than being re-sorted: the provider returns time-ascending, and imposing
  * a sort here would quietly paper over a response that did not.
  */
 export function groupForecastByDay(
