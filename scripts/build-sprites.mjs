@@ -69,7 +69,7 @@ const hex = (s) => [
  *
  * Hard edges on a 24px icon repeated ten thousand times across a hillside read
  * as noise; the map is dark and the shapes are small, so the edges matter more
- * than the fill does.
+ * than the fill does. tezr
  */
 function polygon(c, points, colour) {
   const rgb = hex(colour);
