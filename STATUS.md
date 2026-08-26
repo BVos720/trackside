@@ -152,7 +152,26 @@ the SVG sprites to PNG (Android cannot decode SVG in that path).
 ### Known gaps
 4. **Never run on a real phone.** Emulator only. The Huawei P30 Lite is locked
    by FRP after a factory reset with a deleted account.
-5. **iOS** needs a paid Apple account to build from Windows.
+5. **iOS compiles — 26 August.** The app itself is fine on iOS: MapLibre,
+   react-native-webview, expo-image-picker and the managed prebuild all built
+   clean on EAS in five minutes. Proved with
+   `eas build --platform ios --profile ios-simulator`, which needs **no Apple
+   account at all** because simulator builds are unsigned — worth knowing as a
+   way to check the iOS target for free before paying for anything.
+
+   What still needs the $99 Apple Developer membership is **signing**, and only
+   signing. After that, `eas build --platform ios --profile preview` produces
+   an ad-hoc build installable from a link (100 device registrations a year, no
+   Apple review). TestFlight is included in the same membership at no extra
+   cost, but for a single phone ad-hoc is fewer steps — no App Store Connect
+   record, no processing wait, and no 90-day build expiry.
+
+   The free 7-day sideload route is real but needs a Mac: the certificate is
+   issued through Xcode, so Windows cannot mint one and there is nothing for
+   Sideloadly to install.
+
+   Three build attempts were needed, and two of them were my own bugs rather
+   than the app's — see the note on `npm ci` below.
 
 ### Cleanups
 6. `@maplibre/maplibre-react-native` deprecates the `style` prop; removed in
@@ -172,6 +191,19 @@ the SVG sprites to PNG (Android cannot decode SVG in that path).
 ---
 
 ## Decisions worth not re-opening
+
+- **`package-lock.json` must be generated with npm 10, not 11.** EAS builders
+  run npm 10, and the two hoist differently: npm 11.17 nests every
+  `@esbuild/*` platform package under `node_modules/tsx/node_modules`, npm 10
+  hoists 26 of them to the top level. `npm ci` refuses to reconcile the two and
+  fails the build at "Install dependencies" claiming the packages are missing
+  from the lock — they are not, they are in the wrong place. Regenerate with
+  `npx npm@10 install --package-lock-only` after any dependency change.
+
+  And **`npm ci --dry-run` does not catch this.** It validates against the
+  `node_modules` already on disk rather than doing the strict lock-versus-
+  manifest check, so it reports "up to date" on a lock that fails for real.
+  Verify with an actual `npm ci --include=dev`.
 
 - **Events clone spots, they do not reference them.** This inverts §4.2's
   reference model, deliberately. §4.2 exists to stop duplicate pins on a
