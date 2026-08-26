@@ -916,12 +916,17 @@ export function buildMapStyle(
         maxzoom: 14,
         attribution: TERRAIN_ATTRIBUTION,
         /**
-         * Confine elevation to the venue.
+         * Confine the elevation data to the venue.
          *
-         * The DEM endpoint is global, so without this the terrain mesh keeps
-         * going to the horizon and relief stays visible past the corridor mask
-         * when tilted. Bounded, everything outside falls to zero elevation and
-         * reads as flat void beneath the mask.
+         * The DEM endpoint is global, so without this the shading keeps going
+         * to the horizon and relief stays visible past the corridor mask when
+         * tilted. Bounded, everything outside falls to zero elevation and reads
+         * as flat void beneath the mask.
+         *
+         * On web this also bounds the elevation mesh, which `setTerrain()`
+         * builds from this same source. On native there is no mesh — see the
+         * note where the `terrain` key used to be — and this bounds the
+         * hillshading alone.
          */
         bounds: [
           VENUE_VIEW[venue].bounds[0][0],
@@ -939,9 +944,37 @@ export function buildMapStyle(
      * an embankment — so overstating it would turn a planning tool into a
      * cartoon and make sightline judgements worse, not better.
      */
-    ...(terrain3d
-      ? { terrain: { source: TERRAIN_SOURCE, exaggeration: 1.2 } }
-      : {}),
+    /*
+     * No `terrain` key. It never worked, and it was only ever sent to the one
+     * renderer that cannot read it.
+     *
+     * ── What was here ─────────────────────────────────────────────────────
+     * `terrain: { source: TERRAIN_SOURCE, exaggeration: 1.2 }`, emitted when
+     * 3D was on, with a comment saying the style key was the only route into
+     * native because MapLibre React Native does not expose `setTerrain()`.
+     *
+     * The second half of that is true. The first half is not.
+     * `maplibre-react-native` 11.3.6 has no 3D terrain support at all: no
+     * handling of a `terrain` key in either native bridge, nothing exposed in
+     * its JS, and the only mention of the word in its style types is a
+     * *hillshade* paint property. `RasterDEMSource` exists there to feed a
+     * hillshade layer, not an elevation mesh.
+     *
+     * And the web screen does not need it either — it calls `map.setTerrain()`
+     * directly (MapScreen.web.tsx), and calls `buildMapStyle` without the
+     * `terrain3d` argument at all. So this key only ever reached native.
+     *
+     * ── Why removing it is a fix and not a loss ───────────────────────────
+     * An unrecognised root-level key is a plausible reason for the native SDK
+     * to reject the whole style, which would make 3D appear completely broken
+     * rather than merely flat — which is what it does on the phone.
+     *
+     * What native *can* do is still here and still switches on `terrain3d`:
+     * hillshading (a supported layer type, fed by the same DEM source),
+     * extruded buildings, and the scenery scatter — plus the camera pitch the
+     * map screen applies. That is a real 3D view. It is not an elevation mesh,
+     * and this file should not pretend otherwise.
+     */
     layers: [
       ...keep,
       hillshade,
