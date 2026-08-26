@@ -8,7 +8,11 @@
     "userInterfaceStyle": "dark",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "nl.branco.trackside"
+      "bundleIdentifier": "nl.branco.trackside",
+      "infoPlist": {
+        "NSPhotoLibraryUsageDescription": "Trackside adds your photos to a spot as reference shots, so you can see where to stand when you come back.",
+        "NSCameraUsageDescription": "Trackside can take a reference photo of a spot without leaving the app."
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -31,6 +35,12 @@
         "expo-location",
         {
           "locationWhenInUsePermission": "Trackside uses your location to show where you are at the circuit and work out when to leave for your next spot."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Trackside adds your photos to a spot as reference shots, so you can see where to stand when you come back."
         }
       ]
     ]
