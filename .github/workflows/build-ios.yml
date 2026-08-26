@@ -1,0 +1,19 @@
+name: Build iOS App
+on: [push] # Bouwt de app elke keer als je code naar GitHub pusht
+
+jobs:
+  build:
+    runs-on: macos-latest # Dit is de magie: GitHub geeft je een tijdelijke Mac!
+
+    steps:
+    - name: Code ophalen
+      uses: actions/checkout@v4
+
+    # Hier komen de stappen om je app te bouwen (bijv. 'flutter build ios --no-codesign')
+    # Je bouwt hem 'unsigned' (zonder certificaat), omdat je dit pas op Windows gaat doen.
+
+    - name: Bewaar het .ipa bestand
+      uses: actions/upload-artifact@v4
+      with:
+        name: ios-app
+        path: build/ios/iphoneos/JeAppNaam.ipa # Het pad naar je gebouwde app
