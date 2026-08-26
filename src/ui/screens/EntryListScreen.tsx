@@ -340,6 +340,45 @@ export default function EntryListScreen({
           />
         )}
 
+        {/*
+          Somewhere to start when there is no document at all.
+
+          ── The gap this closes ────────────────────────────────────────────
+          Everything on this screen assumed a list already existed: paste one,
+          or import a PDF, then correct what came out. `addBlank` was wired,
+          but only inside the review section below — which does not render
+          until `rows.length > 0`. So building a list by hand required first
+          obtaining a list, which is the one case where you have not got one.
+
+          ── Why it deserves a first-class entry point ──────────────────────
+          Plenty of what this app is for has no PDF behind it. A club meeting,
+          a trackday, a test session, a support race whose organiser publishes
+          nothing — and the twenty minutes before a session, when a list exists
+          somewhere but not in a form worth fighting. In those cases typing six
+          cars is not a fallback, it is the fastest route, and it should not be
+          reached by pretending to paste something first.
+
+          The rows it creates are the same `ReviewRow`s the parser and the
+          column mapper produce, so everything downstream — editing, ticking,
+          `toEntry`, the commit — is the code that already exists. This is an
+          entry point, not a second implementation.
+        */}
+        {rows.length === 0 && mapping === null && (
+          <>
+            <Text style={styles.label}>OR BUILD ONE BY HAND</Text>
+            <Text style={styles.help}>
+              No entry list to paste? Add cars one at a time. A number is all a
+              row needs — class, team and drivers can follow when you know them.
+            </Text>
+            <Pressable
+              onPress={addBlank}
+              style={({ pressed }) => [styles.secondary, pressed && styles.pressed]}
+            >
+              <Text style={styles.secondaryLabel}>+ Add a car</Text>
+            </Pressable>
+          </>
+        )}
+
         {rows.length > 0 && mapping === null && (
           <>
             <Text style={styles.label}>REVIEW</Text>
@@ -671,5 +710,18 @@ function makeStyles(color: Theme['color']) {
       backgroundColor: color.accent,
     },
     primaryLabel: { color: color.onAccent, fontSize: type.body, fontWeight: weight.bold },
+
+    /* Outlined, not filled: this is an alternative to importing, not the
+       screen's main action. Add, at the bottom, is what commits. */
+    secondary: {
+      marginTop: space.sm,
+      height: 52,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: radius.md,
+      borderWidth: 1,
+      borderColor: color.accent,
+    },
+    secondaryLabel: { color: color.accent, fontSize: type.body, fontWeight: weight.bold },
   });
 }
