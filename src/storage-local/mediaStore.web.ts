@@ -17,6 +17,8 @@ export interface ILocalMediaStore {
   put(file: Blob, contentType: string): Promise<string>;
   getUri(key: string): Promise<string | null>;
   delete(key: string): Promise<void>;
+  /** Delete every stored photo. Only `resetApp.ts` calls this. */
+  clear(): Promise<void>;
   /** True when bytes survive an app restart. False here; true on device. */
   readonly durable: boolean;
 }
@@ -43,5 +45,12 @@ export const mediaStore: ILocalMediaStore = {
     const url = blobs.get(key);
     if (url) URL.revokeObjectURL(url);
     blobs.delete(key);
+  },
+
+  async clear() {
+    // Revoke before dropping the map, or every object URL leaks for the rest
+    // of the session.
+    for (const url of blobs.values()) URL.revokeObjectURL(url);
+    blobs.clear();
   },
 };

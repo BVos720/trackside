@@ -17,6 +17,16 @@ export interface IKeyValueStore {
   get(key: string): Promise<string | null>;
   set(key: string, value: string): Promise<void>;
   remove(key: string): Promise<void>;
+  /**
+   * Delete every key.
+   *
+   * Not a domain operation and not reachable from normal use — see
+   * `resetApp.ts`, which is the only caller. Deliberately not built out of
+   * `remove` in a loop: this store has no way to enumerate its keys, and
+   * giving it one would invite code that walks the store instead of asking
+   * a repository.
+   */
+  clear(): Promise<void>;
 }
 
 /**
@@ -65,5 +75,9 @@ export const kv: IKeyValueStore = {
     // tombstone (spec §0.1). This exists for cache-style keys only.
     const handle = await db();
     await handle.runAsync('DELETE FROM kv WHERE key = ?', key);
+  },
+  async clear() {
+    const handle = await db();
+    await handle.runAsync('DELETE FROM kv');
   },
 };

@@ -40,6 +40,15 @@ export interface ILocalMediaStore {
   put(file: Blob, contentType: string): Promise<string>;
   getUri(key: string): Promise<string | null>;
   delete(key: string): Promise<void>;
+  /**
+   * Delete every stored photo.
+   *
+   * Only `resetApp.ts` calls this. Removes the directory wholesale rather
+   * than walking keys, because the rows that name those keys are being wiped
+   * in the same breath — anything left behind would be bytes nothing can ever
+   * refer to again.
+   */
+  clear(): Promise<void>;
   /** True when bytes survive an app restart. */
   readonly durable: boolean;
 }
@@ -107,6 +116,15 @@ export const mediaStore: ILocalMediaStore = {
     try {
       const target = new File(mediaDirectory(), key);
       if (target.exists) target.delete();
+    } catch {
+      // Already gone is the outcome we wanted.
+    }
+  },
+
+  async clear() {
+    try {
+      const dir = new Directory(Paths.document, FOLDER);
+      if (dir.exists) dir.delete();
     } catch {
       // Already gone is the outcome we wanted.
     }

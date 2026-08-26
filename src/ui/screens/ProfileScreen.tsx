@@ -76,6 +76,7 @@ import { deriveAccent } from '../../core/logic/accentColor';
 import { bodies, lenses, GearKind, type GearItem } from '../../core/domain/gear';
 import type { UserGearItemId } from '../../core/domain/ids';
 import { getMapSceneryEnabled, setMapSceneryEnabled } from '../../storage-local/preferences';
+import { resetApp } from '../../storage-local/resetApp';
 import Collapsible from '../Collapsible';
 import {
   HIT_SIZE,
@@ -126,6 +127,32 @@ export default function ProfileScreen({
   const [name, setName] = useState(displayName ?? '');
   const { color, scheme, preference, setPreference, accentHue, setAccentHue } = useTheme();
   const styles = useMemo(() => makeStyles(color), [color]);
+
+  /**
+   * Two-tap confirmation for the developer wipe.
+   *
+   * Not an Alert: this is reached only in a debug build, and a confirmation
+   * dialog is one more thing to dismiss on every iteration of exactly the loop
+   * this button exists to shorten. One deliberate second tap is enough friction
+   * for something no shipped build ever shows.
+   */
+  const [confirmClear, setConfirmClear] = useState(false);
+  const [clearing, setClearing] = useState(false);
+
+  const clearApp = async () => {
+    if (clearing) return;
+    if (!confirmClear) {
+      setConfirmClear(true);
+      return;
+    }
+    setClearing(true);
+    try {
+      await resetApp();
+    } finally {
+      setClearing(false);
+      setConfirmClear(false);
+    }
+  };
 
   const commit = () => {
     const trimmed = name.trim();
@@ -413,6 +440,31 @@ export default function ProfileScreen({
           what it shows you.
         </Text>
       </Collapsible>
+
+      {__DEV__ && (
+        <Collapsible title="Developer" hint="Only visible in a debug build">
+          <Text style={styles.help}>
+            Testing a bug usually means getting the app back to a known empty
+            state. On a sideloaded build that otherwise means deleting and
+            reinstalling it, which is minutes between every attempt.
+          </Text>
+
+          <Pressable
+            onPress={clearApp}
+            style={({ pressed }) => [styles.destructive, pressed && styles.pressed]}
+          >
+            <Text style={styles.destructiveLabel}>
+              {clearing ? 'Clearing…' : confirmClear ? 'Tap again to confirm' : 'Clear app'}
+            </Text>
+          </Pressable>
+
+          <Text style={styles.help}>
+            Deletes every spot, event, plan and photo outright — not as
+            tombstones, so nothing is recoverable and nothing would ever sync.
+            Settings on this screen go too. Close and reopen the app afterwards.
+          </Text>
+        </Collapsible>
+      )}
     </ScrollView>
   );
 }
@@ -693,6 +745,21 @@ function makeStyles(color: Theme['color']) {
     },
 
     credit: { marginTop: space.sm },
+
+    destructive: {
+      marginTop: space.sm,
+      height: HIT_SIZE,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: radius.md,
+      borderWidth: 1,
+      borderColor: color.danger,
+    },
+    destructiveLabel: {
+      color: color.danger,
+      fontSize: type.body,
+      fontWeight: weight.bold,
+    },
     creditSource: {
       color: color.text,
       fontSize: type.label,

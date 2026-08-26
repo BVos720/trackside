@@ -12,6 +12,8 @@ export interface IKeyValueStore {
   get(key: string): Promise<string | null>;
   set(key: string, value: string): Promise<void>;
   remove(key: string): Promise<void>;
+  /** Delete every key. Only `resetApp.ts` calls this. */
+  clear(): Promise<void>;
 }
 
 /** Guards against private-mode Safari, where localStorage throws on write. */
@@ -38,5 +40,14 @@ export const kv: IKeyValueStore = {
   },
   async remove(key) {
     storage()?.removeItem(key);
+  },
+  async clear() {
+    // Everything this app writes lives under its own origin, so clearing the
+    // lot is the same wipe the device store performs. Nothing else shares it.
+    try {
+      storage()?.clear();
+    } catch {
+      // Storage disabled. Nothing was stored, so nothing needs clearing.
+    }
   },
 };

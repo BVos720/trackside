@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import {
@@ -824,7 +824,31 @@ function AppShell() {
    * look at, and leaving a panel over it after saving means an extra dismiss
    * every single time.
    */
+  /**
+   * True while a save is in flight.
+   *
+   * A ref, not state: two taps in the same frame both read the old value of a
+   * state variable, so state cannot block the second one. This has to be
+   * readable and writable synchronously to be a lock at all.
+   */
+  const saving = useRef(false);
+
   const onSave = async (draft: SpotDraft) => {
+    /*
+     * Without this, tapping Save twice creates two spots.
+     *
+     * The sheet is only dismissed at the bottom of this function, after the
+     * record is written and every pending photo has been copied into the media
+     * store. That is hundreds of milliseconds on a phone, and for all of it the
+     * button is still on screen with `sheet.kind` still 'creating' — so a
+     * second tap runs the whole thing again against the same draft. Reported
+     * from the device as "spamming save spot saves a lot of spots"; it is one
+     * spot per tap.
+     */
+    if (saving.current) return;
+    saving.current = true;
+
+    try {
     if (sheet.kind === 'edit') {
       await update(sheet.id, draft);
     } else if (sheet.kind === 'creating') {
@@ -848,6 +872,11 @@ function AppShell() {
     }
     setSheet({ kind: 'none' });
     setPlacing(false);
+    } finally {
+      // Released even on failure, or one thrown error would wedge the button
+      // for the rest of the session with no way back but a restart.
+      saving.current = false;
+    }
   };
 
   /**
