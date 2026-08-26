@@ -181,6 +181,33 @@ available) — worth a quick look before calling it fully done.
       rest of `src/ui/` remains on the static import, same deferred state
       B1 left it in.
 
+- [x] **B4. The deferred migration, finished.** B1, B2 and B3 each said in
+      terms that the rest of  was still on the static       import and that somebody would have to take it on. Nobody did, so the
+      Appearance section shipped reaching three files — Collapsible, MainMenu
+      and ProfileScreen — while the map, events, spots, planner, timetable and
+      the app shell stayed dark whatever you chose. A setting that visibly
+      does nothing is worse than not offering it.
+
+      **Done — 26 August.** All 23 remaining  files,       included, now take their palette from  using the pattern
+      B1 established. Three plain functions take the palette as an argument
+      instead, having no component to hook into:  in
+      , and  in  — formerly a
+      module-level frozen map, whose  amber stays a literal because it
+      is the state meaning *go* and must read as amber against either
+      background. The  on-map chrome in ,
+      ,  and the map screens is untouched, for the
+      reason B2 gives: it floats on the always-dark basemap, not on app
+      chrome.  clean, 677 tests green, web bundle builds (378 modules).
+      Verified live rather than assumed: toggling Light/Dark moves a migrated
+      screen between rgb(255,255,255)/rgb(18,22,27) and
+      rgb(11,13,16)/rgb(242,245,248), with no console errors.
+
+      **Still open:** Light mode themes the *app*, not the *map* — the basemap
+      is hardcoded to Protomaps' dark flavour, so Light gives you light chrome
+      around a dark map. That may well be right (it keeps the circuit legible
+      and matches the on-map chrome decision above), but it is a choice nobody
+      has explicitly made.
+
 ---
 
 ## C — Pick the accent colour
