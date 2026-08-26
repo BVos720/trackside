@@ -20,6 +20,9 @@ import { usePosition } from './src/ui/state/usePosition';
 import { buildWalkNetwork, routeBetween } from './src/core/logic/route';
 import { formatDateRange } from './src/ui/DateRangePicker';
 import MainMenu, { type Destination } from './src/ui/MainMenu';
+import SafetyNotice, {
+  SAFETY_NOTICE_VERSION,
+} from './src/ui/screens/SafetyNotice';
 import EventsScreen from './src/ui/screens/EventsScreen';
 import { useEvents } from './src/ui/state/useEvents';
 import { eventDays } from './src/core/domain/event';
@@ -51,6 +54,8 @@ import {
   setProfileName as setProfileNamePreference,
   setSpotUse as setSpotUsePreference,
   setVenue as setVenuePreference,
+  getSafetyAcknowledgedVersion,
+  setSafetyAcknowledgedVersion,
 } from './src/storage-local/preferences';
 import { ALL_SPOT_USES, SpotUse } from './src/core/domain/spot';
 import { countByUse, spotsForUse } from './src/core/logic/spotUse';
@@ -174,10 +179,56 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <ThemeProvider>
-        <AppShell />
+        <SafetyGate>
+          <AppShell />
+        </SafetyGate>
       </ThemeProvider>
     </SafeAreaProvider>
   );
+}
+
+/**
+ * Nothing runs until the safety notice has been read.
+ *
+ * ── Why it gates rather than overlays ─────────────────────────────────────
+ * An overlay you can swipe past is one that did not happen, and this app
+ * influences where somebody stands beside a live circuit. See the header of
+ * SafetyNotice.tsx, and the note on `AccessClassification` in
+ * core/domain/spot.ts that it exists to surface.
+ *
+ * ── Renders nothing while it checks ───────────────────────────────────────
+ * The stored version is read asynchronously. Showing the map first and then
+ * throwing the notice over it would flash the thing being gated, and showing
+ * the notice first and then hiding it would nag people who already agreed. So
+ * neither is drawn until the answer is known — a frame or two, against an app
+ * that then stays up for a whole race weekend.
+ */
+function SafetyGate({ children }: { children: React.ReactNode }) {
+  const [accepted, setAccepted] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    void (async () => {
+      const seen = await getSafetyAcknowledgedVersion();
+      setAccepted(seen !== null && seen >= SAFETY_NOTICE_VERSION);
+    })();
+  }, []);
+
+  if (accepted === null) return null;
+
+  if (!accepted) {
+    return (
+      <SafetyNotice
+        onAccept={() => {
+          // Recorded before the map appears, so a crash on the way in cannot
+          // leave someone having agreed to something they never saw again.
+          void setSafetyAcknowledgedVersion(SAFETY_NOTICE_VERSION);
+          setAccepted(true);
+        }}
+      />
+    );
+  }
+
+  return <>{children}</>;
 }
 
 function AppShell() {

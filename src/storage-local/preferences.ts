@@ -20,6 +20,32 @@ const PROFILE_NAME = 'trackside.ui.profileName.v1';
 const MAP_SCENERY = 'trackside.ui.mapScenery.v1';
 const THEME_PREFERENCE = 'trackside.ui.themePreference.v1';
 const THEME_ACCENT_HUE = 'trackside.ui.themeAccentHue.v1';
+const SAFETY_ACKNOWLEDGED = 'trackside.ui.safetyAcknowledged.v1';
+
+/**
+ * The version of the safety notice this person has read, or null.
+ *
+ * ── Why a version and not a boolean ───────────────────────────────────────
+ * A boolean can only answer "have they ever seen it". If what the notice says
+ * changes — a new hazard, a clearer warning, a term that actually matters —
+ * everybody who installed before the change would carry on having agreed to
+ * the old text forever, and there would be no way to tell.
+ *
+ * Storing the version means bumping `SAFETY_NOTICE_VERSION` shows it again to
+ * everyone. That is deliberately a slightly annoying thing to do, because it
+ * should be: it interrupts people, so it should only happen when the content
+ * genuinely changed.
+ */
+export async function getSafetyAcknowledgedVersion(): Promise<number | null> {
+  const raw = await kv.get(SAFETY_ACKNOWLEDGED);
+  if (raw === null) return null;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+export async function setSafetyAcknowledgedVersion(version: number): Promise<void> {
+  await kv.set(SAFETY_ACKNOWLEDGED, String(version));
+}
 
 export async function getActiveEventId(): Promise<string | null> {
   return kv.get(ACTIVE_EVENT);
