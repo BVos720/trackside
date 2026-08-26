@@ -30,9 +30,9 @@
       }
     },
     "ios-simulator": {
-      "extends": "preview",
       "ios": {
-        "simulator": true
+        "simulator": true,
+        "buildConfiguration": "Debug"
       }
     }
   },
