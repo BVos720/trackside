@@ -39,7 +39,7 @@
  * the outside, and the second must not be presented as "this document has no
  * entries in it". Anything unexpected comes back through `onError`.
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View } from 'react-native';
 import { Asset } from 'expo-asset';
 import { File } from 'expo-file-system';
@@ -102,6 +102,16 @@ export const PDF_BRIDGE_SUPPORTED = WebViewComponent !== null;
  * The worker gets the same treatment for the same reason, and neither touches
  * the network — §1.4.
  */
+/**
+ * How long any one stage may take before the reader is declared stuck.
+ *
+ * Generous: this runs on a phone, the library is 450KB of JavaScript to parse,
+ * and a long entry list is real work. The point is not to be strict, it is to
+ * end at all — an interface that says "reading…" forever teaches people the
+ * feature is broken, where one that says where it stopped can be fixed.
+ */
+const STAGE_TIMEOUT_MS = 25000;
+
 function buildHtml(library: string, worker: string, base64: string): string {
   return `<!doctype html>
 <html><head><meta charset="utf-8"></head><body><script type="module">
@@ -109,20 +119,72 @@ const post = (payload) => window.ReactNativeWebView.postMessage(JSON.stringify(p
 const asUrl = (source) =>
   URL.createObjectURL(new Blob([source], { type: 'text/javascript' }));
 
+/*
+ * Say how far we got, at every step.
+ *
+ * This bridge has failed twice on hardware in a way that produced no error at
+ * all — it simply never finished, and "reading…" stayed on screen forever. A
+ * silent stall is the worst shape of failure there is, because every possible
+ * cause looks identical from outside.
+ *
+ * So each stage announces itself before the thing that might not return. If it
+ * stops, the last stage received names the step that hung, which turns "the PDF
+ * thing doesn't work" into one line that says where.
+ */
+const stage = (name) => post({ stage: name });
+
+stage('booted');
+
+/*
+ * Two ways to load an ES module from a string, because engines disagree.
+ *
+ * A blob URL is the tidy one and is what Chromium wants — it is how this came
+ * to work on Android. WebKit has never treated dynamic 'import()' of a
+ * 'blob:' URL the same way, which makes it the first suspect for why this
+ * has never worked on an iPhone while working on the emulator.
+ *
+ * So if the blob import throws, the same source is offered as a 'data:' URL
+ * instead. Percent-encoded rather than base64: 'btoa' refuses anything
+ * outside Latin-1, and 450KB of minified JavaScript is not a safe bet to be
+ * clean. A different mechanism is worth one attempt; if both fail the stage
+ * report says which, and neither can affect the platform where the first
+ * already works.
+ */
+const importModule = async (source) => {
+  try {
+    return await import(asUrl(source));
+  } catch (blobError) {
+    stage('blob-import-failed');
+    try {
+      return await import('data:text/javascript,' + encodeURIComponent(source));
+    } catch (dataError) {
+      throw new Error(
+        'blob: ' + String(blobError && blobError.message || blobError) +
+        ' | data: ' + String(dataError && dataError.message || dataError),
+      );
+    }
+  }
+};
+
 try {
-  const pdfjsLib = await import(asUrl(${JSON.stringify(library)}));
+  const pdfjsLib = await importModule(${JSON.stringify(library)});
+  stage('library-loaded');
+
   pdfjsLib.GlobalWorkerOptions.workerSrc = asUrl(${JSON.stringify(worker)});
+  stage('worker-set');
 
   const raw = atob(${JSON.stringify(base64)});
   const bytes = new Uint8Array(raw.length);
   for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
 
   const ROW_TOLERANCE = 2;
+  stage('decoded');
   const doc = await pdfjsLib.getDocument({
     data: bytes,
     useSystemFonts: true,
     disableFontFace: true,
   }).promise;
+  stage('document-opened');
 
   const out = [];
   for (let p = 1; p <= doc.numPages; p++) {
@@ -217,13 +279,63 @@ export function PdfBridge({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [base64]);
 
+  /**
+   * The last stage the page reported, and the deadline for the next one.
+   *
+   * Refs rather than state: these are written from a WebView callback and read
+   * from a timer, and neither wants a re-render — the WebView is one pixel and
+   * invisible, so there is nothing to redraw.
+   */
+  const lastStage = useRef<string>('not started');
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const armTimeout = useCallback(() => {
+    if (timer.current !== null) clearTimeout(timer.current);
+    timer.current = setTimeout(() => {
+      /*
+       * Give up, and say where it stopped.
+       *
+       * Every stage resets this, so the deadline is per-step rather than for
+       * the whole job — a big entry list can legitimately take a while to lay
+       * out, and a single overall timeout would either cut that off or wait far
+       * too long for a step that was never going to return.
+       */
+      onError(
+        `The PDF reader stopped responding after "${lastStage.current}". ` +
+          'Paste the text instead.',
+      );
+    }, STAGE_TIMEOUT_MS);
+  }, [onError]);
+
+  useEffect(() => {
+    armTimeout();
+    return () => {
+      if (timer.current !== null) clearTimeout(timer.current);
+    };
+  }, [armTimeout]);
+
   const onMessage = (event: { nativeEvent: { data: string } }) => {
     try {
       const payload: unknown = JSON.parse(event.nativeEvent.data);
-      const result = payload as { ok?: boolean; rows?: PdfRow[]; error?: string };
+      const result = payload as {
+        ok?: boolean;
+        rows?: PdfRow[];
+        error?: string;
+        stage?: string;
+      };
+
+      // A progress report, not a result: note it and keep waiting.
+      if (typeof result.stage === 'string') {
+        lastStage.current = result.stage;
+        armTimeout();
+        return;
+      }
+
+      if (timer.current !== null) clearTimeout(timer.current);
       if (result.ok && Array.isArray(result.rows)) onRows(result.rows);
       else onError(result.error ?? 'The PDF could not be read.');
     } catch {
+      if (timer.current !== null) clearTimeout(timer.current);
       onError('The PDF reader sent something unreadable.');
     }
   };
