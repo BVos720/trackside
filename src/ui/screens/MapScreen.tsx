@@ -419,7 +419,19 @@ export default function MapScreen({
           Tapping the pin layer reports the feature, which is how a waypoint is
           opened — there is no queryRenderedFeatures here.
         */}
+        {/*
+          The three sources below are siblings of the same type, and two of
+          them are conditional — so all three carry a `key` for the same
+          reason the nav-here layers do. Without one, a route appearing while
+          the position marker is already on screen makes React reuse the
+          marker's fiber for the route, and MapLibre throws
+          "\`id\` cannot be changed" the moment the ids disagree.
+
+          That path is reached by starting navigation to a spot, so it is not
+          an edge case.
+        */}
         <GeoJSONSource
+          key="spots"
           id={SPOTS_SOURCE}
           data={shape as never}
           onPress={(e) => {
@@ -458,7 +470,7 @@ export default function MapScreen({
           would claim knowledge the data does not have.
         */}
         {route != null && (
-          <GeoJSONSource id="nav-route" data={route as never}>
+          <GeoJSONSource key="nav-route" id="nav-route" data={route as never}>
             <Layer
               id="nav-route-network"
               type="line"
@@ -499,6 +511,7 @@ export default function MapScreen({
         */}
         {here && (
           <GeoJSONSource
+            key="nav-here"
             id="nav-here"
             data={
               {
@@ -516,8 +529,40 @@ export default function MapScreen({
               } as never
             }
           >
+            {/*
+              Both layers carry a `key`, and removing either one crashes the
+              app.
+
+              The cone is conditional and the dot is not, and they are siblings
+              of the same type. React reconciles keyless siblings positionally
+              over the *rendered fiber list*, not over the JSX — and a condition
+              that renders nothing collapses that list. So while `heading` is
+              null there is exactly one fiber here, the dot's. The moment a
+              compass reading arrives the children become [cone, dot], React
+              lines the cone up against the fiber the dot has been using, and
+              hands it that fiber's hook state.
+
+              MapLibre's `useFrozenId` freezes a layer's id in `useState` on
+              first render and throws "\`id\` cannot be changed" if it ever sees
+              a different one — which is precisely what it then sees. That
+              throw is fatal, and in a release build it takes the whole app
+              down.
+
+              Keys make React match these by identity instead of position, so
+              the cone mounts as its own fiber and the dot keeps its own.
+
+              Why this survived every previous test: it needs a real compass.
+              Emulators and browsers report no heading, `heading` stays null
+              forever, the cone never renders and the list never changes shape.
+              It fired within seconds of the first run on a physical iPhone.
+
+              The cone must also stay *before* the dot — MapLibre draws in JSX
+              order and an arrow over the dot reads as a separate object — so
+              reordering was not an option here.
+            */}
             {heading !== null && (
               <Layer
+                key="nav-here-cone"
                 id="nav-here-cone"
                 type="symbol"
                 layout={{
@@ -536,6 +581,7 @@ export default function MapScreen({
               />
             )}
             <Layer
+              key="nav-here-dot"
               id="nav-here-dot"
               type="circle"
               paint={{
