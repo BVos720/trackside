@@ -58,6 +58,12 @@ const API_URL = 'https://api.met.no/weatherapi/locationforecast/2.0/compact';
  * that purpose without putting a personal email address into every outbound
  * request.
  *
+ * NOT YET REACHABLE. The repository is private, so this URL 404s. MET Norway
+ * accept a URL or an email, but it has to resolve to something that can be
+ * contacted — an unreachable one is closer to no contact than to compliance.
+ * Before release either make the repository public, or swap this for the app's
+ * own site or a support address. It is one constant, and nothing else reads it.
+ *
  * See https://api.met.no/doc/TermsOfService. Keep the version in step with
  * `app.json` when it changes; MET use it to identify badly-behaved releases.
  *
