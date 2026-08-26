@@ -19,6 +19,7 @@ import NavigatorPanel from './src/ui/screens/NavigatorPanel';
 import { usePosition } from './src/ui/state/usePosition';
 import { buildWalkNetwork, routeBetween } from './src/core/logic/route';
 import { formatDateRange } from './src/ui/DateRangePicker';
+import ErrorBoundary from './src/ui/ErrorBoundary';
 import MainMenu, { type Destination } from './src/ui/MainMenu';
 import SafetyNotice, {
   SAFETY_NOTICE_VERSION,
@@ -178,13 +179,23 @@ const CIRCUIT_CHOICES = (Object.keys(CIRCUIT_IDS) as VenueKey[]).map((v) => ({
  */
 export default function App() {
   return (
-    <SafeAreaProvider>
-      <ThemeProvider>
-        <SafetyGate>
-          <AppShell />
-        </SafetyGate>
-      </ThemeProvider>
-    </SafeAreaProvider>
+    /*
+     * Outside every provider, deliberately.
+     *
+     * A boundary inside `ThemeProvider` cannot report a failure in
+     * `ThemeProvider`. Putting it outermost means the one screen guaranteed
+     * to render is the one that says what went wrong — which is why
+     * ErrorBoundary hardcodes its colours rather than reading the theme.
+     */
+    <ErrorBoundary>
+      <SafeAreaProvider>
+        <ThemeProvider>
+          <SafetyGate>
+            <AppShell />
+          </SafetyGate>
+        </ThemeProvider>
+      </SafeAreaProvider>
+    </ErrorBoundary>
   );
 }
 

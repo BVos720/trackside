@@ -17,6 +17,17 @@ import 'react-native-get-random-values';
 import { registerRootComponent } from 'expo';
 
 import App from './App';
+import { installGlobalErrorHandler } from './src/ui/ErrorBoundary';
+
+/*
+ * Installed here, not in a component.
+ *
+ * An error thrown while the very first render runs would happen before any
+ * effect had a chance to install this, which is exactly the failure worth
+ * catching — so it goes at module scope in the entry file, before
+ * registerRootComponent. Only the crypto polyfill above may precede it.
+ */
+installGlobalErrorHandler();
 
 // registerRootComponent calls AppRegistry.registerComponent('main', () => App);
 // It also ensures that whether you load the app in Expo Go or in a native build,
