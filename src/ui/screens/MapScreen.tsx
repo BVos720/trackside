@@ -644,17 +644,34 @@ export default function MapScreen({
         Leaving 3D returns the camera to flat *and* north-up. Pitch and bearing
         are only reachable by gesture while tilted, so without the reset you can
         land back in 2D rotated 40° with no control that puts it straight.
+
+        ── Two things this deliberately does not do ────────────────────────
+        It does not pass `center`. It used to, and that meant every toggle
+        threw the camera back to the circuit's default centre — so glancing at
+        a corner in 3D and returning to 2D lost wherever you had panned to.
+        Tilting is not navigating; the view should stay put.
+
+        It does not pass `bearing` at all when entering 3D, rather than
+        passing `undefined`. The intent was "leave the rotation alone", but an
+        explicit `undefined` is a property that still exists on the object
+        crossing the bridge, and a camera stop is not the place to find out how
+        each platform reads that. Omitting the key says the same thing without
+        the question.
       */}
       <Pressable
         onPress={() => {
           const next = !is3D;
           setIs3D(next);
-          cameraRef.current?.easeTo({
-            center: view.centre,
+          // zoomTo, not easeTo: every centre-taking method on the camera
+          // *requires* a centre, and supplying one is the teleport described
+          // above. zoomTo takes the camera options without it, and the zoom it
+          // is handed is the one already tracked in state, so the view holds
+          // still while only the pitch and rotation change.
+          cameraRef.current?.zoomTo(zoom, {
             // 60, not MapLibre's 85: past roughly 70 with terrain on, the
             // camera ends up looking through a hillside rather than over it.
             pitch: next ? 60 : 0,
-            bearing: next ? undefined : 0,
+            ...(next ? {} : { bearing: 0 }),
             duration: next ? 900 : 700,
           });
         }}

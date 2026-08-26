@@ -12,6 +12,8 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   Image,
   Pressable,
+  KeyboardAvoidingView,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -349,7 +351,23 @@ export default function SpotSheet({
   const pendingCount = pendingPhotos.length;
 
   return (
-    <View style={styles.sheet}>
+    /*
+      The keyboard must push the sheet, not cover it.
+
+      This sheet is anchored to the bottom of the screen, which is exactly
+      where the keyboard appears — so typing a spot name hid the name field
+      itself along with Save, and there was no way to scroll to them because
+      the sheet had not moved. Reported from the phone as the keyboard sitting
+      in front of the menus.
+
+      `padding` on iOS and `height` on Android is the usual split: iOS reports
+      the keyboard frame and the view can be inset by it, where Android already
+      resizes the window and adding padding on top of that double-counts.
+    */
+    <KeyboardAvoidingView
+      style={styles.sheet}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    >
       <View style={styles.grabber} />
 
       <ScrollView
@@ -903,7 +921,7 @@ export default function SpotSheet({
           <Text style={styles.saveLabel}>Save</Text>
         </Pressable>
       </View>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 

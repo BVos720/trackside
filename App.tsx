@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import {
   SafeAreaProvider,
   useSafeAreaInsets,
@@ -859,6 +859,8 @@ function AppShell() {
     if (saving.current) return;
     saving.current = true;
 
+    const failedPhotos: string[] = [];
+
     try {
     if (sheet.kind === 'edit') {
       await update(sheet.id, draft);
@@ -867,26 +869,66 @@ function AppShell() {
       const spot = await create(draft, activeEventId);
       if (activeEventId) await setSpotIncluded(spot.id, true);
       for (const p of pendingPhotos) {
-        await addPhoto(
-          spot.id,
-          p.file,
-          p.kind,
-          p.isKey,
-          activeEvent?.tag ?? null,
-          p.metadataStripped,
-        );
+        /*
+         * A photo that will not copy must not cost you the spot.
+         *
+         * Reported from the phone as "I attach an image, the preview shows it,
+         * I press save and nothing happens" — followed by nineteen spots with
+         * no photo on them, because the button looked dead and got tapped
+         * nineteen times. The spot was being written every time; what never
+         * finished was this loop. Nothing below it ran, so the sheet never
+         * closed, and from the outside Save had simply stopped working.
+         *
+         * The likely cause is iCloud. With Optimise iPhone Storage the
+         * full-resolution image is not on the device, and the URI the picker
+         * hands back needs a download before anything can read it — which can
+         * stall, or fail outright with no signal. That is not something this
+         * app can prevent, but losing the waypoint over it is.
+         *
+         * So each photo is attempted on its own and its failure is collected
+         * rather than thrown. The spot is the part that matters: it carries the
+         * position you walked to, and a photo can be added again later from the
+         * spot sheet.
+         */
+        try {
+          await addPhoto(
+            spot.id,
+            p.file,
+            p.kind,
+            p.isKey,
+            activeEvent?.tag ?? null,
+            p.metadataStripped,
+          );
+        } catch (e) {
+          failedPhotos.push(e instanceof Error ? e.message : String(e));
+        }
         // The preview was only ever a handle on a blob in memory; the bytes
         // now live in the media store under the spot's own id.
         if (p.previewUri?.startsWith('blob:')) URL.revokeObjectURL(p.previewUri);
       }
       setPendingPhotos([]);
     }
-    setSheet({ kind: 'none' });
-    setPlacing(false);
     } finally {
-      // Released even on failure, or one thrown error would wedge the button
-      // for the rest of the session with no way back but a restart.
+      /*
+       * The sheet closes here, not in the try.
+       *
+       * Whatever failed above, leaving the sheet open is the one outcome that
+       * reads as "the button is broken" — which is exactly how this bug was
+       * reported. Released even on failure, too, or one thrown error would
+       * wedge Save for the rest of the session with no way back but a restart.
+       */
+      setSheet({ kind: 'none' });
+      setPlacing(false);
       saving.current = false;
+    }
+
+    if (failedPhotos.length > 0) {
+      Alert.alert(
+        failedPhotos.length === 1 ? 'Photo not saved' : 'Photos not saved',
+        `The spot was saved. ${
+          failedPhotos.length === 1 ? 'The photo' : `${failedPhotos.length} photos`
+        } could not be copied — if the original is stored in iCloud rather than on the phone, it may need downloading first. You can add it again from the spot.\n\n${failedPhotos[0]}`,
+      );
     }
   };
 
