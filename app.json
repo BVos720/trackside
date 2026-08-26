@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "trackside",
-    "slug": "trackside",
+    "slug": "brvs7200",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -11,7 +11,7 @@
       "bundleIdentifier": "nl.branco.trackside",
       "infoPlist": {
         "NSPhotoLibraryUsageDescription": "Trackside adds your photos to a spot as reference shots, so you can see where to stand when you come back.",
-        "NSCameraUsageDescription": "Trackside can take a reference photo of a spot without leaving the app."
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
@@ -22,7 +22,11 @@
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "nl.branco.trackside"
+      "package": "nl.branco.trackside",
+      "permissions": [
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -40,9 +44,17 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Trackside adds your photos to a spot as reference shots, so you can see where to stand when you come back."
+          "photosPermission": "Trackside adds your photos to a spot as reference shots, so you can see where to stand when you come back.",
+          "cameraPermission": false,
+          "microphonePermission": false
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "792f2dac-9669-4e62-b8e8-2339220aa9e9"
+      }
+    },
+    "owner": "brvs7200"
   }
 }
