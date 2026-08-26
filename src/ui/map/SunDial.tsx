@@ -48,11 +48,19 @@
  * changes under it as it moves (D4) and a big rectangle was the "clutter"
  * Branco named.
  */
+import { useMemo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
 import type { LatLon } from '../../core/domain/common';
 import { LightQuality, lightQuality, solarPosition } from '../../core/logic/sun';
-import { color, lightQualityColor, space, type, weight } from '../theme';
+import {
+  lightQualityColor,
+  space,
+  type,
+  useTheme,
+  weight,
+  type Theme,
+} from '../theme';
 
 /** Outer diameter of the compass ring. */
 const RING_SIZE = 88;
@@ -165,6 +173,9 @@ export default function SunDial({
   top?: number;
   heading?: number | null;
 }) {
+  const { color } = useTheme();
+  const styles = useMemo(() => makeStyles(color), [color]);
+
   const solar = solarPosition(at, position);
   const quality = lightQuality(solar.altitude);
   const qualityColor = lightQualityColor[quality];
@@ -250,134 +261,136 @@ const textLegibility = {
   textShadowRadius: 3,
 } as const;
 
-const styles = StyleSheet.create({
-  root: {
-    position: 'absolute',
-    right: space.md,
-    width: RING_SIZE + space.sm * 2,
-    alignItems: 'center',
-  },
-  title: {
-    ...textLegibility,
-    color: color.text,
-    fontSize: 10,
-    fontWeight: weight.bold,
-    letterSpacing: 1.5,
-  },
+function makeStyles(color: Theme['color']) {
+  return StyleSheet.create({
+    root: {
+      position: 'absolute',
+      right: space.md,
+      width: RING_SIZE + space.sm * 2,
+      alignItems: 'center',
+    },
+    title: {
+      ...textLegibility,
+      color: color.text,
+      fontSize: 10,
+      fontWeight: weight.bold,
+      letterSpacing: 1.5,
+    },
 
-  ringSlot: {
-    width: RING_SIZE,
-    height: RING_SIZE,
-    marginTop: space.xs,
-  },
-  /**
-   * The one solid shape left — a disc sized to the ring, not a rectangle
-   * around the whole widget. Reads as a physical object resting on the map
-   * (a bezel compass) rather than a UI panel that happens to contain one, and
-   * still gives the ring's thin border and small marker the opaque backing
-   * §5.14 asks for against a map whose own colour varies underneath it. Same
-   * `rgba(11,13,16,0.86)` already used for this elsewhere in the app
-   * (`MapScreen`'s mode button, `CircuitRuler`) — reused, not reinvented.
-   */
-  ringBackdrop: {
-    position: 'absolute',
-    width: RING_SIZE,
-    height: RING_SIZE,
-    borderRadius: RING_RADIUS,
-    backgroundColor: 'rgba(11,13,16,0.86)',
-  },
-  // Rotated by C2 as one unit — see the file header. Must stay a plain
-  // wrapper with no padding/margin of its own so RING_RADIUS-based placement
-  // inside it stays correct regardless of rotation.
-  ringWrap: {
-    position: 'absolute',
-    width: RING_SIZE,
-    height: RING_SIZE,
-  },
-  ring: {
-    position: 'absolute',
-    width: RING_SIZE,
-    height: RING_SIZE,
-    borderRadius: RING_RADIUS,
-    borderWidth: 1.5,
-    borderColor: color.border,
-  },
-  northLabel: {
-    position: 'absolute',
-    top: -2,
-    left: RING_RADIUS - 5,
-    width: 10,
-    textAlign: 'center',
-    color: color.textMuted,
-    fontSize: 9,
-    fontWeight: weight.bold,
-  },
-  centreDot: {
-    position: 'absolute',
-    width: 3,
-    height: 3,
-    borderRadius: 1.5,
-    left: RING_RADIUS - 1.5,
-    top: RING_RADIUS - 1.5,
-    backgroundColor: color.border,
-  },
-  halo: { position: 'absolute', opacity: 0.28 },
-  /**
-   * `color.border` rather than `color.background`: the marker sits on the
-   * ring backdrop, not the map, so a border matched to `color.background` is
-   * invisible by construction — worse, at `LightQuality.Dark` the fill
-   * (`lightQualityColor.dark`, `#121722`) is itself a near-match for that
-   * same background, so fill and border and backdrop all collapsed into one
-   * indistinguishable smudge and the marker all but disappeared exactly when
-   * it is doing its most important job (below the horizon is still "where").
-   * A neutral, already-defined edge keeps every quality's marker legible as a
-   * shape without touching any quality's own colour.
-   */
-  marker: {
-    position: 'absolute',
-    borderWidth: 1,
-    borderColor: color.border,
-  },
+    ringSlot: {
+      width: RING_SIZE,
+      height: RING_SIZE,
+      marginTop: space.xs,
+    },
+    /**
+     * The one solid shape left — a disc sized to the ring, not a rectangle
+     * around the whole widget. Reads as a physical object resting on the map
+     * (a bezel compass) rather than a UI panel that happens to contain one, and
+     * still gives the ring's thin border and small marker the opaque backing
+     * §5.14 asks for against a map whose own colour varies underneath it. Same
+     * `rgba(11,13,16,0.86)` already used for this elsewhere in the app
+     * (`MapScreen`'s mode button, `CircuitRuler`) — reused, not reinvented.
+     */
+    ringBackdrop: {
+      position: 'absolute',
+      width: RING_SIZE,
+      height: RING_SIZE,
+      borderRadius: RING_RADIUS,
+      backgroundColor: 'rgba(11,13,16,0.86)',
+    },
+    // Rotated by C2 as one unit — see the file header. Must stay a plain
+    // wrapper with no padding/margin of its own so RING_RADIUS-based placement
+    // inside it stays correct regardless of rotation.
+    ringWrap: {
+      position: 'absolute',
+      width: RING_SIZE,
+      height: RING_SIZE,
+    },
+    ring: {
+      position: 'absolute',
+      width: RING_SIZE,
+      height: RING_SIZE,
+      borderRadius: RING_RADIUS,
+      borderWidth: 1.5,
+      borderColor: color.border,
+    },
+    northLabel: {
+      position: 'absolute',
+      top: -2,
+      left: RING_RADIUS - 5,
+      width: 10,
+      textAlign: 'center',
+      color: color.textMuted,
+      fontSize: 9,
+      fontWeight: weight.bold,
+    },
+    centreDot: {
+      position: 'absolute',
+      width: 3,
+      height: 3,
+      borderRadius: 1.5,
+      left: RING_RADIUS - 1.5,
+      top: RING_RADIUS - 1.5,
+      backgroundColor: color.border,
+    },
+    halo: { position: 'absolute', opacity: 0.28 },
+    /**
+     * `color.border` rather than `color.background`: the marker sits on the
+     * ring backdrop, not the map, so a border matched to `color.background` is
+     * invisible by construction — worse, at `LightQuality.Dark` the fill
+     * (`lightQualityColor.dark`, `#121722`) is itself a near-match for that
+     * same background, so fill and border and backdrop all collapsed into one
+     * indistinguishable smudge and the marker all but disappeared exactly when
+     * it is doing its most important job (below the horizon is still "where").
+     * A neutral, already-defined edge keeps every quality's marker legible as a
+     * shape without touching any quality's own colour.
+     */
+    marker: {
+      position: 'absolute',
+      borderWidth: 1,
+      borderColor: color.border,
+    },
 
-  /**
-   * C2's honesty note. Same micro-label vocabulary as `title`/`qualityLabel`
-   * (all-caps, `textFaint`, tight tracking) so it reads as part of the same
-   * system rather than a warning banner — this is a normal, expected state
-   * (no permission yet, no sensor, indoors), not an error.
-   */
-  northUpNote: {
-    ...textLegibility,
-    marginTop: space.xs,
-    color: color.textFaint,
-    fontSize: 9,
-    fontWeight: weight.bold,
-    letterSpacing: 1,
-  },
+    /**
+     * C2's honesty note. Same micro-label vocabulary as `title`/`qualityLabel`
+     * (all-caps, `textFaint`, tight tracking) so it reads as part of the same
+     * system rather than a warning banner — this is a normal, expected state
+     * (no permission yet, no sensor, indoors), not an error.
+     */
+    northUpNote: {
+      ...textLegibility,
+      marginTop: space.xs,
+      color: color.textFaint,
+      fontSize: 9,
+      fontWeight: weight.bold,
+      letterSpacing: 1,
+    },
 
-  row: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    gap: space.xs,
-    marginTop: space.xs,
-  },
-  bearingValue: {
-    ...textLegibility,
-    color: color.text,
-    fontSize: type.label,
-    fontWeight: weight.bold,
-  },
-  altitudeValue: {
-    ...textLegibility,
-    color: color.textMuted,
-    fontSize: type.label,
-    fontVariant: ['tabular-nums'],
-  },
-  qualityLabel: {
-    ...textLegibility,
-    marginTop: 1,
-    color: color.textFaint,
-    fontSize: 9,
-    fontWeight: weight.bold,
-    letterSpacing: 1,
-  },
-});
+    row: {
+      flexDirection: 'row',
+      alignItems: 'baseline',
+      gap: space.xs,
+      marginTop: space.xs,
+    },
+    bearingValue: {
+      ...textLegibility,
+      color: color.text,
+      fontSize: type.label,
+      fontWeight: weight.bold,
+    },
+    altitudeValue: {
+      ...textLegibility,
+      color: color.textMuted,
+      fontSize: type.label,
+      fontVariant: ['tabular-nums'],
+    },
+    qualityLabel: {
+      ...textLegibility,
+      marginTop: 1,
+      color: color.textFaint,
+      fontSize: 9,
+      fontWeight: weight.bold,
+      letterSpacing: 1,
+    },
+  });
+}

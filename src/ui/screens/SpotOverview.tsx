@@ -5,11 +5,12 @@
  * Editing is a deliberate second step, which also means a mis-tap on the map
  * cannot silently change a saved spot.
  */
+import { useMemo } from 'react';
 import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { AccessClassification, type Spot } from '../../core/domain/spot';
 import type { Media } from '../../core/domain/media';
-import { color, radius, space, type, weight } from '../theme';
+import { radius, space, type, useTheme, weight, type Theme } from '../theme';
 
 const ACCESS_LABEL: Record<AccessClassification, string> = {
   [AccessClassification.Official]: 'Official',
@@ -37,6 +38,9 @@ export default function SpotOverview({
   onClose: () => void;
   onSetKey: (mediaId: string) => void;
 }) {
+  const { color } = useTheme();
+  const styles = useMemo(() => makeStyles(color), [color]);
+
   const key = media.find((m) => m.isKeyImage) ?? null;
   const keyUri = key?.storageKey ? mediaUris[key.storageKey] : undefined;
   const rest = media.filter((m) => !m.isKeyImage);
@@ -189,6 +193,9 @@ function Fact({
   value: string;
   muted?: boolean;
 }) {
+  const { color } = useTheme();
+  const styles = useMemo(() => makeStyles(color), [color]);
+
   return (
     <View style={styles.fact}>
       <Text style={styles.factLabel}>{label.toUpperCase()}</Text>
@@ -199,176 +206,178 @@ function Fact({
   );
 }
 
-const styles = StyleSheet.create({
-  sheet: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    maxHeight: '82%',
-    backgroundColor: color.surface,
-    borderTopLeftRadius: radius.lg,
-    borderTopRightRadius: radius.lg,
-    borderTopWidth: 1,
-    borderColor: color.border,
-  },
-  // A 4pt bar is not a tap target; the zone around it is.
-  grabZone: { alignItems: 'center', paddingTop: space.sm, paddingBottom: space.xs },
-  grabber: {
-    width: 44,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: color.border,
-  },
-  body: { flexGrow: 0 },
-  bodyContent: { padding: space.md, paddingBottom: space.lg },
-  pressed: { opacity: 0.7 },
+function makeStyles(color: Theme['color']) {
+  return StyleSheet.create({
+    sheet: {
+      position: 'absolute',
+      left: 0,
+      right: 0,
+      bottom: 0,
+      maxHeight: '82%',
+      backgroundColor: color.surface,
+      borderTopLeftRadius: radius.lg,
+      borderTopRightRadius: radius.lg,
+      borderTopWidth: 1,
+      borderColor: color.border,
+    },
+    // A 4pt bar is not a tap target; the zone around it is.
+    grabZone: { alignItems: 'center', paddingTop: space.sm, paddingBottom: space.xs },
+    grabber: {
+      width: 44,
+      height: 4,
+      borderRadius: 2,
+      backgroundColor: color.border,
+    },
+    body: { flexGrow: 0 },
+    bodyContent: { padding: space.md, paddingBottom: space.lg },
+    pressed: { opacity: 0.7 },
 
-  hero: { width: '100%', height: 168, borderRadius: radius.md },
-  heroEmpty: {
-    backgroundColor: color.surfaceRaised,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  heroEmptyText: {
-    color: color.textMuted,
-    fontSize: type.body,
-    fontWeight: weight.bold,
-  },
-  heroEmptyHint: {
-    color: color.textFaint,
-    fontSize: type.label,
-    marginTop: space.xs,
-  },
+    hero: { width: '100%', height: 168, borderRadius: radius.md },
+    heroEmpty: {
+      backgroundColor: color.surfaceRaised,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    heroEmptyText: {
+      color: color.textMuted,
+      fontSize: type.body,
+      fontWeight: weight.bold,
+    },
+    heroEmptyHint: {
+      color: color.textFaint,
+      fontSize: type.label,
+      marginTop: space.xs,
+    },
 
-  name: {
-    color: color.text,
-    fontSize: type.title,
-    fontWeight: weight.bold,
-    marginTop: space.md,
-  },
-  coords: {
-    color: color.textFaint,
-    fontSize: type.label,
-    fontVariant: ['tabular-nums'],
-    marginTop: 2,
-  },
+    name: {
+      color: color.text,
+      fontSize: type.title,
+      fontWeight: weight.bold,
+      marginTop: space.md,
+    },
+    coords: {
+      color: color.textFaint,
+      fontSize: type.label,
+      fontVariant: ['tabular-nums'],
+      marginTop: 2,
+    },
 
-  factRow: { flexDirection: 'row', gap: space.sm, marginTop: space.md },
-  fact: {
-    flex: 1,
-    backgroundColor: color.surfaceRaised,
-    borderRadius: radius.md,
-    padding: space.sm,
-  },
-  factLabel: {
-    color: color.textFaint,
-    fontSize: type.label,
-    fontWeight: weight.bold,
-    letterSpacing: 1,
-  },
-  factValue: {
-    color: color.text,
-    fontSize: type.mono,
-    fontWeight: weight.bold,
-    marginTop: 2,
-  },
-  factValueMuted: { color: color.undocumented, fontWeight: weight.regular },
+    factRow: { flexDirection: 'row', gap: space.sm, marginTop: space.md },
+    fact: {
+      flex: 1,
+      backgroundColor: color.surfaceRaised,
+      borderRadius: radius.md,
+      padding: space.sm,
+    },
+    factLabel: {
+      color: color.textFaint,
+      fontSize: type.label,
+      fontWeight: weight.bold,
+      letterSpacing: 1,
+    },
+    factValue: {
+      color: color.text,
+      fontSize: type.mono,
+      fontWeight: weight.bold,
+      marginTop: 2,
+    },
+    factValueMuted: { color: color.undocumented, fontWeight: weight.regular },
 
-  label: {
-    color: color.textFaint,
-    fontSize: type.label,
-    fontWeight: weight.bold,
-    letterSpacing: 1.5,
-    marginTop: space.lg,
-  },
-  notes: {
-    color: color.text,
-    fontSize: type.body,
-    marginTop: space.xs,
-    lineHeight: 21,
-  },
-  help: { color: color.textFaint, fontSize: type.label, marginTop: space.xs },
+    label: {
+      color: color.textFaint,
+      fontSize: type.label,
+      fontWeight: weight.bold,
+      letterSpacing: 1.5,
+      marginTop: space.lg,
+    },
+    notes: {
+      color: color.text,
+      fontSize: type.body,
+      marginTop: space.xs,
+      lineHeight: 21,
+    },
+    help: { color: color.textFaint, fontSize: type.label, marginTop: space.xs },
 
-  shotRow: {
-    marginTop: space.sm,
-    padding: space.sm,
-    borderRadius: radius.md,
-    backgroundColor: color.surfaceRaised,
-  },
-  shotTechnique: {
-    color: color.text,
-    fontSize: type.body,
-    fontWeight: weight.bold,
-  },
-  shotDetail: {
-    color: color.textMuted,
-    fontSize: type.label,
-    marginTop: 2,
-    fontVariant: ['tabular-nums'],
-  },
+    shotRow: {
+      marginTop: space.sm,
+      padding: space.sm,
+      borderRadius: radius.md,
+      backgroundColor: color.surfaceRaised,
+    },
+    shotTechnique: {
+      color: color.text,
+      fontSize: type.body,
+      fontWeight: weight.bold,
+    },
+    shotDetail: {
+      color: color.textMuted,
+      fontSize: type.label,
+      marginTop: 2,
+      fontVariant: ['tabular-nums'],
+    },
 
-  thumbRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: space.sm,
-    marginTop: space.sm,
-  },
-  thumb: { width: 96 },
-  thumbImage: { width: 96, height: 72, borderRadius: radius.sm },
-  thumbMissing: {
-    backgroundColor: color.surfaceRaised,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  thumbMissingText: { color: color.textFaint, fontSize: 11 },
-  thumbKind: {
-    color: color.textFaint,
-    fontSize: 11,
-    marginTop: 2,
-    textTransform: 'uppercase',
-  },
+    thumbRow: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: space.sm,
+      marginTop: space.sm,
+    },
+    thumb: { width: 96 },
+    thumbImage: { width: 96, height: 72, borderRadius: radius.sm },
+    thumbMissing: {
+      backgroundColor: color.surfaceRaised,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    thumbMissingText: { color: color.textFaint, fontSize: 11 },
+    thumbKind: {
+      color: color.textFaint,
+      fontSize: 11,
+      marginTop: 2,
+      textTransform: 'uppercase',
+    },
 
-  actions: {
-    flexDirection: 'row',
-    gap: space.sm,
-    padding: space.md,
-    borderTopWidth: 1,
-    borderTopColor: color.border,
-  },
-  deleteBtn: {
-    height: 48,
-    paddingHorizontal: space.md,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: radius.md,
-    backgroundColor: color.surfaceRaised,
-  },
-  deleteLabel: {
-    color: color.danger,
-    fontSize: type.body,
-    fontWeight: weight.bold,
-  },
-  closeBtn: {
-    flex: 1,
-    height: 48,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: radius.md,
-    backgroundColor: color.surfaceRaised,
-  },
-  closeLabel: {
-    color: color.textMuted,
-    fontSize: type.body,
-    fontWeight: weight.bold,
-  },
-  editBtn: {
-    flex: 1,
-    height: 48,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: radius.md,
-    backgroundColor: color.accent,
-  },
-  editLabel: { color: color.onAccent, fontSize: type.body, fontWeight: weight.bold },
-});
+    actions: {
+      flexDirection: 'row',
+      gap: space.sm,
+      padding: space.md,
+      borderTopWidth: 1,
+      borderTopColor: color.border,
+    },
+    deleteBtn: {
+      height: 48,
+      paddingHorizontal: space.md,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: radius.md,
+      backgroundColor: color.surfaceRaised,
+    },
+    deleteLabel: {
+      color: color.danger,
+      fontSize: type.body,
+      fontWeight: weight.bold,
+    },
+    closeBtn: {
+      flex: 1,
+      height: 48,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: radius.md,
+      backgroundColor: color.surfaceRaised,
+    },
+    closeLabel: {
+      color: color.textMuted,
+      fontSize: type.body,
+      fontWeight: weight.bold,
+    },
+    editBtn: {
+      flex: 1,
+      height: 48,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: radius.md,
+      backgroundColor: color.accent,
+    },
+    editLabel: { color: color.onAccent, fontSize: type.body, fontWeight: weight.bold },
+  });
+}

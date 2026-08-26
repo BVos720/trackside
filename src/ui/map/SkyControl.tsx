@@ -85,7 +85,15 @@ import {
   sampleDayLight,
 } from '../../core/logic/lightStrip';
 import { lightQuality, solarPosition } from '../../core/logic/sun';
-import { color, lightQualityColor, radius, space, type, weight } from '../theme';
+import {
+  lightQualityColor,
+  radius,
+  space,
+  type,
+  useTheme,
+  weight,
+  type Theme,
+} from '../theme';
 import type { MapClock } from '../state/useMapClock';
 
 /** Full interactive height, while a thumb is down. Matches the old always-on height. */
@@ -138,6 +146,9 @@ export default function SkyControl({
   top?: number;
   bottom?: number;
 }) {
+  const { color } = useTheme();
+  const styles = useMemo(() => makeStyles(color), [color]);
+
   const [stripWidth, setStripWidth] = useState(0);
   const [expanded, setExpanded] = useState(false);
   const stripHeight = expanded ? STRIP_HEIGHT_EXPANDED : STRIP_HEIGHT_COLLAPSED;
@@ -322,122 +333,124 @@ const textLegibility = {
   textShadowRadius: 3,
 } as const;
 
-const styles = StyleSheet.create({
-  root: {
-    position: 'absolute',
-    left: space.md,
-    right: space.md,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: space.xs,
-  },
-  title: {
-    ...textLegibility,
-    color: color.text,
-    fontSize: 10,
-    fontWeight: weight.bold,
-    letterSpacing: 1.5,
-  },
-  timeLabel: {
-    ...textLegibility,
-    marginLeft: space.sm,
-    color: color.text,
-    fontSize: type.body,
-    fontWeight: weight.bold,
-    fontVariant: ['tabular-nums'],
-  },
-  qualityLabel: {
-    ...textLegibility,
-    marginLeft: space.sm,
-    color: color.textMuted,
-    fontSize: 9,
-    fontWeight: weight.bold,
-    letterSpacing: 1,
-  },
-  /**
-   * The one button on this control, so it keeps its own opaque fill even
-   * though the panel around it lost its own (D1) — a tap target has to stay
-   * legible and feel pressable regardless of what the "quiet" strip below it
-   * is doing, and `HIT_SIZE`-style controls elsewhere in the app are always
-   * solid, never see-through. A `Pressable` now (see the JSX comment above),
-   * so layout/paint lives here and text styling lives in `nowButtonLabel`.
-   */
-  nowButton: {
-    marginLeft: 'auto',
-    paddingHorizontal: space.sm,
-    paddingVertical: space.xs,
-    borderRadius: radius.sm,
-    backgroundColor: color.surfaceRaised,
-    borderWidth: 1,
-    borderColor: color.border,
-    overflow: 'hidden',
-  },
-  nowButtonLive: {
-    backgroundColor: color.accent,
-    borderColor: color.accent,
-  },
-  nowButtonLabel: {
-    ...textLegibility,
-    color: color.text,
-    fontSize: 10,
-    fontWeight: weight.bold,
-    letterSpacing: 1,
-  },
-  nowButtonLabelLive: {
-    color: color.onAccent,
-    textShadowColor: 'transparent',
-  },
+function makeStyles(color: Theme['color']) {
+  return StyleSheet.create({
+    root: {
+      position: 'absolute',
+      left: space.md,
+      right: space.md,
+    },
+    header: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginBottom: space.xs,
+    },
+    title: {
+      ...textLegibility,
+      color: color.text,
+      fontSize: 10,
+      fontWeight: weight.bold,
+      letterSpacing: 1.5,
+    },
+    timeLabel: {
+      ...textLegibility,
+      marginLeft: space.sm,
+      color: color.text,
+      fontSize: type.body,
+      fontWeight: weight.bold,
+      fontVariant: ['tabular-nums'],
+    },
+    qualityLabel: {
+      ...textLegibility,
+      marginLeft: space.sm,
+      color: color.textMuted,
+      fontSize: 9,
+      fontWeight: weight.bold,
+      letterSpacing: 1,
+    },
+    /**
+     * The one button on this control, so it keeps its own opaque fill even
+     * though the panel around it lost its own (D1) — a tap target has to stay
+     * legible and feel pressable regardless of what the "quiet" strip below it
+     * is doing, and `HIT_SIZE`-style controls elsewhere in the app are always
+     * solid, never see-through. A `Pressable` now (see the JSX comment above),
+     * so layout/paint lives here and text styling lives in `nowButtonLabel`.
+     */
+    nowButton: {
+      marginLeft: 'auto',
+      paddingHorizontal: space.sm,
+      paddingVertical: space.xs,
+      borderRadius: radius.sm,
+      backgroundColor: color.surfaceRaised,
+      borderWidth: 1,
+      borderColor: color.border,
+      overflow: 'hidden',
+    },
+    nowButtonLive: {
+      backgroundColor: color.accent,
+      borderColor: color.accent,
+    },
+    nowButtonLabel: {
+      ...textLegibility,
+      color: color.text,
+      fontSize: 10,
+      fontWeight: weight.bold,
+      letterSpacing: 1,
+    },
+    nowButtonLabelLive: {
+      color: color.onAccent,
+      textShadowColor: 'transparent',
+    },
 
-  strip: {
-    flexDirection: 'row',
-    borderRadius: radius.sm,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: color.border,
-  },
-  hourCell: { flex: 1, height: '100%' },
-  knob: {
-    position: 'absolute',
-    top: -3,
-    width: KNOB_SIZE,
-    borderRadius: KNOB_SIZE / 2,
-    borderWidth: 2,
-    borderColor: color.text,
-    backgroundColor: 'transparent',
-  },
+    strip: {
+      flexDirection: 'row',
+      borderRadius: radius.sm,
+      overflow: 'hidden',
+      borderWidth: 1,
+      borderColor: color.border,
+    },
+    hourCell: { flex: 1, height: '100%' },
+    knob: {
+      position: 'absolute',
+      top: -3,
+      width: KNOB_SIZE,
+      borderRadius: KNOB_SIZE / 2,
+      borderWidth: 2,
+      borderColor: color.text,
+      backgroundColor: 'transparent',
+    },
 
-  hourTicks: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: space.xs,
-  },
-  hourTick: { ...textLegibility, color: color.textMuted, fontSize: 9, fontVariant: ['tabular-nums'] },
+    hourTicks: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      marginTop: space.xs,
+    },
+    hourTick: { ...textLegibility, color: color.textMuted, fontSize: 9, fontVariant: ['tabular-nums'] },
 
-  dateRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: space.sm,
-    gap: space.md,
-  },
-  dateArrow: {
-    ...textLegibility,
-    color: color.text,
-    fontSize: type.title,
-    fontWeight: weight.bold,
-    paddingHorizontal: space.md,
-    // Assume gloves — HIT_SIZE-ish tap target without literally reserving
-    // that much visual space either side of a small date label.
-    paddingVertical: space.xs,
-  },
-  dateLabel: {
-    ...textLegibility,
-    color: color.text,
-    fontSize: type.body,
-    fontWeight: weight.bold,
-    minWidth: 120,
-    textAlign: 'center',
-  },
-});
+    dateRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginTop: space.sm,
+      gap: space.md,
+    },
+    dateArrow: {
+      ...textLegibility,
+      color: color.text,
+      fontSize: type.title,
+      fontWeight: weight.bold,
+      paddingHorizontal: space.md,
+      // Assume gloves — HIT_SIZE-ish tap target without literally reserving
+      // that much visual space either side of a small date label.
+      paddingVertical: space.xs,
+    },
+    dateLabel: {
+      ...textLegibility,
+      color: color.text,
+      fontSize: type.body,
+      fontWeight: weight.bold,
+      minWidth: 120,
+      textAlign: 'center',
+    },
+  });
+}

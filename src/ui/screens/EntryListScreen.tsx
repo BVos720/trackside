@@ -39,7 +39,15 @@ import { PdfBridge, PDF_BRIDGE_SUPPORTED } from '../../storage-local/pdfBridge';
 import Collapsible from '../Collapsible';
 import ColumnMapper from './ColumnMapper';
 import { useMappingTemplates } from '../state/useMappingTemplates';
-import { HIT_SIZE, color, radius, space, type, weight } from '../theme';
+import {
+  HIT_SIZE,
+  radius,
+  space,
+  type,
+  useTheme,
+  weight,
+  type Theme,
+} from '../theme';
 
 export interface SavedEntryRow {
   readonly id: string;
@@ -71,6 +79,9 @@ export default function EntryListScreen({
   onRemoveEntry?: (id: string) => void;
   onCommit: (rows: TextEntry[]) => void;
 }) {
+  const { color } = useTheme();
+  const styles = useMemo(() => makeStyles(color), [color]);
+
   const [raw, setRaw] = useState('');
   const [rows, setRows] = useState<ReviewRow[]>([]);
   const [editing, setEditing] = useState<string | null>(null);
@@ -468,6 +479,9 @@ function Field({
   onChange: (v: string) => void;
   placeholder: string;
 }) {
+  const { color } = useTheme();
+  const styles = useMemo(() => makeStyles(color), [color]);
+
   return (
     <View style={styles.field}>
       <Text style={styles.fieldLabel}>{label}</Text>
@@ -484,176 +498,178 @@ function Field({
   );
 }
 
-const styles = StyleSheet.create({
-  pressed: { opacity: 0.7 },
-  disabled: { opacity: 0.4 },
+function makeStyles(color: Theme['color']) {
+  return StyleSheet.create({
+    pressed: { opacity: 0.7 },
+    disabled: { opacity: 0.4 },
 
-  progressRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    justifyContent: 'space-between',
-  },
-  progressCount: {
-    color: color.accent,
-    fontSize: type.label,
-    fontWeight: weight.bold,
-    fontVariant: ['tabular-nums'],
-  },
+    progressRow: {
+      flexDirection: 'row',
+      alignItems: 'flex-end',
+      justifyContent: 'space-between',
+    },
+    progressCount: {
+      color: color.accent,
+      fontSize: type.label,
+      fontWeight: weight.bold,
+      fontVariant: ['tabular-nums'],
+    },
 
-  label: {
-    color: color.textFaint,
-    fontSize: type.label,
-    fontWeight: weight.bold,
-    letterSpacing: 1.5,
-    marginTop: space.lg,
-  },
-  help: {
-    color: color.textMuted,
-    fontSize: type.label,
-    marginTop: space.xs,
-    lineHeight: 17,
-  },
+    label: {
+      color: color.textFaint,
+      fontSize: type.label,
+      fontWeight: weight.bold,
+      letterSpacing: 1.5,
+      marginTop: space.lg,
+    },
+    help: {
+      color: color.textMuted,
+      fontSize: type.label,
+      marginTop: space.xs,
+      lineHeight: 17,
+    },
 
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space.sm,
-    minHeight: 48,
-    paddingHorizontal: space.sm,
-    marginTop: space.xs,
-    borderRadius: radius.md,
-    backgroundColor: color.surface,
-    borderWidth: 1,
-    borderColor: 'transparent',
-  },
-  rowOn: { borderColor: color.accent },
-  number: {
-    color: color.text,
-    fontSize: type.label,
-    fontWeight: weight.bold,
-    fontVariant: ['tabular-nums'],
-    width: 36,
-  },
-  rowBody: { flex: 1 },
-  rowTitle: { color: color.text, fontSize: type.label, fontWeight: weight.bold },
-  rowMeta: { color: color.textMuted, fontSize: 11, marginTop: 2 },
-  remove: { color: color.textMuted, fontSize: 11, fontWeight: weight.bold },
+    row: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: space.sm,
+      minHeight: 48,
+      paddingHorizontal: space.sm,
+      marginTop: space.xs,
+      borderRadius: radius.md,
+      backgroundColor: color.surface,
+      borderWidth: 1,
+      borderColor: 'transparent',
+    },
+    rowOn: { borderColor: color.accent },
+    number: {
+      color: color.text,
+      fontSize: type.label,
+      fontWeight: weight.bold,
+      fontVariant: ['tabular-nums'],
+      width: 36,
+    },
+    rowBody: { flex: 1 },
+    rowTitle: { color: color.text, fontSize: type.label, fontWeight: weight.bold },
+    rowMeta: { color: color.textMuted, fontSize: 11, marginTop: 2 },
+    remove: { color: color.textMuted, fontSize: 11, fontWeight: weight.bold },
 
-  tick: { color: color.textFaint, fontSize: 16, width: 18 },
-  tickOn: { color: color.accent, fontWeight: weight.bold },
-  // Gloves (§5.14): the glyph is small, the target it sits in is not.
-  tickTap: {
-    minWidth: 32,
-    minHeight: HIT_SIZE - 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+    tick: { color: color.textFaint, fontSize: 16, width: 18 },
+    tickOn: { color: color.accent, fontWeight: weight.bold },
+    // Gloves (§5.14): the glyph is small, the target it sits in is not.
+    tickTap: {
+      minWidth: 32,
+      minHeight: HIT_SIZE - 16,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
 
-  paste: {
-    marginTop: space.sm,
-    minHeight: 96,
-    textAlignVertical: 'top',
-    backgroundColor: color.surfaceRaised,
-    borderRadius: radius.md,
-    paddingHorizontal: space.md,
-    paddingVertical: space.sm,
-    color: color.text,
-    fontSize: type.body,
-  },
-  btn: {
-    marginTop: space.sm,
-    height: 48,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: radius.md,
-    backgroundColor: color.surfaceRaised,
-  },
-  btnLabel: { color: color.text, fontSize: type.label, fontWeight: weight.bold },
+    paste: {
+      marginTop: space.sm,
+      minHeight: 96,
+      textAlignVertical: 'top',
+      backgroundColor: color.surfaceRaised,
+      borderRadius: radius.md,
+      paddingHorizontal: space.md,
+      paddingVertical: space.sm,
+      color: color.text,
+      fontSize: type.body,
+    },
+    btn: {
+      marginTop: space.sm,
+      height: 48,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: radius.md,
+      backgroundColor: color.surfaceRaised,
+    },
+    btnLabel: { color: color.text, fontSize: type.label, fontWeight: weight.bold },
 
-  status: {
-    color: color.text,
-    fontSize: type.label,
-    marginTop: space.sm,
-    backgroundColor: color.surface,
-    borderRadius: radius.sm,
-    padding: space.sm,
-  },
+    status: {
+      color: color.text,
+      fontSize: type.label,
+      marginTop: space.sm,
+      backgroundColor: color.surface,
+      borderRadius: radius.sm,
+      padding: space.sm,
+    },
 
-  reviewRow: {
-    marginTop: space.sm,
-    padding: space.sm,
-    borderRadius: radius.md,
-    backgroundColor: color.surface,
-    borderWidth: 1,
-    borderColor: 'transparent',
-  },
-  reviewRowOn: { borderColor: color.accent },
-  // A row with no number cannot be added yet, and says so without shouting.
-  reviewRowUnread: { borderColor: color.undocumented, borderStyle: 'dashed' },
-  reviewHead: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
-  reviewBody: { flex: 1, minHeight: HIT_SIZE - 20, justifyContent: 'center' },
-  chevron: { color: color.textFaint, fontSize: 14, width: 14, textAlign: 'center' },
+    reviewRow: {
+      marginTop: space.sm,
+      padding: space.sm,
+      borderRadius: radius.md,
+      backgroundColor: color.surface,
+      borderWidth: 1,
+      borderColor: 'transparent',
+    },
+    reviewRowOn: { borderColor: color.accent },
+    // A row with no number cannot be added yet, and says so without shouting.
+    reviewRowUnread: { borderColor: color.undocumented, borderStyle: 'dashed' },
+    reviewHead: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
+    reviewBody: { flex: 1, minHeight: HIT_SIZE - 20, justifyContent: 'center' },
+    chevron: { color: color.textFaint, fontSize: 14, width: 14, textAlign: 'center' },
 
-  source: {
-    color: color.textFaint,
-    fontSize: 11,
-    marginTop: space.xs,
-    fontStyle: 'italic',
-  },
+    source: {
+      color: color.textFaint,
+      fontSize: 11,
+      marginTop: space.xs,
+      fontStyle: 'italic',
+    },
 
-  editor: {
-    marginTop: space.sm,
-    paddingTop: space.sm,
-    borderTopWidth: 1,
-    borderTopColor: color.border,
-    gap: space.xs,
-  },
-  field: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
-  fieldLabel: {
-    color: color.textFaint,
-    fontSize: 11,
-    fontWeight: weight.bold,
-    width: 56,
-  },
-  input: {
-    flex: 1,
-    minHeight: 44,
-    backgroundColor: color.surfaceRaised,
-    borderRadius: radius.sm,
-    paddingHorizontal: space.sm,
-    color: color.text,
-    fontSize: type.label,
-  },
-  editorActions: {
-    flexDirection: 'row',
-    gap: space.sm,
-    marginTop: space.xs,
-  },
-  danger: {
-    flex: 1,
-    height: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: radius.md,
-    backgroundColor: color.surfaceRaised,
-  },
-  dangerLabel: { color: color.danger, fontSize: type.label, fontWeight: weight.bold },
-  done: {
-    flex: 1,
-    height: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: radius.md,
-    backgroundColor: color.surfaceRaised,
-  },
+    editor: {
+      marginTop: space.sm,
+      paddingTop: space.sm,
+      borderTopWidth: 1,
+      borderTopColor: color.border,
+      gap: space.xs,
+    },
+    field: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
+    fieldLabel: {
+      color: color.textFaint,
+      fontSize: 11,
+      fontWeight: weight.bold,
+      width: 56,
+    },
+    input: {
+      flex: 1,
+      minHeight: 44,
+      backgroundColor: color.surfaceRaised,
+      borderRadius: radius.sm,
+      paddingHorizontal: space.sm,
+      color: color.text,
+      fontSize: type.label,
+    },
+    editorActions: {
+      flexDirection: 'row',
+      gap: space.sm,
+      marginTop: space.xs,
+    },
+    danger: {
+      flex: 1,
+      height: 44,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: radius.md,
+      backgroundColor: color.surfaceRaised,
+    },
+    dangerLabel: { color: color.danger, fontSize: type.label, fontWeight: weight.bold },
+    done: {
+      flex: 1,
+      height: 44,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: radius.md,
+      backgroundColor: color.surfaceRaised,
+    },
 
-  primary: {
-    marginTop: space.md,
-    height: 52,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: radius.md,
-    backgroundColor: color.accent,
-  },
-  primaryLabel: { color: color.onAccent, fontSize: type.body, fontWeight: weight.bold },
-});
+    primary: {
+      marginTop: space.md,
+      height: 52,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: radius.md,
+      backgroundColor: color.accent,
+    },
+    primaryLabel: { color: color.onAccent, fontSize: type.body, fontWeight: weight.bold },
+  });
+}

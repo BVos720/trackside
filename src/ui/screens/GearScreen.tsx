@@ -26,7 +26,15 @@ import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { GearKind, bodies, lenses, type GearItem } from '../../core/domain/gear';
 import { searchGear } from '../../core/logic/gearSearch';
 import type { UserGearItemId } from '../../core/domain/ids';
-import { HIT_SIZE, color, radius, space, type, weight } from '../theme';
+import {
+  HIT_SIZE,
+  radius,
+  space,
+  type,
+  useTheme,
+  weight,
+  type Theme,
+} from '../theme';
 
 /** One row's label — "Canon EOS R7". */
 function gearLabel(item: GearItem): string {
@@ -53,6 +61,9 @@ export default function GearScreen({
   selectedIds: ReadonlySet<UserGearItemId>;
   onToggle: (id: UserGearItemId, included: boolean) => void;
 }) {
+  const { color } = useTheme();
+  const styles = useMemo(() => makeStyles(color), [color]);
+
   const [adding, setAdding] = useState(false);
   const [query, setQuery] = useState('');
 
@@ -208,82 +219,84 @@ export default function GearScreen({
   );
 }
 
-const styles = StyleSheet.create({
-  pressed: { opacity: 0.7 },
+function makeStyles(color: Theme['color']) {
+  return StyleSheet.create({
+    pressed: { opacity: 0.7 },
 
-  help: { color: color.textMuted, fontSize: type.label, lineHeight: 17 },
+    help: { color: color.textMuted, fontSize: type.label, lineHeight: 17 },
 
-  search: {
-    backgroundColor: color.surfaceRaised,
-    borderRadius: radius.md,
-    paddingHorizontal: space.md,
-    color: color.text,
-    fontSize: type.body,
-    height: HIT_SIZE,
-  },
+    search: {
+      backgroundColor: color.surfaceRaised,
+      borderRadius: radius.md,
+      paddingHorizontal: space.md,
+      color: color.text,
+      fontSize: type.body,
+      height: HIT_SIZE,
+    },
 
-  groupHeading: {
-    color: color.textFaint,
-    fontSize: 10,
-    fontWeight: weight.bold,
-    letterSpacing: 1.5,
-    marginTop: space.md,
-  },
+    groupHeading: {
+      color: color.textFaint,
+      fontSize: 10,
+      fontWeight: weight.bold,
+      letterSpacing: 1.5,
+      marginTop: space.md,
+    },
 
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space.sm,
-    minHeight: HIT_SIZE,
-    paddingHorizontal: space.sm,
-    marginTop: space.xs,
-    borderRadius: radius.md,
-    backgroundColor: color.surface,
-    borderWidth: 1,
-    borderColor: 'transparent',
-  },
-  rowText: { flex: 1 },
-  itemName: { color: color.text, fontSize: type.label, fontWeight: weight.bold },
-  itemSubtitle: { color: color.textMuted, fontSize: 11, marginTop: 2 },
+    row: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: space.sm,
+      minHeight: HIT_SIZE,
+      paddingHorizontal: space.sm,
+      marginTop: space.xs,
+      borderRadius: radius.md,
+      backgroundColor: color.surface,
+      borderWidth: 1,
+      borderColor: 'transparent',
+    },
+    rowText: { flex: 1 },
+    itemName: { color: color.text, fontSize: type.label, fontWeight: weight.bold },
+    itemSubtitle: { color: color.textMuted, fontSize: 11, marginTop: 2 },
 
-  tick: { color: color.textFaint, fontSize: 18, width: 18, textAlign: 'center' },
-  tickOn: {
-    color: color.accent,
-    fontSize: 16,
-    width: 18,
-    textAlign: 'center',
-    fontWeight: weight.bold,
-  },
+    tick: { color: color.textFaint, fontSize: 18, width: 18, textAlign: 'center' },
+    tickOn: {
+      color: color.accent,
+      fontSize: 16,
+      width: 18,
+      textAlign: 'center',
+      fontWeight: weight.bold,
+    },
 
-  removeTap: {
-    minHeight: HIT_SIZE - 12,
-    paddingHorizontal: space.sm,
-    justifyContent: 'center',
-  },
-  remove: { color: color.textMuted, fontSize: 11, fontWeight: weight.bold },
+    removeTap: {
+      minHeight: HIT_SIZE - 12,
+      paddingHorizontal: space.sm,
+      justifyContent: 'center',
+    },
+    remove: { color: color.textMuted, fontSize: 11, fontWeight: weight.bold },
 
-  addBtn: {
-    marginTop: space.sm,
-    height: HIT_SIZE,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: radius.md,
-    backgroundColor: color.surfaceRaised,
-  },
-  addLabel: { color: color.text, fontSize: type.label, fontWeight: weight.bold },
+    addBtn: {
+      marginTop: space.sm,
+      height: HIT_SIZE,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: radius.md,
+      backgroundColor: color.surfaceRaised,
+    },
+    addLabel: { color: color.text, fontSize: type.label, fontWeight: weight.bold },
 
-  picker: {
-    marginTop: space.sm,
-    paddingTop: space.sm,
-    borderTopWidth: 1,
-    borderTopColor: color.border,
-  },
-  doneBtn: {
-    marginTop: space.md,
-    height: HIT_SIZE,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: radius.md,
-    backgroundColor: color.surfaceRaised,
-  },
-});
+    picker: {
+      marginTop: space.sm,
+      paddingTop: space.sm,
+      borderTopWidth: 1,
+      borderTopColor: color.border,
+    },
+    doneBtn: {
+      marginTop: space.md,
+      height: HIT_SIZE,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: radius.md,
+      backgroundColor: color.surfaceRaised,
+    },
+  });
+}

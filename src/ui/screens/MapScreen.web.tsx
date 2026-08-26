@@ -10,7 +10,7 @@
  * screens read the same PMTiles archive and the same style module, so what you
  * see here is the same basemap the device draws.
  */
-import { Fragment, useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 // maplibre-gl 6.x is ESM with named exports and no default export — importing
 // it as `import maplibregl from 'maplibre-gl'` yields undefined at runtime.
@@ -24,7 +24,7 @@ import { Protocol } from 'pmtiles';
 // screen draws its own chrome to match the trackside theme.
 
 import { clusterCallouts } from '../../core/logic/callouts';
-import { color, radius, space, type, weight } from '../theme';
+import { radius, space, type, useTheme, weight, type Theme } from '../theme';
 import CircuitRuler from '../map/CircuitRuler';
 import {
   OSM_ATTRIBUTION,
@@ -108,6 +108,9 @@ export default function MapScreen({
   /** Accepted for parity with native; the web chrome does not stack. */
   controlsTop?: number;
 }) {
+  const { color } = useTheme();
+  const styles = useMemo(() => makeStyles(color), [color]);
+
   /**
    * The spot singled out from a stack.
    *
@@ -894,6 +897,9 @@ export default function MapScreen({
 }
 
 function ControlRow({ children }: { children: React.ReactNode }) {
+  const { color } = useTheme();
+  const styles = useMemo(() => makeStyles(color), [color]);
+
   return <View style={styles.controlRow}>{children}</View>;
 }
 
@@ -906,6 +912,9 @@ function ControlButton({
   onPress: () => void;
   wide?: boolean;
 }) {
+  const { color } = useTheme();
+  const styles = useMemo(() => makeStyles(color), [color]);
+
   return (
     <Pressable
       onPress={onPress}
@@ -920,229 +929,231 @@ function ControlButton({
   );
 }
 
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: color.background },
-  canvas: { flex: 1, width: '100%', height: '100%' },
+function makeStyles(color: Theme['color']) {
+  return StyleSheet.create({
+    root: { flex: 1, backgroundColor: color.background },
+    canvas: { flex: 1, width: '100%', height: '100%' },
 
-  badge: {
-    position: 'absolute',
-    top: space.md,
-    left: space.md,
-    backgroundColor: color.surface,
-    borderRadius: radius.md,
-    paddingHorizontal: space.md,
-    paddingVertical: space.sm,
-  },
-  badgeLabel: {
-    color: color.text,
-    fontSize: type.body,
-    fontWeight: weight.bold,
-  },
-  badgeSub: { color: color.textFaint, fontSize: type.label },
+    badge: {
+      position: 'absolute',
+      top: space.md,
+      left: space.md,
+      backgroundColor: color.surface,
+      borderRadius: radius.md,
+      paddingHorizontal: space.md,
+      paddingVertical: space.sm,
+    },
+    badgeLabel: {
+      color: color.text,
+      fontSize: type.body,
+      fontWeight: weight.bold,
+    },
+    badgeSub: { color: color.textFaint, fontSize: type.label },
 
-  attribution: {
-    position: 'absolute',
-    bottom: space.xs,
-    right: space.xs,
-    backgroundColor: 'rgba(11,13,16,0.75)',
-    borderRadius: radius.sm,
-    paddingHorizontal: space.sm,
-    paddingVertical: 2,
-  },
-  attributionText: { color: color.textMuted, fontSize: 11 },
+    attribution: {
+      position: 'absolute',
+      bottom: space.xs,
+      right: space.xs,
+      backgroundColor: 'rgba(11,13,16,0.75)',
+      borderRadius: radius.sm,
+      paddingHorizontal: space.sm,
+      paddingVertical: 2,
+    },
+    attributionText: { color: color.textMuted, fontSize: 11 },
 
-  callout: { position: 'absolute', alignItems: 'flex-start' },
-  /** Hidden spots keep their callout but recede — see Spot.isHidden. */
-  /**
-   * The plates behind a stacked card.
-   *
-   * Offset down and to the right, and progressively darker, so a stack reads as
-   * physical depth. Absolutely positioned so they do not affect the card's own
-   * layout.
-   */
-  stackPlate: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    top: 0,
-    bottom: 0,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: color.border,
-    backgroundColor: color.surface,
-  },
-  stackPlateBack: {
-    transform: [{ translateX: 8 }, { translateY: 8 }],
-    opacity: 0.45,
-  },
-  stackPlateMid: {
-    transform: [{ translateX: 4 }, { translateY: 4 }],
-    opacity: 0.75,
-  },
-  stackBadge: {
-    position: 'absolute',
-    top: -8,
-    right: -8,
-    minWidth: 24,
-    height: 24,
-    paddingHorizontal: 6,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: color.accent,
-    borderWidth: 2,
-    borderColor: color.background,
-  },
-  stackBadgeText: {
-    color: color.onAccent,
-    fontSize: 11,
-    fontWeight: weight.bold,
-    fontVariant: ['tabular-nums'],
-  },
-  tooltipStacked: { color: color.accent, fontSize: 10, marginTop: 1 },
+    callout: { position: 'absolute', alignItems: 'flex-start' },
+    /** Hidden spots keep their callout but recede — see Spot.isHidden. */
+    /**
+     * The plates behind a stacked card.
+     *
+     * Offset down and to the right, and progressively darker, so a stack reads as
+     * physical depth. Absolutely positioned so they do not affect the card's own
+     * layout.
+     */
+    stackPlate: {
+      position: 'absolute',
+      left: 0,
+      right: 0,
+      top: 0,
+      bottom: 0,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      borderColor: color.border,
+      backgroundColor: color.surface,
+    },
+    stackPlateBack: {
+      transform: [{ translateX: 8 }, { translateY: 8 }],
+      opacity: 0.45,
+    },
+    stackPlateMid: {
+      transform: [{ translateX: 4 }, { translateY: 4 }],
+      opacity: 0.75,
+    },
+    stackBadge: {
+      position: 'absolute',
+      top: -8,
+      right: -8,
+      minWidth: 24,
+      height: 24,
+      paddingHorizontal: 6,
+      borderRadius: 12,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: color.accent,
+      borderWidth: 2,
+      borderColor: color.background,
+    },
+    stackBadgeText: {
+      color: color.onAccent,
+      fontSize: 11,
+      fontWeight: weight.bold,
+      fontVariant: ['tabular-nums'],
+    },
+    tooltipStacked: { color: color.accent, fontSize: 10, marginTop: 1 },
 
-  /** A line from a stack's card to one of the spots it stands for. */
-  leader: {
-    position: 'absolute',
-    height: 1,
-    backgroundColor: color.accent,
-    opacity: 0.65,
-  },
+    /** A line from a stack's card to one of the spots it stands for. */
+    leader: {
+      position: 'absolute',
+      height: 1,
+      backgroundColor: color.accent,
+      opacity: 0.65,
+    },
 
-  stackList: {
-    marginTop: 4,
-    borderRadius: radius.md,
-    backgroundColor: color.surfaceRaised,
-    borderWidth: 1,
-    borderColor: color.border,
-    overflow: 'hidden',
-  },
-  stackListRow: {
-    minHeight: 34,
-    justifyContent: 'center',
-    paddingHorizontal: space.sm,
-  },
-  pressedRow: { backgroundColor: color.accent },
-  stackListText: { color: color.text, fontSize: 11, fontWeight: weight.bold },
+    stackList: {
+      marginTop: 4,
+      borderRadius: radius.md,
+      backgroundColor: color.surfaceRaised,
+      borderWidth: 1,
+      borderColor: color.border,
+      overflow: 'hidden',
+    },
+    stackListRow: {
+      minHeight: 34,
+      justifyContent: 'center',
+      paddingHorizontal: space.sm,
+    },
+    pressedRow: { backgroundColor: color.accent },
+    stackListText: { color: color.text, fontSize: 11, fontWeight: weight.bold },
 
-  calloutDimmed: { opacity: 0.45 },
-  calloutCard: {
-    width: '100%',
-    borderRadius: radius.md,
-    backgroundColor: 'rgba(11,13,16,0.96)',
-    borderWidth: 1,
-    borderColor: color.border,
-    overflow: 'hidden',
-  },
-  /** Connects the card down to the waypoint it describes. */
-  calloutStem: {
-    position: 'absolute',
-    bottom: -18,
-    width: 2,
-    backgroundColor: color.accent,
-  },
-  tooltipImage: { width: '100%' },
-  tooltipNameCompact: { fontSize: 11 },
-  tooltipImageEmpty: {
-    backgroundColor: color.surfaceRaised,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  tooltipEmptyText: { color: color.textFaint, fontSize: 11 },
-  tooltipBody: { padding: space.sm },
-  tooltipName: {
-    color: color.text,
-    fontSize: type.label,
-    fontWeight: weight.bold,
-  },
-  tooltipTimes: { color: color.accent, fontSize: 11, marginTop: 2 },
-  tooltipNotes: {
-    color: color.textMuted,
-    fontSize: 11,
-    marginTop: space.xs,
-    lineHeight: 15,
-  },
+    calloutDimmed: { opacity: 0.45 },
+    calloutCard: {
+      width: '100%',
+      borderRadius: radius.md,
+      backgroundColor: 'rgba(11,13,16,0.96)',
+      borderWidth: 1,
+      borderColor: color.border,
+      overflow: 'hidden',
+    },
+    /** Connects the card down to the waypoint it describes. */
+    calloutStem: {
+      position: 'absolute',
+      bottom: -18,
+      width: 2,
+      backgroundColor: color.accent,
+    },
+    tooltipImage: { width: '100%' },
+    tooltipNameCompact: { fontSize: 11 },
+    tooltipImageEmpty: {
+      backgroundColor: color.surfaceRaised,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    tooltipEmptyText: { color: color.textFaint, fontSize: 11 },
+    tooltipBody: { padding: space.sm },
+    tooltipName: {
+      color: color.text,
+      fontSize: type.label,
+      fontWeight: weight.bold,
+    },
+    tooltipTimes: { color: color.accent, fontSize: 11, marginTop: 2 },
+    tooltipNotes: {
+      color: color.textMuted,
+      fontSize: 11,
+      marginTop: space.xs,
+      lineHeight: 15,
+    },
 
-  dimButton: {
-    position: 'absolute',
-    top: space.md,
-    right: space.md,
-    width: 52,
-    height: 52,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: radius.md,
-    backgroundColor: color.surface,
-    borderWidth: 1,
-    borderColor: color.border,
-  },
-  dimButtonActive: { backgroundColor: color.accent, borderColor: color.accent },
-  dimButtonPressed: { opacity: 0.7 },
-  dimLabel: {
-    color: color.textMuted,
-    fontSize: type.body,
-    fontWeight: weight.bold,
-  },
-  dimLabelActive: { color: color.onAccent },
+    dimButton: {
+      position: 'absolute',
+      top: space.md,
+      right: space.md,
+      width: 52,
+      height: 52,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: radius.md,
+      backgroundColor: color.surface,
+      borderWidth: 1,
+      borderColor: color.border,
+    },
+    dimButtonActive: { backgroundColor: color.accent, borderColor: color.accent },
+    dimButtonPressed: { opacity: 0.7 },
+    dimLabel: {
+      color: color.textMuted,
+      fontSize: type.body,
+      fontWeight: weight.bold,
+    },
+    dimLabelActive: { color: color.onAccent },
 
-  terrainNote: {
-    position: 'absolute',
-    top: space.md + 60,
-    right: space.md,
-    maxWidth: 190,
-    backgroundColor: 'rgba(11,13,16,0.85)',
-    borderRadius: radius.sm,
-    paddingHorizontal: space.sm,
-    paddingVertical: space.xs,
-  },
-  terrainNoteText: { color: color.textFaint, fontSize: 11, lineHeight: 15 },
+    terrainNote: {
+      position: 'absolute',
+      top: space.md + 60,
+      right: space.md,
+      maxWidth: 190,
+      backgroundColor: 'rgba(11,13,16,0.85)',
+      borderRadius: radius.sm,
+      paddingHorizontal: space.sm,
+      paddingVertical: space.xs,
+    },
+    terrainNoteText: { color: color.textFaint, fontSize: 11, lineHeight: 15 },
 
-  controls: {
-    position: 'absolute',
-    right: space.md,
-    bottom: space.xl,
-    gap: space.xs,
-  },
-  controlRow: { flexDirection: 'row', gap: space.xs },
-  control: {
-    width: 44,
-    height: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: radius.sm,
-    backgroundColor: 'rgba(22,26,32,0.92)',
-    borderWidth: 1,
-    borderColor: color.border,
-  },
-  controlWide: { width: 44 * 2 + space.xs },
-  controlPressed: { backgroundColor: color.accent },
-  controlLabel: {
-    color: color.text,
-    fontSize: 18,
-    fontWeight: weight.bold,
-    lineHeight: 22,
-  },
+    controls: {
+      position: 'absolute',
+      right: space.md,
+      bottom: space.xl,
+      gap: space.xs,
+    },
+    controlRow: { flexDirection: 'row', gap: space.xs },
+    control: {
+      width: 44,
+      height: 44,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: radius.sm,
+      backgroundColor: 'rgba(22,26,32,0.92)',
+      borderWidth: 1,
+      borderColor: color.border,
+    },
+    controlWide: { width: 44 * 2 + space.xs },
+    controlPressed: { backgroundColor: color.accent },
+    controlLabel: {
+      color: color.text,
+      fontSize: 18,
+      fontWeight: weight.bold,
+      lineHeight: 22,
+    },
 
-  error: {
-    position: 'absolute',
-    left: space.md,
-    right: space.md,
-    bottom: space.xl,
-    backgroundColor: color.surfaceRaised,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: color.accent,
-    padding: space.md,
-  },
-  errorTitle: {
-    color: color.accent,
-    fontSize: type.body,
-    fontWeight: weight.bold,
-  },
-  errorBody: { color: color.text, fontSize: type.label, marginTop: space.xs },
-  errorHint: {
-    color: color.textFaint,
-    fontSize: type.label,
-    marginTop: space.xs,
-  },
-});
+    error: {
+      position: 'absolute',
+      left: space.md,
+      right: space.md,
+      bottom: space.xl,
+      backgroundColor: color.surfaceRaised,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      borderColor: color.accent,
+      padding: space.md,
+    },
+    errorTitle: {
+      color: color.accent,
+      fontSize: type.body,
+      fontWeight: weight.bold,
+    },
+    errorBody: { color: color.text, fontSize: type.label, marginTop: space.xs },
+    errorHint: {
+      color: color.textFaint,
+      fontSize: type.label,
+      marginTop: space.xs,
+    },
+  });
+}

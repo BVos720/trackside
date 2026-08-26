@@ -42,7 +42,15 @@ import type { ImportConflict, ImportMode } from '../../core/logic/importBundle';
 import { partitionEventsByFinished } from '../../core/logic/eventLifecycle';
 import Collapsible from '../Collapsible';
 import DateRangePicker, { formatDateRange } from '../DateRangePicker';
-import { MENU_CLEARANCE, color, radius, space, type, weight } from '../theme';
+import {
+  MENU_CLEARANCE,
+  radius,
+  space,
+  type,
+  useTheme,
+  weight,
+  type Theme,
+} from '../theme';
 
 export interface CircuitChoice {
   readonly id: CircuitId;
@@ -138,6 +146,9 @@ export default function EventsScreen({
   onConfirmImport?: (mode: ImportMode) => void;
   onCancelImport?: () => void;
 }) {
+  const { color } = useTheme();
+  const styles = useMemo(() => makeStyles(color), [color]);
+
   const insets = useSafeAreaInsets();
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState('');
@@ -484,185 +495,187 @@ export default function EventsScreen({
   );
 }
 
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: color.background },
-  content: { padding: space.md, paddingBottom: space.xxl },
-  pressed: { opacity: 0.7 },
-  disabled: { opacity: 0.4 },
+function makeStyles(color: Theme['color']) {
+  return StyleSheet.create({
+    root: { flex: 1, backgroundColor: color.background },
+    content: { padding: space.md, paddingBottom: space.xxl },
+    pressed: { opacity: 0.7 },
+    disabled: { opacity: 0.4 },
 
-  kicker: {
-    color: color.accent,
-    fontSize: type.label,
-    fontWeight: weight.bold,
-    letterSpacing: 2,
-  },
-  venue: {
-    color: color.text,
-    fontSize: type.title,
-    fontWeight: weight.bold,
-    marginTop: space.xs,
-    marginBottom: space.md,
-  },
-  label: {
-    color: color.textFaint,
-    fontSize: type.label,
-    fontWeight: weight.bold,
-    letterSpacing: 1.5,
-    marginTop: space.lg,
-  },
-  finishedToggle: {
-    alignSelf: 'flex-start',
-    height: 36,
-    paddingHorizontal: space.md,
-    justifyContent: 'center',
-    borderRadius: radius.md,
-    backgroundColor: color.surfaceRaised,
-    marginBottom: space.sm,
-  },
-  finishedToggleLabel: {
-    color: color.textMuted,
-    fontSize: type.label,
-    fontWeight: weight.bold,
-  },
-  groupHeading: {
-    color: color.textFaint,
-    fontSize: 10,
-    fontWeight: weight.bold,
-    letterSpacing: 1.5,
-    marginTop: space.md,
-    marginBottom: space.xs,
-  },
-  help: {
-    color: color.textMuted,
-    fontSize: type.label,
-    marginTop: space.sm,
-    lineHeight: 17,
-  },
+    kicker: {
+      color: color.accent,
+      fontSize: type.label,
+      fontWeight: weight.bold,
+      letterSpacing: 2,
+    },
+    venue: {
+      color: color.text,
+      fontSize: type.title,
+      fontWeight: weight.bold,
+      marginTop: space.xs,
+      marginBottom: space.md,
+    },
+    label: {
+      color: color.textFaint,
+      fontSize: type.label,
+      fontWeight: weight.bold,
+      letterSpacing: 1.5,
+      marginTop: space.lg,
+    },
+    finishedToggle: {
+      alignSelf: 'flex-start',
+      height: 36,
+      paddingHorizontal: space.md,
+      justifyContent: 'center',
+      borderRadius: radius.md,
+      backgroundColor: color.surfaceRaised,
+      marginBottom: space.sm,
+    },
+    finishedToggleLabel: {
+      color: color.textMuted,
+      fontSize: type.label,
+      fontWeight: weight.bold,
+    },
+    groupHeading: {
+      color: color.textFaint,
+      fontSize: 10,
+      fontWeight: weight.bold,
+      letterSpacing: 1.5,
+      marginTop: space.md,
+      marginBottom: space.xs,
+    },
+    help: {
+      color: color.textMuted,
+      fontSize: type.label,
+      marginTop: space.sm,
+      lineHeight: 17,
+    },
 
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    minHeight: 60,
-    paddingHorizontal: space.md,
-    borderRadius: radius.md,
-    backgroundColor: color.surface,
-    marginBottom: space.sm,
-    borderWidth: 1,
-    borderColor: 'transparent',
-  },
-  rowActive: { borderColor: color.accent },
-  rowText: { flex: 1 },
-  rowTitle: {
-    color: color.text,
-    fontSize: type.body,
-    fontWeight: weight.bold,
-  },
-  rowSub: { color: color.textMuted, fontSize: type.label, marginTop: 1 },
-  tick: { color: color.accent, fontSize: 18, fontWeight: weight.bold },
+    row: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      minHeight: 60,
+      paddingHorizontal: space.md,
+      borderRadius: radius.md,
+      backgroundColor: color.surface,
+      marginBottom: space.sm,
+      borderWidth: 1,
+      borderColor: 'transparent',
+    },
+    rowActive: { borderColor: color.accent },
+    rowText: { flex: 1 },
+    rowTitle: {
+      color: color.text,
+      fontSize: type.body,
+      fontWeight: weight.bold,
+    },
+    rowSub: { color: color.textMuted, fontSize: type.label, marginTop: 1 },
+    tick: { color: color.accent, fontSize: 18, fontWeight: weight.bold },
 
-  input: {
-    marginTop: space.sm,
-    backgroundColor: color.surfaceRaised,
-    borderRadius: radius.md,
-    paddingHorizontal: space.md,
-    paddingVertical: space.sm,
-    color: color.text,
-    fontSize: type.body,
-    minHeight: 44,
-  },
+    input: {
+      marginTop: space.sm,
+      backgroundColor: color.surfaceRaised,
+      borderRadius: radius.md,
+      paddingHorizontal: space.md,
+      paddingVertical: space.sm,
+      color: color.text,
+      fontSize: type.body,
+      minHeight: 44,
+    },
 
-  circuitChoices: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: space.sm,
-    marginTop: space.sm,
-  },
-  circuitChip: {
-    paddingHorizontal: space.md,
-    height: 44,
-    justifyContent: 'center',
-    borderRadius: radius.md,
-    backgroundColor: color.surfaceRaised,
-  },
-  circuitChipActive: { backgroundColor: color.accent },
-  circuitChipLabel: {
-    color: color.textMuted,
-    fontSize: type.label,
-    fontWeight: weight.bold,
-  },
-  circuitChipLabelActive: { color: color.onAccent },
+    circuitChoices: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: space.sm,
+      marginTop: space.sm,
+    },
+    circuitChip: {
+      paddingHorizontal: space.md,
+      height: 44,
+      justifyContent: 'center',
+      borderRadius: radius.md,
+      backgroundColor: color.surfaceRaised,
+    },
+    circuitChipActive: { backgroundColor: color.accent },
+    circuitChipLabel: {
+      color: color.textMuted,
+      fontSize: type.label,
+      fontWeight: weight.bold,
+    },
+    circuitChipLabelActive: { color: color.onAccent },
 
-  choices: { flexDirection: 'row', gap: space.sm, marginTop: space.sm },
-  choice: {
-    flex: 1,
-    padding: space.md,
-    borderRadius: radius.md,
-    backgroundColor: color.surfaceRaised,
-  },
-  choiceLabel: {
-    color: color.text,
-    fontSize: type.label,
-    fontWeight: weight.bold,
-  },
-  choiceHint: { color: color.textFaint, fontSize: 11, marginTop: 2 },
+    choices: { flexDirection: 'row', gap: space.sm, marginTop: space.sm },
+    choice: {
+      flex: 1,
+      padding: space.md,
+      borderRadius: radius.md,
+      backgroundColor: color.surfaceRaised,
+    },
+    choiceLabel: {
+      color: color.text,
+      fontSize: type.label,
+      fontWeight: weight.bold,
+    },
+    choiceHint: { color: color.textFaint, fontSize: 11, marginTop: 2 },
 
-  planButton: {
-    marginTop: space.md,
-    marginBottom: space.sm,
-    padding: space.md,
-    borderRadius: radius.md,
-    backgroundColor: color.surfaceRaised,
-    borderWidth: 1,
-    borderColor: color.accent,
-  },
-  planLabel: { color: color.text, fontSize: type.body, fontWeight: weight.bold },
-  planHint: { color: color.textMuted, fontSize: type.label, marginTop: 2 },
+    planButton: {
+      marginTop: space.md,
+      marginBottom: space.sm,
+      padding: space.md,
+      borderRadius: radius.md,
+      backgroundColor: color.surfaceRaised,
+      borderWidth: 1,
+      borderColor: color.accent,
+    },
+    planLabel: { color: color.text, fontSize: type.body, fontWeight: weight.bold },
+    planHint: { color: color.textMuted, fontSize: type.label, marginTop: 2 },
 
-  primary: {
-    marginTop: space.md,
-    height: 52,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: radius.md,
-    backgroundColor: color.accent,
-  },
-  primaryLabel: {
-    color: color.onAccent,
-    fontSize: type.body,
-    fontWeight: weight.bold,
-  },
-  cancel: {
-    color: color.textMuted,
-    fontSize: type.label,
-    textAlign: 'center',
-    marginTop: space.md,
-  },
+    primary: {
+      marginTop: space.md,
+      height: 52,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: radius.md,
+      backgroundColor: color.accent,
+    },
+    primaryLabel: {
+      color: color.onAccent,
+      fontSize: type.body,
+      fontWeight: weight.bold,
+    },
+    cancel: {
+      color: color.textMuted,
+      fontSize: type.label,
+      textAlign: 'center',
+      marginTop: space.md,
+    },
 
-  importName: {
-    color: color.text,
-    fontSize: type.body,
-    fontWeight: weight.bold,
-    marginTop: space.sm,
-  },
-  importConflict: {
-    color: color.textMuted,
-    fontSize: type.label,
-    lineHeight: 17,
-    marginTop: space.sm,
-  },
-  /** Reserved for the case where a restore would overwrite something live. */
-  importDanger: { color: color.danger },
-  importWarning: {
-    color: color.danger,
-    fontSize: 11,
-    lineHeight: 15,
-    marginTop: 4,
-  },
-  importError: {
-    color: color.danger,
-    fontSize: type.label,
-    lineHeight: 17,
-    marginTop: space.sm,
-  },
-});
+    importName: {
+      color: color.text,
+      fontSize: type.body,
+      fontWeight: weight.bold,
+      marginTop: space.sm,
+    },
+    importConflict: {
+      color: color.textMuted,
+      fontSize: type.label,
+      lineHeight: 17,
+      marginTop: space.sm,
+    },
+    /** Reserved for the case where a restore would overwrite something live. */
+    importDanger: { color: color.danger },
+    importWarning: {
+      color: color.danger,
+      fontSize: 11,
+      lineHeight: 15,
+      marginTop: 4,
+    },
+    importError: {
+      color: color.danger,
+      fontSize: type.label,
+      lineHeight: 17,
+      marginTop: space.sm,
+    },
+  });
+}

@@ -25,9 +25,18 @@
  * and then never again. An interruption that can be swiped past is one that
  * did not happen.
  */
+import { useMemo } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import { HIT_SIZE, color, radius, space, type, weight } from '../theme';
+import {
+  HIT_SIZE,
+  radius,
+  space,
+  type,
+  useTheme,
+  weight,
+  type Theme,
+} from '../theme';
 
 /**
  * Bump this when the wording materially changes.
@@ -38,6 +47,9 @@ import { HIT_SIZE, color, radius, space, type, weight } from '../theme';
 export const SAFETY_NOTICE_VERSION = 1;
 
 export default function SafetyNotice({ onAccept }: { onAccept: () => void }) {
+  const { color } = useTheme();
+  const styles = useMemo(() => makeStyles(color), [color]);
+
   return (
     <View style={styles.root}>
       <ScrollView
@@ -97,6 +109,9 @@ function Point({
   heading: string;
   body: string;
 }) {
+  const { color } = useTheme();
+  const styles = useMemo(() => makeStyles(color), [color]);
+
   return (
     <View style={styles.point}>
       <Text style={styles.pointNumber}>{n}</Text>
@@ -108,81 +123,83 @@ function Point({
   );
 }
 
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: color.background },
-  pressed: { opacity: 0.7 },
+function makeStyles(color: Theme['color']) {
+  return StyleSheet.create({
+    root: { flex: 1, backgroundColor: color.background },
+    pressed: { opacity: 0.7 },
 
-  content: {
-    padding: space.md,
-    paddingTop: space.xxl,
-    paddingBottom: space.lg,
-  },
+    content: {
+      padding: space.md,
+      paddingTop: space.xxl,
+      paddingBottom: space.lg,
+    },
 
-  kicker: {
-    color: color.danger,
-    fontSize: type.label,
-    fontWeight: weight.bold,
-    letterSpacing: 1.5,
-  },
-  title: {
-    color: color.text,
-    fontSize: type.title,
-    fontWeight: weight.bold,
-    marginTop: space.xs,
-  },
-  lede: {
-    color: color.textMuted,
-    fontSize: type.body,
-    lineHeight: 22,
-    marginTop: space.sm,
-  },
+    kicker: {
+      color: color.danger,
+      fontSize: type.label,
+      fontWeight: weight.bold,
+      letterSpacing: 1.5,
+    },
+    title: {
+      color: color.text,
+      fontSize: type.title,
+      fontWeight: weight.bold,
+      marginTop: space.xs,
+    },
+    lede: {
+      color: color.textMuted,
+      fontSize: type.body,
+      lineHeight: 22,
+      marginTop: space.sm,
+    },
 
-  point: {
-    flexDirection: 'row',
-    gap: space.sm,
-    marginTop: space.lg,
-  },
-  pointNumber: {
-    color: color.danger,
-    fontSize: type.body,
-    fontWeight: weight.bold,
-    width: 18,
-    fontVariant: ['tabular-nums'],
-  },
-  pointBody: { flex: 1 },
-  pointHeading: {
-    color: color.text,
-    fontSize: type.body,
-    fontWeight: weight.bold,
-  },
-  pointText: {
-    color: color.textMuted,
-    fontSize: type.label,
-    lineHeight: 19,
-    marginTop: space.xs,
-  },
+    point: {
+      flexDirection: 'row',
+      gap: space.sm,
+      marginTop: space.lg,
+    },
+    pointNumber: {
+      color: color.danger,
+      fontSize: type.body,
+      fontWeight: weight.bold,
+      width: 18,
+      fontVariant: ['tabular-nums'],
+    },
+    pointBody: { flex: 1 },
+    pointHeading: {
+      color: color.text,
+      fontSize: type.body,
+      fontWeight: weight.bold,
+    },
+    pointText: {
+      color: color.textMuted,
+      fontSize: type.label,
+      lineHeight: 19,
+      marginTop: space.xs,
+    },
 
-  closing: {
-    color: color.text,
-    fontSize: type.label,
-    lineHeight: 19,
-    marginTop: space.lg,
-    padding: space.sm,
-    borderRadius: radius.md,
-    backgroundColor: color.surface,
-  },
+    closing: {
+      color: color.text,
+      fontSize: type.label,
+      lineHeight: 19,
+      marginTop: space.lg,
+      padding: space.sm,
+      borderRadius: radius.md,
+      backgroundColor: color.surface,
+    },
 
-  accept: {
-    margin: space.md,
-    height: HIT_SIZE,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: radius.md,
-    backgroundColor: color.accent,
-  },
-  acceptLabel: {
-    color: color.onAccent,
-    fontSize: type.body,
-    fontWeight: weight.bold,
-  },
-});
+    accept: {
+      margin: space.md,
+      height: HIT_SIZE,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: radius.md,
+      backgroundColor: color.accent,
+    },
+    acceptLabel: {
+      color: color.onAccent,
+      fontSize: type.body,
+      fontWeight: weight.bold,
+    },
+  });
+}

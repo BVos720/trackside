@@ -35,15 +35,29 @@ import {
   urgencyOf,
   walkEstimate,
 } from '../../core/logic/walk';
-import { color, radius, space, type, weight } from '../theme';
+import { radius, space, type, useTheme, weight, type Theme } from '../theme';
 import type { Fix, PositionStatus } from '../state/usePosition';
 
-const URGENCY_COLOR = {
-  idle: color.textMuted,
-  soon: color.accent,
-  now: '#F2A03D',
-  late: color.danger,
-} as const;
+/**
+ * How close to leaving, as a colour.
+ *
+ * A function of the palette rather than a frozen map, because three of the
+ * four are theme tokens and a constant evaluated at module load would pin the
+ * banner to whichever theme happened to be compiled in.
+ *
+ * `now` is deliberately literal. It is the one state that means *go*, and the
+ * amber it uses has to read as amber against a light background and a dark
+ * one alike — a token that shifts with the theme would make the most urgent
+ * state the least predictable.
+ */
+function urgencyColor(color: Theme['color']) {
+  return {
+    idle: color.textMuted,
+    soon: color.accent,
+    now: '#F2A03D',
+    late: color.danger,
+  } as const;
+}
 
 export default function NavigatorPanel({
   stop,
@@ -66,6 +80,9 @@ export default function NavigatorPanel({
   now: Date;
   onClose: () => void;
 }) {
+  const { color } = useTheme();
+  const styles = useMemo(() => makeStyles(color), [color]);
+
   const route: Route | null = useMemo(
     () =>
       fix && spot
@@ -130,10 +147,10 @@ export default function NavigatorPanel({
         <View
           style={[
             styles.banner,
-            { borderColor: URGENCY_COLOR[urgency] },
+            { borderColor: urgencyColor(color)[urgency] },
           ]}
         >
-          <Text style={[styles.bannerTime, { color: URGENCY_COLOR[urgency] }]}>
+          <Text style={[styles.bannerTime, { color: urgencyColor(color)[urgency] }]}>
             {urgency === 'late'
               ? `Should have left at ${formatClock(departAt)}`
               : urgency === 'now'
@@ -244,6 +261,9 @@ export default function NavigatorPanel({
 }
 
 function Fact({ label, value }: { label: string; value: string }) {
+  const { color } = useTheme();
+  const styles = useMemo(() => makeStyles(color), [color]);
+
   return (
     <View style={styles.fact}>
       <Text style={styles.factLabel}>{label}</Text>
@@ -252,124 +272,126 @@ function Fact({ label, value }: { label: string; value: string }) {
   );
 }
 
-const styles = StyleSheet.create({
-  panel: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    padding: space.md,
-    backgroundColor: color.background,
-    borderTopLeftRadius: radius.lg,
-    borderTopRightRadius: radius.lg,
-    borderTopWidth: 1,
-    borderColor: color.border,
-  },
-  pressed: { opacity: 0.7 },
+function makeStyles(color: Theme['color']) {
+  return StyleSheet.create({
+    panel: {
+      position: 'absolute',
+      left: 0,
+      right: 0,
+      bottom: 0,
+      padding: space.md,
+      backgroundColor: color.background,
+      borderTopLeftRadius: radius.lg,
+      borderTopRightRadius: radius.lg,
+      borderTopWidth: 1,
+      borderColor: color.border,
+    },
+    pressed: { opacity: 0.7 },
 
-  header: { flexDirection: 'row', alignItems: 'flex-start' },
-  headerText: { flex: 1 },
-  kicker: {
-    color: color.textFaint,
-    fontSize: 10,
-    fontWeight: weight.bold,
-    letterSpacing: 1.5,
-  },
-  name: {
-    color: color.text,
-    fontSize: type.title,
-    fontWeight: weight.bold,
-    marginTop: 2,
-  },
-  label: { color: color.accent, fontSize: type.label, marginTop: 1 },
-  close: {
-    height: 40,
-    paddingHorizontal: space.md,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: radius.md,
-    backgroundColor: color.surfaceRaised,
-  },
-  closeLabel: {
-    color: color.textMuted,
-    fontSize: type.label,
-    fontWeight: weight.bold,
-  },
+    header: { flexDirection: 'row', alignItems: 'flex-start' },
+    headerText: { flex: 1 },
+    kicker: {
+      color: color.textFaint,
+      fontSize: 10,
+      fontWeight: weight.bold,
+      letterSpacing: 1.5,
+    },
+    name: {
+      color: color.text,
+      fontSize: type.title,
+      fontWeight: weight.bold,
+      marginTop: 2,
+    },
+    label: { color: color.accent, fontSize: type.label, marginTop: 1 },
+    close: {
+      height: 40,
+      paddingHorizontal: space.md,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: radius.md,
+      backgroundColor: color.surfaceRaised,
+    },
+    closeLabel: {
+      color: color.textMuted,
+      fontSize: type.label,
+      fontWeight: weight.bold,
+    },
 
-  banner: {
-    marginTop: space.md,
-    padding: space.md,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    backgroundColor: color.surface,
-  },
-  bannerTime: { fontSize: type.title, fontWeight: weight.bold },
-  bannerSub: { color: color.textMuted, fontSize: type.label, marginTop: 2 },
+    banner: {
+      marginTop: space.md,
+      padding: space.md,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      backgroundColor: color.surface,
+    },
+    bannerTime: { fontSize: type.title, fontWeight: weight.bold },
+    bannerSub: { color: color.textMuted, fontSize: type.label, marginTop: 2 },
 
-  facts: { flexDirection: 'row', gap: space.sm, marginTop: space.md },
-  fact: {
-    flex: 1,
-    padding: space.sm,
-    borderRadius: radius.md,
-    backgroundColor: color.surface,
-  },
-  factLabel: {
-    color: color.textFaint,
-    fontSize: 10,
-    fontWeight: weight.bold,
-    letterSpacing: 1,
-  },
-  factValue: {
-    color: color.text,
-    fontSize: type.body,
-    fontWeight: weight.bold,
-    marginTop: 2,
-    fontVariant: ['tabular-nums'],
-  },
+    facts: { flexDirection: 'row', gap: space.sm, marginTop: space.md },
+    fact: {
+      flex: 1,
+      padding: space.sm,
+      borderRadius: radius.md,
+      backgroundColor: color.surface,
+    },
+    factLabel: {
+      color: color.textFaint,
+      fontSize: 10,
+      fontWeight: weight.bold,
+      letterSpacing: 1,
+    },
+    factValue: {
+      color: color.text,
+      fontSize: type.body,
+      fontWeight: weight.bold,
+      marginTop: 2,
+      fontVariant: ['tabular-nums'],
+    },
 
-  /**
-   * The one message on this panel that is a warning rather than information.
-   *
-   * Coloured as danger because the failure it prevents is not a missed photo.
-   */
-  blockedBox: {
-    marginTop: space.sm,
-    padding: space.sm,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: color.danger,
-    backgroundColor: color.surface,
-  },
-  blockedBody: {
-    color: color.textMuted,
-    fontSize: type.label,
-    lineHeight: 17,
-    marginTop: space.xs,
-  },
-  /** Quiet but always there; the loud styling belongs to the blocked box. */
-  standingWarning: {
-    color: color.undocumented,
-    fontSize: 11,
-    lineHeight: 15,
-    marginTop: space.sm,
-  },
-  blocked: {
-    color: color.danger,
-    fontSize: type.label,
-    fontWeight: weight.bold,
-    marginTop: space.sm,
-    lineHeight: 17,
-  },
-  offPath: {
-    color: color.undocumented,
-    fontSize: type.label,
-    marginTop: space.sm,
-    lineHeight: 17,
-  },
-  notice: {
-    color: color.textMuted,
-    fontSize: type.label,
-    marginTop: space.sm,
-    lineHeight: 17,
-  },
-});
+    /**
+     * The one message on this panel that is a warning rather than information.
+     *
+     * Coloured as danger because the failure it prevents is not a missed photo.
+     */
+    blockedBox: {
+      marginTop: space.sm,
+      padding: space.sm,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      borderColor: color.danger,
+      backgroundColor: color.surface,
+    },
+    blockedBody: {
+      color: color.textMuted,
+      fontSize: type.label,
+      lineHeight: 17,
+      marginTop: space.xs,
+    },
+    /** Quiet but always there; the loud styling belongs to the blocked box. */
+    standingWarning: {
+      color: color.undocumented,
+      fontSize: 11,
+      lineHeight: 15,
+      marginTop: space.sm,
+    },
+    blocked: {
+      color: color.danger,
+      fontSize: type.label,
+      fontWeight: weight.bold,
+      marginTop: space.sm,
+      lineHeight: 17,
+    },
+    offPath: {
+      color: color.undocumented,
+      fontSize: type.label,
+      marginTop: space.sm,
+      lineHeight: 17,
+    },
+    notice: {
+      color: color.textMuted,
+      fontSize: type.label,
+      marginTop: space.sm,
+      lineHeight: 17,
+    },
+  });
+}

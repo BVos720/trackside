@@ -22,7 +22,7 @@
 import { useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { color, radius, space, type, weight } from './theme';
+import { radius, space, type, useTheme, weight, type Theme } from './theme';
 
 /** Monday-first: the European week, and race weekends read Fri–Sun. */
 const WEEKDAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'] as const;
@@ -109,6 +109,9 @@ export default function DateRangePicker({
   endDate: string | null;
   onChange: (start: string | null, end: string | null) => void;
 }) {
+  const { color } = useTheme();
+  const styles = useMemo(() => makeStyles(color), [color]);
+
   // Open on the month already chosen, so editing a range does not drop the user
   // back at today and make them navigate to where they already were.
   const initial = useMemo(() => {
@@ -230,72 +233,74 @@ export default function DateRangePicker({
   );
 }
 
-const styles = StyleSheet.create({
-  root: {
-    marginTop: space.sm,
-    padding: space.sm,
-    borderRadius: radius.md,
-    backgroundColor: color.surfaceRaised,
-  },
-  pressed: { opacity: 0.6 },
+function makeStyles(color: Theme['color']) {
+  return StyleSheet.create({
+    root: {
+      marginTop: space.sm,
+      padding: space.sm,
+      borderRadius: radius.md,
+      backgroundColor: color.surfaceRaised,
+    },
+    pressed: { opacity: 0.6 },
 
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: space.xs,
-  },
-  nav: {
-    width: 40,
-    height: 36,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: radius.sm,
-    backgroundColor: color.surface,
-  },
-  navLabel: { color: color.text, fontSize: 20, fontWeight: weight.bold },
-  monthLabel: {
-    color: color.text,
-    fontSize: type.body,
-    fontWeight: weight.bold,
-  },
+    header: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginBottom: space.xs,
+    },
+    nav: {
+      width: 40,
+      height: 36,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: radius.sm,
+      backgroundColor: color.surface,
+    },
+    navLabel: { color: color.text, fontSize: 20, fontWeight: weight.bold },
+    monthLabel: {
+      color: color.text,
+      fontSize: type.body,
+      fontWeight: weight.bold,
+    },
 
-  week: { flexDirection: 'row' },
-  weekday: {
-    flex: 1,
-    textAlign: 'center',
-    color: color.textFaint,
-    fontSize: 10,
-    fontWeight: weight.bold,
-    marginBottom: 2,
-  },
+    week: { flexDirection: 'row' },
+    weekday: {
+      flex: 1,
+      textAlign: 'center',
+      color: color.textFaint,
+      fontSize: 10,
+      fontWeight: weight.bold,
+      marginBottom: 2,
+    },
 
-  grid: { flexDirection: 'row', flexWrap: 'wrap' },
-  cell: {
-    // Seven to a row, sized by fraction so the grid fits any width.
-    width: `${100 / 7}%`,
-    height: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  cellBetween: { backgroundColor: 'rgba(45,124,255,0.18)' },
-  cellEnd: { backgroundColor: color.accent, borderRadius: radius.sm },
+    grid: { flexDirection: 'row', flexWrap: 'wrap' },
+    cell: {
+      // Seven to a row, sized by fraction so the grid fits any width.
+      width: `${100 / 7}%`,
+      height: 40,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    cellBetween: { backgroundColor: 'rgba(45,124,255,0.18)' },
+    cellEnd: { backgroundColor: color.accent, borderRadius: radius.sm },
 
-  day: { color: color.text, fontSize: type.label },
-  dayEnd: { color: color.onAccent, fontWeight: weight.bold },
-  dayToday: { color: color.accent, fontWeight: weight.bold },
+    day: { color: color.text, fontSize: type.label },
+    dayEnd: { color: color.onAccent, fontWeight: weight.bold },
+    dayToday: { color: color.accent, fontWeight: weight.bold },
 
-  footer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: space.sm,
-  },
-  summary: { color: color.textMuted, fontSize: type.label, flexShrink: 1 },
-  clear: {
-    color: color.textFaint,
-    fontSize: type.label,
-    fontWeight: weight.bold,
-    paddingLeft: space.sm,
-  },
-});
+    footer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginTop: space.sm,
+    },
+    summary: { color: color.textMuted, fontSize: type.label, flexShrink: 1 },
+    clear: {
+      color: color.textFaint,
+      fontSize: type.label,
+      fontWeight: weight.bold,
+      paddingLeft: space.sm,
+    },
+  });
+}

@@ -31,7 +31,7 @@ import {
   type HourlyForecastPoint,
 } from '../../core/logic/forecast';
 import WeatherGlyph, { cloudColor, conditionLabel } from '../WeatherGlyph';
-import { color, radius, space, type, weight } from '../theme';
+import { radius, space, type, useTheme, weight, type Theme } from '../theme';
 
 /** How tall the cloud-cover columns are drawn. */
 const CHART_HEIGHT = 92;
@@ -112,6 +112,9 @@ function CloudChart({
   points: readonly HourlyForecastPoint[];
   nowHour: number | null;
 }) {
+  const { color } = useTheme();
+  const styles = useMemo(() => makeStyles(color), [color]);
+
   return (
     <View style={styles.chart}>
       {points.map((point) => {
@@ -128,7 +131,7 @@ function CloudChart({
                     ? styles.columnMissing
                     : {
                         height: `${Math.max(3, cloud)}%`,
-                        backgroundColor: cloudColor(cloud),
+                        backgroundColor: cloudColor(cloud, color),
                       },
                 ]}
               />
@@ -143,6 +146,9 @@ function CloudChart({
 
 /** Rain, scaled against the wettest hour of the day it belongs to. */
 function RainStrip({ points }: { points: readonly HourlyForecastPoint[] }) {
+  const { color } = useTheme();
+  const styles = useMemo(() => makeStyles(color), [color]);
+
   const peak = Math.max(
     ...points.map((p) => p.precipitationMm ?? 0),
     // Never divide by zero, and keep a drizzle from filling the strip: a
@@ -174,6 +180,9 @@ function RainStrip({ points }: { points: readonly HourlyForecastPoint[] }) {
 
 /** Hour ticks under the chart — every third hour, so 24 of them still fit. */
 function HourAxis({ points }: { points: readonly HourlyForecastPoint[] }) {
+  const { color } = useTheme();
+  const styles = useMemo(() => makeStyles(color), [color]);
+
   return (
     <View style={styles.axis}>
       {points.map((point) => {
@@ -202,6 +211,9 @@ function RefreshButton({
   refreshing: boolean;
   label?: string;
 }) {
+  const { color } = useTheme();
+  const styles = useMemo(() => makeStyles(color), [color]);
+
   return (
     <Pressable
       onPress={onRefresh}
@@ -228,6 +240,9 @@ export default function WeatherScreen({
   refreshing?: boolean;
   error?: string | null;
 }) {
+  const { color } = useTheme();
+  const styles = useMemo(() => makeStyles(color), [color]);
+
   const usable = display.state === 'fresh' || display.state === 'stale';
   // Tabs cover the whole forecast, not just the event — see `allHourly` in
   // `core/logic/forecast.ts` for why both series exist.
@@ -393,137 +408,139 @@ export default function WeatherScreen({
   );
 }
 
-const styles = StyleSheet.create({
-  pressed: { opacity: 0.7 },
-  help: { color: color.textMuted, fontSize: type.label, lineHeight: 17 },
-  error: {
-    color: color.danger,
-    fontSize: type.label,
-    lineHeight: 17,
-    marginTop: space.sm,
-  },
+function makeStyles(color: Theme['color']) {
+  return StyleSheet.create({
+    pressed: { opacity: 0.7 },
+    help: { color: color.textMuted, fontSize: type.label, lineHeight: 17 },
+    error: {
+      color: color.danger,
+      fontSize: type.label,
+      lineHeight: 17,
+      marginTop: space.sm,
+    },
 
-  header: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
-  headerText: { flex: 1 },
-  condition: { color: color.text, fontSize: type.body, fontWeight: weight.bold },
-  summary: { color: color.textMuted, fontSize: type.label, marginTop: 2 },
-  headerRight: { alignItems: 'flex-end', gap: 3 },
+    header: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
+    headerText: { flex: 1 },
+    condition: { color: color.text, fontSize: type.body, fontWeight: weight.bold },
+    summary: { color: color.textMuted, fontSize: type.label, marginTop: 2 },
+    headerRight: { alignItems: 'flex-end', gap: 3 },
 
-  /**
-   * "Fresh" and "Stale" are never the same colour — accent for one, danger
-   * for the other — so the two states cannot be told apart only by reading
-   * the word carefully. See the file header.
-   */
-  pill: {
-    paddingHorizontal: space.sm,
-    paddingVertical: 2,
-    borderRadius: radius.sm,
-  },
-  pillFresh: { backgroundColor: color.accent },
-  pillStale: { backgroundColor: color.danger },
-  pillText: { color: color.onAccent, fontSize: 11, fontWeight: weight.bold },
-  pillTextStale: { color: color.text },
-  age: { color: color.textFaint, fontSize: 11 },
+    /**
+     * "Fresh" and "Stale" are never the same colour — accent for one, danger
+     * for the other — so the two states cannot be told apart only by reading
+     * the word carefully. See the file header.
+     */
+    pill: {
+      paddingHorizontal: space.sm,
+      paddingVertical: 2,
+      borderRadius: radius.sm,
+    },
+    pillFresh: { backgroundColor: color.accent },
+    pillStale: { backgroundColor: color.danger },
+    pillText: { color: color.onAccent, fontSize: 11, fontWeight: weight.bold },
+    pillTextStale: { color: color.text },
+    age: { color: color.textFaint, fontSize: 11 },
 
-  tabs: { gap: space.xs, paddingVertical: space.sm },
-  tab: {
-    paddingHorizontal: space.md,
-    paddingVertical: space.xs,
-    borderRadius: radius.md,
-    backgroundColor: color.surfaceRaised,
-  },
-  /** An event day that is not the selected one: outlined, not filled. */
-  tabEvent: { borderWidth: 1, borderColor: color.accent },
-  tabActive: { backgroundColor: color.accent, borderColor: color.accent },
-  tabLabel: {
-    color: color.textMuted,
-    fontSize: type.label,
-    fontWeight: weight.bold,
-  },
-  tabLabelEvent: { color: color.text },
-  tabLabelActive: { color: color.onAccent },
+    tabs: { gap: space.xs, paddingVertical: space.sm },
+    tab: {
+      paddingHorizontal: space.md,
+      paddingVertical: space.xs,
+      borderRadius: radius.md,
+      backgroundColor: color.surfaceRaised,
+    },
+    /** An event day that is not the selected one: outlined, not filled. */
+    tabEvent: { borderWidth: 1, borderColor: color.accent },
+    tabActive: { backgroundColor: color.accent, borderColor: color.accent },
+    tabLabel: {
+      color: color.textMuted,
+      fontSize: type.label,
+      fontWeight: weight.bold,
+    },
+    tabLabelEvent: { color: color.text },
+    tabLabelActive: { color: color.onAccent },
 
-  chartBlock: { marginTop: space.sm },
-  scaleRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-end',
-  },
-  scaleLabel: { color: color.textFaint, fontSize: 11, marginTop: space.xs },
+    chartBlock: { marginTop: space.sm },
+    scaleRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'flex-end',
+    },
+    scaleLabel: { color: color.textFaint, fontSize: 11, marginTop: space.xs },
 
-  chart: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    height: CHART_HEIGHT,
-    gap: 1,
-    marginTop: 4,
-  },
-  column: { flex: 1, height: '100%', justifyContent: 'flex-end' },
-  columnTrack: {
-    height: '100%',
-    justifyContent: 'flex-end',
-    backgroundColor: color.surface,
-    borderRadius: 2,
-    overflow: 'hidden',
-  },
-  columnFill: { width: '100%', borderTopLeftRadius: 2, borderTopRightRadius: 2 },
-  /** A gap in the data, drawn as a gap rather than as a zero. */
-  columnMissing: { height: 3, backgroundColor: color.undocumented },
-  /** Where "now" falls, on today's day only. */
-  nowMark: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: -3,
-    height: 2,
-    borderRadius: 2,
-    backgroundColor: color.text,
-  },
+    chart: {
+      flexDirection: 'row',
+      alignItems: 'flex-end',
+      height: CHART_HEIGHT,
+      gap: 1,
+      marginTop: 4,
+    },
+    column: { flex: 1, height: '100%', justifyContent: 'flex-end' },
+    columnTrack: {
+      height: '100%',
+      justifyContent: 'flex-end',
+      backgroundColor: color.surface,
+      borderRadius: 2,
+      overflow: 'hidden',
+    },
+    columnFill: { width: '100%', borderTopLeftRadius: 2, borderTopRightRadius: 2 },
+    /** A gap in the data, drawn as a gap rather than as a zero. */
+    columnMissing: { height: 3, backgroundColor: color.undocumented },
+    /** Where "now" falls, on today's day only. */
+    nowMark: {
+      position: 'absolute',
+      left: 0,
+      right: 0,
+      bottom: -3,
+      height: 2,
+      borderRadius: 2,
+      backgroundColor: color.text,
+    },
 
-  rainStrip: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    height: RAIN_HEIGHT,
-    gap: 1,
-    marginTop: 4,
-  },
-  rainFill: { width: '100%', borderRadius: 2, backgroundColor: color.accent },
+    rainStrip: {
+      flexDirection: 'row',
+      alignItems: 'flex-end',
+      height: RAIN_HEIGHT,
+      gap: 1,
+      marginTop: 4,
+    },
+    rainFill: { width: '100%', borderRadius: 2, backgroundColor: color.accent },
 
-  axis: { flexDirection: 'row', gap: 1, marginTop: 2 },
-  /**
-   * The axis cannot reuse `column`.
-   *
-   * `column` is `height: '100%'`, which is meaningful inside the fixed-height
-   * chart and meaningless here, where the row's own height comes from its
-   * content. An unresolvable percentage left several hundred points of dead
-   * space hanging under the panel.
-   */
-  axisCell: { flex: 1 },
-  axisLabel: {
-    color: color.textFaint,
-    fontSize: 10,
-    fontVariant: ['tabular-nums'],
-    textAlign: 'center',
-  },
+    axis: { flexDirection: 'row', gap: 1, marginTop: 2 },
+    /**
+     * The axis cannot reuse `column`.
+     *
+     * `column` is `height: '100%'`, which is meaningful inside the fixed-height
+     * chart and meaningless here, where the row's own height comes from its
+     * content. An unresolvable percentage left several hundred points of dead
+     * space hanging under the panel.
+     */
+    axisCell: { flex: 1 },
+    axisLabel: {
+      color: color.textFaint,
+      fontSize: 10,
+      fontVariant: ['tabular-nums'],
+      textAlign: 'center',
+    },
 
-  clearestRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space.xs,
-    marginTop: space.sm,
-  },
-  clearest: { color: color.textMuted, fontSize: type.label, flex: 1 },
+    clearestRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: space.xs,
+      marginTop: space.sm,
+    },
+    clearest: { color: color.textMuted, fontSize: type.label, flex: 1 },
 
-  footer: { marginTop: space.sm, alignItems: 'flex-start' },
+    footer: { marginTop: space.sm, alignItems: 'flex-start' },
 
-  btn: {
-    height: 40,
-    paddingHorizontal: space.md,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: radius.md,
-    backgroundColor: color.surfaceRaised,
-  },
-  btnDisabled: { opacity: 0.6 },
-  btnLabel: { color: color.text, fontSize: type.label, fontWeight: weight.bold },
-});
+    btn: {
+      height: 40,
+      paddingHorizontal: space.md,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: radius.md,
+      backgroundColor: color.surfaceRaised,
+    },
+    btnDisabled: { opacity: 0.6 },
+    btnLabel: { color: color.text, fontSize: type.label, fontWeight: weight.bold },
+  });
+}

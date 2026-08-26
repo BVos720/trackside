@@ -18,7 +18,7 @@ import {
 import { AccessClassification, type Spot } from '../../core/domain/spot';
 import type { Media } from '../../core/domain/media';
 import type { SpotId } from '../../core/domain/ids';
-import { color, radius, space, type, weight } from '../theme';
+import { radius, space, type, useTheme, weight, type Theme } from '../theme';
 
 const ACCESS_LABEL: Record<AccessClassification, string> = {
   [AccessClassification.Official]: 'Official',
@@ -40,6 +40,9 @@ export default function SpotListScreen({
   onOpen: (id: SpotId) => void;
   onToggleHidden: (id: SpotId, hidden: boolean) => void;
 }) {
+  const { color } = useTheme();
+  const styles = useMemo(() => makeStyles(color), [color]);
+
   const [showHidden, setShowHidden] = useState(false);
 
   const { visible, hidden } = useMemo(
@@ -160,82 +163,84 @@ export default function SpotListScreen({
   );
 }
 
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: color.background },
-  pressed: { opacity: 0.7 },
+function makeStyles(color: Theme['color']) {
+  return StyleSheet.create({
+    root: { flex: 1, backgroundColor: color.background },
+    pressed: { opacity: 0.7 },
 
-  tabs: {
-    flexDirection: 'row',
-    gap: space.sm,
-    padding: space.sm,
-  },
-  tab: {
-    flex: 1,
-    height: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: radius.md,
-    backgroundColor: color.surface,
-  },
-  tabActive: { backgroundColor: color.surfaceRaised },
-  tabLabel: {
-    color: color.textMuted,
-    fontSize: type.label,
-    fontWeight: weight.bold,
-  },
-  tabLabelActive: { color: color.text },
+    tabs: {
+      flexDirection: 'row',
+      gap: space.sm,
+      padding: space.sm,
+    },
+    tab: {
+      flex: 1,
+      height: 44,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: radius.md,
+      backgroundColor: color.surface,
+    },
+    tabActive: { backgroundColor: color.surfaceRaised },
+    tabLabel: {
+      color: color.textMuted,
+      fontSize: type.label,
+      fontWeight: weight.bold,
+    },
+    tabLabelActive: { color: color.text },
 
-  list: { padding: space.sm, paddingBottom: space.xl },
-  empty: {
-    color: color.textFaint,
-    fontSize: type.body,
-    padding: space.lg,
-    textAlign: 'center',
-    lineHeight: 21,
-  },
+    list: { padding: space.sm, paddingBottom: space.xl },
+    empty: {
+      color: color.textFaint,
+      fontSize: type.body,
+      padding: space.lg,
+      textAlign: 'center',
+      lineHeight: 21,
+    },
 
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space.sm,
-    padding: space.sm,
-    borderRadius: radius.md,
-    backgroundColor: color.surface,
-    marginBottom: space.sm,
-  },
-  // Hidden rows recede rather than disappear — they are still yours.
-  rowHidden: { opacity: 0.55 },
+    row: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: space.sm,
+      padding: space.sm,
+      borderRadius: radius.md,
+      backgroundColor: color.surface,
+      marginBottom: space.sm,
+    },
+    // Hidden rows recede rather than disappear — they are still yours.
+    rowHidden: { opacity: 0.55 },
 
-  thumb: { width: 72, height: 54, borderRadius: radius.sm },
-  thumbEmpty: {
-    backgroundColor: color.surfaceRaised,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  thumbEmptyText: { color: color.textFaint, fontSize: 10 },
+    thumb: { width: 72, height: 54, borderRadius: radius.sm },
+    thumbEmpty: {
+      backgroundColor: color.surfaceRaised,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    thumbEmptyText: { color: color.textFaint, fontSize: 10 },
 
-  rowBody: { flex: 1 },
-  rowName: {
-    color: color.text,
-    fontSize: type.body,
-    fontWeight: weight.bold,
-  },
-  mutedText: { color: color.textMuted },
-  rowMeta: { color: color.textMuted, fontSize: type.label, marginTop: 2 },
-  undocumented: { color: color.undocumented },
-  rowTags: { color: color.textFaint, fontSize: 11, marginTop: 2 },
+    rowBody: { flex: 1 },
+    rowName: {
+      color: color.text,
+      fontSize: type.body,
+      fontWeight: weight.bold,
+    },
+    mutedText: { color: color.textMuted },
+    rowMeta: { color: color.textMuted, fontSize: type.label, marginTop: 2 },
+    undocumented: { color: color.undocumented },
+    rowTags: { color: color.textFaint, fontSize: 11, marginTop: 2 },
 
-  hideBtn: {
-    height: 40,
-    paddingHorizontal: space.md,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: radius.md,
-    backgroundColor: color.surfaceRaised,
-  },
-  hideLabel: {
-    color: color.textMuted,
-    fontSize: type.label,
-    fontWeight: weight.bold,
-  },
-});
+    hideBtn: {
+      height: 40,
+      paddingHorizontal: space.md,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: radius.md,
+      backgroundColor: color.surfaceRaised,
+    },
+    hideLabel: {
+      color: color.textMuted,
+      fontSize: type.label,
+      fontWeight: weight.bold,
+    },
+  });
+}

@@ -13,10 +13,11 @@
  * Every glyph draws inside a `size` x `size` box and centres itself in it, so
  * a row of them lines up without the caller measuring anything.
  */
+import { useMemo } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import type { SkyCondition } from '../core/logic/forecast';
-import { color, lightQualityColor } from './theme';
+import { lightQualityColor, useTheme, type Theme } from './theme';
 
 /** The sun, and the cloud in front of it, never share a colour — see `theme.ts`. */
 const SUN = lightQualityColor.golden;
@@ -25,6 +26,9 @@ const CLOUD_DARK = '#7C8794';
 const RAIN = lightQualityColor.daylight;
 
 function Sun({ size, offset }: { size: number; offset?: { x: number; y: number } }) {
+  const { color } = useTheme();
+  const styles = useMemo(() => makeStyles(color), [color]);
+
   const disc = size * 0.44;
   const ray = { length: size * 0.13, thickness: Math.max(1.5, size * 0.055) };
   return (
@@ -84,6 +88,9 @@ function Cloud({
   tint?: string;
   offset?: { x: number; y: number };
 }) {
+  const { color } = useTheme();
+  const styles = useMemo(() => makeStyles(color), [color]);
+
   const w = size * 0.72;
   const h = size * 0.3;
   const big = size * 0.34;
@@ -137,6 +144,9 @@ function Cloud({
 
 /** Three falling strokes under a cloud, raked over so they read as falling. */
 function Rain({ size }: { size: number }) {
+  const { color } = useTheme();
+  const styles = useMemo(() => makeStyles(color), [color]);
+
   const drop = { w: Math.max(1.5, size * 0.05), h: size * 0.16 };
   return (
     <View
@@ -232,8 +242,15 @@ export function conditionLabel(condition: SkyCondition): string {
  * muted grey of `textFaint`, so a column chart of cloud reads as "how grey is
  * it" without a legend. Interpolated in sRGB, which is good enough across two
  * colours this close in luminance.
+ *
+ * Takes the palette rather than reading a module-level one: the only token it
+ * needs is theme-dependent, and this is a plain function rather than a
+ * component, so there is no hook to reach for.
  */
-export function cloudColor(percent: number | null): string {
+export function cloudColor(
+  percent: number | null,
+  color: Theme['color'],
+): string {
   if (percent === null) return color.undocumented;
   const t = Math.max(0, Math.min(1, percent / 100));
   const from = [0x7f, 0xb2, 0xe5];
@@ -242,14 +259,16 @@ export function cloudColor(percent: number | null): string {
   return `rgb(${mix[0]}, ${mix[1]}, ${mix[2]})`;
 }
 
-const styles = StyleSheet.create({
-  centred: {
-    position: 'absolute',
-    top: 0,
-    right: 0,
-    bottom: 0,
-    left: 0,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-});
+function makeStyles(color: Theme['color']) {
+  return StyleSheet.create({
+    centred: {
+      position: 'absolute',
+      top: 0,
+      right: 0,
+      bottom: 0,
+      left: 0,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+  });
+}

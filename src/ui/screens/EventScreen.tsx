@@ -21,7 +21,15 @@ import type { SpotId, UserGearItemId } from '../../core/domain/ids';
 import type { Spot } from '../../core/domain/spot';
 import type { WalkNetwork } from '../../core/logic/route';
 import { formatDateRange } from '../DateRangePicker';
-import { MENU_CLEARANCE, color, radius, space, type, weight } from '../theme';
+import {
+  MENU_CLEARANCE,
+  radius,
+  space,
+  type,
+  useTheme,
+  weight,
+  type Theme,
+} from '../theme';
 import Collapsible from '../Collapsible';
 import EntryListScreen, { type SavedEntryRow } from './EntryListScreen';
 import GearScreen from './GearScreen';
@@ -113,6 +121,9 @@ export default function EventScreen({
   onBack: () => void;
   onDelete: () => void;
 }) {
+  const { color } = useTheme();
+  const styles = useMemo(() => makeStyles(color), [color]);
+
   const insets = useSafeAreaInsets();
   const range = formatDateRange(event.startDate, event.endDate);
   const dayOptions = eventDays(event);
@@ -336,91 +347,93 @@ export default function EventScreen({
   );
 }
 
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: color.background },
-  content: { padding: space.md, paddingBottom: space.xxl },
-  pressed: { opacity: 0.7 },
+function makeStyles(color: Theme['color']) {
+  return StyleSheet.create({
+    root: { flex: 1, backgroundColor: color.background },
+    content: { padding: space.md, paddingBottom: space.xxl },
+    pressed: { opacity: 0.7 },
 
-  back: {
-    color: color.textMuted,
-    fontSize: type.label,
-    fontWeight: weight.bold,
-    marginBottom: space.sm,
-  },
-  kicker: {
-    color: color.accent,
-    fontSize: type.label,
-    fontWeight: weight.bold,
-    letterSpacing: 2,
-  },
-  title: {
-    color: color.text,
-    fontSize: type.title,
-    fontWeight: weight.bold,
-    marginTop: space.xs,
-  },
-  subtitle: { color: color.textMuted, fontSize: type.label, marginTop: 2 },
+    back: {
+      color: color.textMuted,
+      fontSize: type.label,
+      fontWeight: weight.bold,
+      marginBottom: space.sm,
+    },
+    kicker: {
+      color: color.accent,
+      fontSize: type.label,
+      fontWeight: weight.bold,
+      letterSpacing: 2,
+    },
+    title: {
+      color: color.text,
+      fontSize: type.title,
+      fontWeight: weight.bold,
+      marginTop: space.xs,
+    },
+    subtitle: { color: color.textMuted, fontSize: type.label, marginTop: 2 },
 
-  mapButton: {
-    marginTop: space.md,
-    padding: space.md,
-    borderRadius: radius.md,
-    backgroundColor: color.accent,
-  },
-  mapLabel: {
-    color: color.onAccent,
-    fontSize: type.body,
-    fontWeight: weight.bold,
-  },
-  mapHint: { color: color.onAccent, fontSize: type.label, opacity: 0.8 },
+    mapButton: {
+      marginTop: space.md,
+      padding: space.md,
+      borderRadius: radius.md,
+      backgroundColor: color.accent,
+    },
+    mapLabel: {
+      color: color.onAccent,
+      fontSize: type.body,
+      fontWeight: weight.bold,
+    },
+    mapHint: { color: color.onAccent, fontSize: type.label, opacity: 0.8 },
 
-  section: {
-    marginTop: space.lg,
-    paddingTop: space.md,
-    borderTopWidth: 1,
-    borderTopColor: color.border,
-  },
-  sectionTitle: {
-    color: color.text,
-    fontSize: type.body,
-    fontWeight: weight.bold,
-    letterSpacing: 0.5,
-  },
+    section: {
+      marginTop: space.lg,
+      paddingTop: space.md,
+      borderTopWidth: 1,
+      borderTopColor: color.border,
+    },
+    sectionTitle: {
+      color: color.text,
+      fontSize: type.body,
+      fontWeight: weight.bold,
+      letterSpacing: 0.5,
+    },
 
-  fileHint: {
-    color: color.textMuted,
-    fontSize: type.label,
-    lineHeight: 17,
-    marginTop: space.xs,
-  },
-  filePath: {
-    color: color.textFaint,
-    fontSize: 10,
-    marginTop: space.xs,
-    fontVariant: ['tabular-nums'],
-  },
-  saveBtn: {
-    marginTop: space.sm,
-    alignSelf: 'flex-start',
-    paddingHorizontal: space.md,
-    height: 44,
-    justifyContent: 'center',
-    borderRadius: radius.md,
-    backgroundColor: color.surfaceRaised,
-    borderWidth: 1,
-    borderColor: color.border,
-  },
-  saveLabel: {
-    color: color.text,
-    fontSize: type.label,
-    fontWeight: weight.bold,
-  },
+    fileHint: {
+      color: color.textMuted,
+      fontSize: type.label,
+      lineHeight: 17,
+      marginTop: space.xs,
+    },
+    filePath: {
+      color: color.textFaint,
+      fontSize: 10,
+      marginTop: space.xs,
+      fontVariant: ['tabular-nums'],
+    },
+    saveBtn: {
+      marginTop: space.sm,
+      alignSelf: 'flex-start',
+      paddingHorizontal: space.md,
+      height: 44,
+      justifyContent: 'center',
+      borderRadius: radius.md,
+      backgroundColor: color.surfaceRaised,
+      borderWidth: 1,
+      borderColor: color.border,
+    },
+    saveLabel: {
+      color: color.text,
+      fontSize: type.label,
+      fontWeight: weight.bold,
+    },
 
-  delete: {
-    color: color.danger,
-    fontSize: type.label,
-    fontWeight: weight.bold,
-    marginTop: space.xl,
-  },
-  deleteHint: { color: color.textFaint, fontSize: 11, marginTop: 2 },
-});
+    delete: {
+      color: color.danger,
+      fontSize: type.label,
+      fontWeight: weight.bold,
+      marginTop: space.xl,
+    },
+    deleteHint: { color: color.textFaint, fontSize: 11, marginTop: 2 },
+  });
+}

@@ -43,11 +43,12 @@ import {
 import {
   MENU_CLEARANCE,
   MENU_TOP,
-  color,
   radius,
   space,
   type,
+  useTheme,
   weight,
+  type Theme,
 } from '../theme';
 import CircuitRuler from '../map/CircuitRuler';
 import SunDial from '../map/SunDial';
@@ -155,6 +156,9 @@ export default function MapScreen({
   /** The circuit's own coordinates — what `SunDial`/`SkyControl` compute the sun against. */
   position: LatLon;
 }) {
+  const { color } = useTheme();
+  const styles = useMemo(() => makeStyles(color), [color]);
+
   /**
    * One clock, shared by the sun and the weather.
    *
@@ -669,110 +673,112 @@ export default function MapScreen({
   );
 }
 
-const styles = StyleSheet.create({
-  modeButton: {
-    position: 'absolute',
-    left: space.md,
-    width: 56,
-    height: 56,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: radius.md,
-    backgroundColor: 'rgba(11,13,16,0.92)',
-    borderWidth: 1,
-    borderColor: color.border,
-  },
-  modeButtonActive: { backgroundColor: color.accent, borderColor: color.accent },
-  pressed: { opacity: 0.7 },
-  modeLabel: { color: color.text, fontSize: type.body, fontWeight: weight.bold },
-  modeLabelActive: { color: color.onAccent },
+function makeStyles(color: Theme['color']) {
+  return StyleSheet.create({
+    modeButton: {
+      position: 'absolute',
+      left: space.md,
+      width: 56,
+      height: 56,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: radius.md,
+      backgroundColor: 'rgba(11,13,16,0.92)',
+      borderWidth: 1,
+      borderColor: color.border,
+    },
+    modeButtonActive: { backgroundColor: color.accent, borderColor: color.accent },
+    pressed: { opacity: 0.7 },
+    modeLabel: { color: color.text, fontSize: type.body, fontWeight: weight.bold },
+    modeLabelActive: { color: color.onAccent },
 
-  /**
-   * The one honest caveat on this screen.
-   *
-   * Everything else works with no signal; the DEM does not. Saying so where the
-   * feature is used beats discovering it in the Eifel, which is exactly where
-   * there is no coverage and exactly where the relief matters most.
-   */
-  terrainNote: {
-    position: 'absolute',
-    left: space.md,
-    maxWidth: 190,
-    padding: space.sm,
-    borderRadius: radius.md,
-    backgroundColor: 'rgba(11,13,16,0.92)',
-    borderWidth: 1,
-    borderColor: color.border,
-  },
-  terrainNoteText: { color: color.textMuted, fontSize: 10, lineHeight: 14 },
+    /**
+     * The one honest caveat on this screen.
+     *
+     * Everything else works with no signal; the DEM does not. Saying so where the
+     * feature is used beats discovering it in the Eifel, which is exactly where
+     * there is no coverage and exactly where the relief matters most.
+     */
+    terrainNote: {
+      position: 'absolute',
+      left: space.md,
+      maxWidth: 190,
+      padding: space.sm,
+      borderRadius: radius.md,
+      backgroundColor: 'rgba(11,13,16,0.92)',
+      borderWidth: 1,
+      borderColor: color.border,
+    },
+    terrainNoteText: { color: color.textMuted, fontSize: 10, lineHeight: 14 },
 
-  root: { flex: 1, backgroundColor: color.background },
-  map: { flex: 1 },
+    root: { flex: 1, backgroundColor: color.background },
+    map: { flex: 1 },
 
-  centre: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: space.lg,
-    backgroundColor: color.background,
-  },
-  loading: { color: color.textMuted, fontSize: type.body, marginTop: space.md },
+    centre: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: space.lg,
+      backgroundColor: color.background,
+    },
+    loading: { color: color.textMuted, fontSize: type.body, marginTop: space.md },
 
-  errorTitle: {
-    color: color.accent,
-    fontSize: type.title,
-    fontWeight: weight.bold,
-  },
-  errorBody: {
-    color: color.text,
-    fontSize: type.body,
-    marginTop: space.sm,
-    textAlign: 'center',
-  },
-  errorHint: {
-    color: color.textFaint,
-    fontSize: type.label,
-    marginTop: space.md,
-    textAlign: 'center',
-  },
+    errorTitle: {
+      color: color.accent,
+      fontSize: type.title,
+      fontWeight: weight.bold,
+    },
+    errorBody: {
+      color: color.text,
+      fontSize: type.body,
+      marginTop: space.sm,
+      textAlign: 'center',
+    },
+    errorHint: {
+      color: color.textFaint,
+      fontSize: type.label,
+      marginTop: space.md,
+      textAlign: 'center',
+    },
 
-  callout: {
-    width: 124,
-    borderRadius: radius.md,
-    backgroundColor: 'rgba(11,13,16,0.96)',
-    borderWidth: 1,
-    borderColor: color.border,
-    overflow: 'hidden',
-  },
-  calloutDimmed: { opacity: 0.45 },
-  calloutImage: { width: '100%', height: 54 },
-  calloutEmpty: {
-    backgroundColor: color.surfaceRaised,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  calloutEmptyText: { color: color.textFaint, fontSize: 10 },
-  calloutName: {
-    color: color.text,
-    fontSize: 11,
-    fontWeight: weight.bold,
-    paddingHorizontal: space.sm,
-    paddingVertical: space.xs,
-  },
+    callout: {
+      width: 124,
+      borderRadius: radius.md,
+      backgroundColor: 'rgba(11,13,16,0.96)',
+      borderWidth: 1,
+      borderColor: color.border,
+      overflow: 'hidden',
+    },
+    calloutDimmed: { opacity: 0.45 },
+    calloutImage: { width: '100%', height: 54 },
+    calloutEmpty: {
+      backgroundColor: color.surfaceRaised,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    calloutEmptyText: { color: color.textFaint, fontSize: 10 },
+    calloutName: {
+      color: color.text,
+      fontSize: 11,
+      fontWeight: weight.bold,
+      paddingHorizontal: space.sm,
+      paddingVertical: space.xs,
+    },
 
-  badge: {
-    position: 'absolute',
-    top: space.md,
-    left: space.md,
-    backgroundColor: color.surface,
-    borderRadius: radius.md,
-    paddingHorizontal: space.md,
-    paddingVertical: space.sm,
-  },
-  badgeLabel: {
-    color: color.text,
-    fontSize: type.body,
-    fontWeight: weight.bold,
-  },
-  badgeSub: { color: color.textFaint, fontSize: type.label },
-});
+    badge: {
+      position: 'absolute',
+      top: space.md,
+      left: space.md,
+      backgroundColor: color.surface,
+      borderRadius: radius.md,
+      paddingHorizontal: space.md,
+      paddingVertical: space.sm,
+    },
+    badgeLabel: {
+      color: color.text,
+      fontSize: type.body,
+      fontWeight: weight.bold,
+    },
+    badgeSub: { color: color.textFaint, fontSize: type.label },
+  });
+}

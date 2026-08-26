@@ -88,11 +88,12 @@ import {
   MENU_HEIGHT,
   MENU_TOP,
   ThemeProvider,
-  color,
   radius,
   space,
   type,
+  useTheme,
   weight,
+  type Theme,
 } from './src/ui/theme';
 
 
@@ -232,6 +233,9 @@ function SafetyGate({ children }: { children: React.ReactNode }) {
 }
 
 function AppShell() {
+  const { color } = useTheme();
+  const styles = useMemo(() => makeStyles(color), [color]);
+
   const insets = useSafeAreaInsets();
   // Map is home; everything else is a destination reached from the menu.
   const [where, setWhere] = useState<Destination>('map');
@@ -1420,176 +1424,178 @@ function AppShell() {
   );
 }
 
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: color.background },
-  body: { flex: 1 },
-  pressed: { opacity: 0.7 },
+function makeStyles(color: Theme['color']) {
+  return StyleSheet.create({
+    root: { flex: 1, backgroundColor: color.background },
+    body: { flex: 1 },
+    pressed: { opacity: 0.7 },
 
-  /**
-   * The row every map control sits in.
-   *
-   * `box-none` so the gaps between buttons stay map, not a transparent bar
-   * swallowing taps and pans across the bottom of the screen.
-   */
-  bottomBar: {
-    position: 'absolute',
-    left: space.md,
-    right: space.md,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: space.sm,
-  },
+    /**
+     * The row every map control sits in.
+     *
+     * `box-none` so the gaps between buttons stay map, not a transparent bar
+     * swallowing taps and pans across the bottom of the screen.
+     */
+    bottomBar: {
+      position: 'absolute',
+      left: space.md,
+      right: space.md,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: space.sm,
+    },
 
-  addButton: {
-    height: 52,
-    paddingHorizontal: space.lg,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: radius.md,
-    backgroundColor: color.surface,
-    borderWidth: 1,
-    borderColor: color.border,
-  },
-  addButtonActive: { backgroundColor: color.accent, borderColor: color.accent },
+    addButton: {
+      height: 52,
+      paddingHorizontal: space.lg,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: radius.md,
+      backgroundColor: color.surface,
+      borderWidth: 1,
+      borderColor: color.border,
+    },
+    addButtonActive: { backgroundColor: color.accent, borderColor: color.accent },
 
-  /**
-   * Sits under the menu trigger rather than beside the map's other controls.
-   *
-   * It is navigation, not a map tool, so it belongs with the thing that says
-   * where you are — and the bottom corners are already spoken for by the two
-   * controls you use with a camera in one hand.
-   */
-  backToEvent: {
-    position: 'absolute',
-    top: space.md + 64,
-    left: space.md,
-    maxWidth: 240,
-    height: 40,
-    paddingHorizontal: space.md,
-    justifyContent: 'center',
-    borderRadius: radius.md,
-    backgroundColor: 'rgba(11,13,16,0.92)',
-    borderWidth: 1,
-    borderColor: color.accent,
-  },
-  backToEventLabel: {
-    color: color.accent,
-    fontSize: type.label,
-    fontWeight: weight.bold,
-  },
+    /**
+     * Sits under the menu trigger rather than beside the map's other controls.
+     *
+     * It is navigation, not a map tool, so it belongs with the thing that says
+     * where you are — and the bottom corners are already spoken for by the two
+     * controls you use with a camera in one hand.
+     */
+    backToEvent: {
+      position: 'absolute',
+      top: space.md + 64,
+      left: space.md,
+      maxWidth: 240,
+      height: 40,
+      paddingHorizontal: space.md,
+      justifyContent: 'center',
+      borderRadius: radius.md,
+      backgroundColor: 'rgba(11,13,16,0.92)',
+      borderWidth: 1,
+      borderColor: color.accent,
+    },
+    backToEventLabel: {
+      color: color.accent,
+      fontSize: type.label,
+      fontWeight: weight.bold,
+    },
 
-  /**
-   * Centred, because it is the one control you use without looking.
-   *
-   * Sized well past the 56pt glove minimum (§5.14): it appears only in the
-   * moment you have decided to save where you are standing, and a miss there
-   * costs the spot.
-   */
-  /**
-   * The bottom row's middle slot, between Spots and the placing button.
-   *
-   * It belongs with the other two rather than floating over the map: all three
-   * are the same kind of thing — what you can do right now — and a control in
-   * the middle of the map covers the ground you are trying to look at.
-   */
-  hereButton: {
-    minHeight: 52,
-    paddingHorizontal: space.md,
-    justifyContent: 'center',
-    borderRadius: radius.md,
-    backgroundColor: color.accent,
-    alignItems: 'center',
-  },
-  hereLabel: {
-    color: color.onAccent,
-    fontSize: type.body,
-    fontWeight: weight.bold,
-  },
-  hereHint: { color: color.onAccent, fontSize: 10, opacity: 0.85 },
+    /**
+     * Centred, because it is the one control you use without looking.
+     *
+     * Sized well past the 56pt glove minimum (§5.14): it appears only in the
+     * moment you have decided to save where you are standing, and a miss there
+     * costs the spot.
+     */
+    /**
+     * The bottom row's middle slot, between Spots and the placing button.
+     *
+     * It belongs with the other two rather than floating over the map: all three
+     * are the same kind of thing — what you can do right now — and a control in
+     * the middle of the map covers the ground you are trying to look at.
+     */
+    hereButton: {
+      minHeight: 52,
+      paddingHorizontal: space.md,
+      justifyContent: 'center',
+      borderRadius: radius.md,
+      backgroundColor: color.accent,
+      alignItems: 'center',
+    },
+    hereLabel: {
+      color: color.onAccent,
+      fontSize: type.body,
+      fontWeight: weight.bold,
+    },
+    hereHint: { color: color.onAccent, fontSize: 10, opacity: 0.85 },
 
-  listButton: {
-    height: 52,
-    paddingHorizontal: space.lg,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: radius.md,
-    backgroundColor: color.surface,
-    borderWidth: 1,
-    borderColor: color.border,
-  },
-  listButtonLabel: {
-    color: color.text,
-    fontSize: type.body,
-    fontWeight: weight.bold,
-  },
-  addLabel: { color: color.text, fontSize: type.body, fontWeight: weight.bold },
-  addLabelActive: { color: '#0B0D10' },
+    listButton: {
+      height: 52,
+      paddingHorizontal: space.lg,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: radius.md,
+      backgroundColor: color.surface,
+      borderWidth: 1,
+      borderColor: color.border,
+    },
+    listButtonLabel: {
+      color: color.text,
+      fontSize: type.body,
+      fontWeight: weight.bold,
+    },
+    addLabel: { color: color.text, fontSize: type.body, fontWeight: weight.bold },
+    addLabelActive: { color: '#0B0D10' },
 
-  /**
-   * Bottom panel heights.
-   *
-   * Peek shows a few rows and still leaves most of the map readable; the handle
-   * takes it full for a long list. Two fixed stops rather than a drag gesture —
-   * one tap with gloves on beats a precise drag.
-   */
-  emptyPlan: { flex: 1, padding: space.md, paddingTop: 120 },
-  emptyPlanTitle: {
-    color: color.text,
-    fontSize: type.title,
-    fontWeight: weight.bold,
-  },
-  emptyPlanBody: {
-    color: color.textMuted,
-    fontSize: type.body,
-    lineHeight: 21,
-    marginTop: space.sm,
-  },
-  emptyPlanBtn: {
-    marginTop: space.lg,
-    height: 52,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: radius.md,
-    backgroundColor: color.accent,
-  },
-  emptyPlanBtnLabel: {
-    color: color.onAccent,
-    fontSize: type.body,
-    fontWeight: weight.bold,
-  },
+    /**
+     * Bottom panel heights.
+     *
+     * Peek shows a few rows and still leaves most of the map readable; the handle
+     * takes it full for a long list. Two fixed stops rather than a drag gesture —
+     * one tap with gloves on beats a precise drag.
+     */
+    emptyPlan: { flex: 1, padding: space.md, paddingTop: 120 },
+    emptyPlanTitle: {
+      color: color.text,
+      fontSize: type.title,
+      fontWeight: weight.bold,
+    },
+    emptyPlanBody: {
+      color: color.textMuted,
+      fontSize: type.body,
+      lineHeight: 21,
+      marginTop: space.sm,
+    },
+    emptyPlanBtn: {
+      marginTop: space.lg,
+      height: 52,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: radius.md,
+      backgroundColor: color.accent,
+    },
+    emptyPlanBtnLabel: {
+      color: color.onAccent,
+      fontSize: type.body,
+      fontWeight: weight.bold,
+    },
 
-  listPanel: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    height: '46%',
-    backgroundColor: color.background,
-    borderTopLeftRadius: radius.lg,
-    borderTopRightRadius: radius.lg,
-    borderTopWidth: 1,
-    borderColor: color.border,
-    overflow: 'hidden',
-  },
-  listPanelFull: { height: '84%' },
-  listHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingTop: space.sm,
-  },
-  grabZone: { flex: 1, alignItems: 'center', paddingVertical: space.xs },
-  grab: { width: 44, height: 4, borderRadius: 2, backgroundColor: color.border },
-  listClose: {
-    position: 'absolute',
-    right: space.sm,
-    height: 36,
-    paddingHorizontal: space.sm,
-    justifyContent: 'center',
-  },
-  listCloseLabel: {
-    color: color.textMuted,
-    fontSize: type.label,
-    fontWeight: weight.bold,
-  },
-});
+    listPanel: {
+      position: 'absolute',
+      left: 0,
+      right: 0,
+      bottom: 0,
+      height: '46%',
+      backgroundColor: color.background,
+      borderTopLeftRadius: radius.lg,
+      borderTopRightRadius: radius.lg,
+      borderTopWidth: 1,
+      borderColor: color.border,
+      overflow: 'hidden',
+    },
+    listPanelFull: { height: '84%' },
+    listHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingTop: space.sm,
+    },
+    grabZone: { flex: 1, alignItems: 'center', paddingVertical: space.xs },
+    grab: { width: 44, height: 4, borderRadius: 2, backgroundColor: color.border },
+    listClose: {
+      position: 'absolute',
+      right: space.sm,
+      height: 36,
+      paddingHorizontal: space.sm,
+      justifyContent: 'center',
+    },
+    listCloseLabel: {
+      color: color.textMuted,
+      fontSize: type.label,
+      fontWeight: weight.bold,
+    },
+  });
+}

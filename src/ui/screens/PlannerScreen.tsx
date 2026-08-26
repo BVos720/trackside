@@ -42,7 +42,15 @@ import {
   type WalkEstimate,
 } from '../../core/logic/walk';
 import { formatDateRange, fromIsoDate } from '../DateRangePicker';
-import { MENU_CLEARANCE, color, radius, space, type, weight } from '../theme';
+import {
+  MENU_CLEARANCE,
+  radius,
+  space,
+  type,
+  useTheme,
+  weight,
+  type Theme,
+} from '../theme';
 
 /** A stop with everything the row needs already resolved. */
 interface PlannedStop {
@@ -101,6 +109,9 @@ export default function PlannerScreen({
   /** Rendered inside the event page rather than as its own screen. */
   embedded?: boolean;
 }) {
+  const { color } = useTheme();
+  const styles = useMemo(() => makeStyles(color), [color]);
+
   const days = useMemo(() => eventDays(event), [event]);
   const [day, setDay] = useState<string | null>(days[0] ?? null);
   const [picking, setPicking] = useState(false);
@@ -387,6 +398,9 @@ function StopEditor({
   onMove: (to: number) => void;
   onNavigate: () => void;
 }) {
+  const { color } = useTheme();
+  const styles = useMemo(() => makeStyles(color), [color]);
+
   const [time, setTime] = useState(stop.arriveAt ?? '');
   const [label, setLabel] = useState(stop.label ?? '');
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -543,238 +557,240 @@ function StopEditor({
   );
 }
 
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: color.background },
-  embedded: { paddingTop: space.sm },
-  content: { padding: space.md, paddingBottom: space.xxl },
-  pressed: { opacity: 0.7 },
-  disabled: { opacity: 0.35 },
+function makeStyles(color: Theme['color']) {
+  return StyleSheet.create({
+    root: { flex: 1, backgroundColor: color.background },
+    embedded: { paddingTop: space.sm },
+    content: { padding: space.md, paddingBottom: space.xxl },
+    pressed: { opacity: 0.7 },
+    disabled: { opacity: 0.35 },
 
-  kicker: {
-    color: color.accent,
-    fontSize: type.label,
-    fontWeight: weight.bold,
-    letterSpacing: 2,
-  },
-  title: {
-    color: color.text,
-    fontSize: type.title,
-    fontWeight: weight.bold,
-    marginTop: space.xs,
-  },
-  subtitle: { color: color.textMuted, fontSize: type.label, marginTop: 2 },
-  label: {
-    color: color.textFaint,
-    fontSize: type.label,
-    fontWeight: weight.bold,
-    letterSpacing: 1.5,
-    marginBottom: space.xs,
-  },
-  help: {
-    color: color.textMuted,
-    fontSize: type.label,
-    marginTop: space.sm,
-    lineHeight: 17,
-  },
-  empty: {
-    color: color.textFaint,
-    fontSize: type.body,
-    lineHeight: 21,
-    paddingVertical: space.lg,
-  },
+    kicker: {
+      color: color.accent,
+      fontSize: type.label,
+      fontWeight: weight.bold,
+      letterSpacing: 2,
+    },
+    title: {
+      color: color.text,
+      fontSize: type.title,
+      fontWeight: weight.bold,
+      marginTop: space.xs,
+    },
+    subtitle: { color: color.textMuted, fontSize: type.label, marginTop: 2 },
+    label: {
+      color: color.textFaint,
+      fontSize: type.label,
+      fontWeight: weight.bold,
+      letterSpacing: 1.5,
+      marginBottom: space.xs,
+    },
+    help: {
+      color: color.textMuted,
+      fontSize: type.label,
+      marginTop: space.sm,
+      lineHeight: 17,
+    },
+    empty: {
+      color: color.textFaint,
+      fontSize: type.body,
+      lineHeight: 21,
+      paddingVertical: space.lg,
+    },
 
-  dayStrip: { marginTop: space.md, marginBottom: space.xs },
-  dayStripContent: { gap: space.sm },
-  dayChip: {
-    paddingHorizontal: space.md,
-    height: 40,
-    justifyContent: 'center',
-    borderRadius: radius.md,
-    backgroundColor: color.surface,
-  },
-  dayChipActive: { backgroundColor: color.accent },
-  dayChipLabel: {
-    color: color.textMuted,
-    fontSize: type.label,
-    fontWeight: weight.bold,
-  },
-  dayChipLabelActive: { color: color.onAccent },
+    dayStrip: { marginTop: space.md, marginBottom: space.xs },
+    dayStripContent: { gap: space.sm },
+    dayChip: {
+      paddingHorizontal: space.md,
+      height: 40,
+      justifyContent: 'center',
+      borderRadius: radius.md,
+      backgroundColor: color.surface,
+    },
+    dayChipActive: { backgroundColor: color.accent },
+    dayChipLabel: {
+      color: color.textMuted,
+      fontSize: type.label,
+      fontWeight: weight.bold,
+    },
+    dayChipLabelActive: { color: color.onAccent },
 
-  stopBlock: { marginTop: space.sm },
+    stopBlock: { marginTop: space.sm },
 
-  legRow: { flexDirection: 'row', alignItems: 'stretch', paddingLeft: 15 },
-  legLine: {
-    width: 2,
-    backgroundColor: color.border,
-    marginRight: space.md,
-    marginVertical: 2,
-  },
-  legBody: { flex: 1, paddingVertical: space.xs },
-  legText: { color: color.textMuted, fontSize: type.label },
-  legWarn: { color: color.undocumented, fontSize: 11, marginTop: 1 },
-  legDepart: {
-    color: color.accent,
-    fontSize: type.label,
-    fontWeight: weight.bold,
-    marginTop: 1,
-  },
-  legBad: { color: color.danger },
+    legRow: { flexDirection: 'row', alignItems: 'stretch', paddingLeft: 15 },
+    legLine: {
+      width: 2,
+      backgroundColor: color.border,
+      marginRight: space.md,
+      marginVertical: 2,
+    },
+    legBody: { flex: 1, paddingVertical: space.xs },
+    legText: { color: color.textMuted, fontSize: type.label },
+    legWarn: { color: color.undocumented, fontSize: 11, marginTop: 1 },
+    legDepart: {
+      color: color.accent,
+      fontSize: type.label,
+      fontWeight: weight.bold,
+      marginTop: 1,
+    },
+    legBad: { color: color.danger },
 
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space.sm,
-    minHeight: 60,
-    paddingHorizontal: space.sm,
-    borderRadius: radius.md,
-    backgroundColor: color.surface,
-    borderWidth: 1,
-    borderColor: 'transparent',
-  },
-  rowBad: { borderColor: color.danger },
-  index: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: color.surfaceRaised,
-  },
-  indexText: {
-    color: color.textMuted,
-    fontSize: 11,
-    fontWeight: weight.bold,
-  },
-  rowBody: { flex: 1 },
-  rowName: { color: color.text, fontSize: type.body, fontWeight: weight.bold },
-  rowMeta: { color: color.textMuted, fontSize: type.label, marginTop: 2 },
+    row: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: space.sm,
+      minHeight: 60,
+      paddingHorizontal: space.sm,
+      borderRadius: radius.md,
+      backgroundColor: color.surface,
+      borderWidth: 1,
+      borderColor: 'transparent',
+    },
+    rowBad: { borderColor: color.danger },
+    index: {
+      width: 26,
+      height: 26,
+      borderRadius: 13,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: color.surfaceRaised,
+    },
+    indexText: {
+      color: color.textMuted,
+      fontSize: 11,
+      fontWeight: weight.bold,
+    },
+    rowBody: { flex: 1 },
+    rowName: { color: color.text, fontSize: type.body, fontWeight: weight.bold },
+    rowMeta: { color: color.textMuted, fontSize: type.label, marginTop: 2 },
 
-  small: {
-    height: 40,
-    paddingHorizontal: space.md,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: radius.md,
-    backgroundColor: color.surfaceRaised,
-  },
-  smallLabel: {
-    color: color.textMuted,
-    fontSize: type.label,
-    fontWeight: weight.bold,
-  },
-  navBtn: {
-    flex: 1,
-    height: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: radius.md,
-    backgroundColor: color.accent,
-  },
-  navLabel: {
-    color: color.onAccent,
-    fontSize: type.label,
-    fontWeight: weight.bold,
-  },
+    small: {
+      height: 40,
+      paddingHorizontal: space.md,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: radius.md,
+      backgroundColor: color.surfaceRaised,
+    },
+    smallLabel: {
+      color: color.textMuted,
+      fontSize: type.label,
+      fontWeight: weight.bold,
+    },
+    navBtn: {
+      flex: 1,
+      height: 40,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: radius.md,
+      backgroundColor: color.accent,
+    },
+    navLabel: {
+      color: color.onAccent,
+      fontSize: type.label,
+      fontWeight: weight.bold,
+    },
 
-  editor: {
-    padding: space.sm,
-    borderBottomLeftRadius: radius.md,
-    borderBottomRightRadius: radius.md,
-    backgroundColor: color.surfaceRaised,
-  },
-  editorLabel: {
-    color: color.textFaint,
-    fontSize: 10,
-    fontWeight: weight.bold,
-    letterSpacing: 1.5,
-    marginTop: space.sm,
-  },
-  editorRow: {
-    flexDirection: 'row',
-    gap: space.sm,
-    marginTop: space.md,
-    alignItems: 'center',
-  },
-  input: {
-    marginTop: space.xs,
-    backgroundColor: color.surface,
-    borderRadius: radius.md,
-    paddingHorizontal: space.md,
-    paddingVertical: space.sm,
-    color: color.text,
-    fontSize: type.body,
-    minHeight: 44,
-  },
-  remove: {
-    color: color.danger,
-    fontSize: type.label,
-    fontWeight: weight.bold,
-    marginTop: space.md,
-  },
-  removeHint: { color: color.textFaint, fontSize: 11, marginTop: 2 },
+    editor: {
+      padding: space.sm,
+      borderBottomLeftRadius: radius.md,
+      borderBottomRightRadius: radius.md,
+      backgroundColor: color.surfaceRaised,
+    },
+    editorLabel: {
+      color: color.textFaint,
+      fontSize: 10,
+      fontWeight: weight.bold,
+      letterSpacing: 1.5,
+      marginTop: space.sm,
+    },
+    editorRow: {
+      flexDirection: 'row',
+      gap: space.sm,
+      marginTop: space.md,
+      alignItems: 'center',
+    },
+    input: {
+      marginTop: space.xs,
+      backgroundColor: color.surface,
+      borderRadius: radius.md,
+      paddingHorizontal: space.md,
+      paddingVertical: space.sm,
+      color: color.text,
+      fontSize: type.body,
+      minHeight: 44,
+    },
+    remove: {
+      color: color.danger,
+      fontSize: type.label,
+      fontWeight: weight.bold,
+      marginTop: space.md,
+    },
+    removeHint: { color: color.textFaint, fontSize: 11, marginTop: 2 },
   
-  suggestionsContainer: {
-    position: 'absolute',
-    top: 52, // TextInput minHeight is 44 + marginTop space.xs (4 or 8)
-    left: 0,
-    right: 0,
-    backgroundColor: color.surface,
-    borderRadius: radius.md,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: color.border,
-    zIndex: 10,
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-  },
-  suggestionRow: {
-    padding: space.sm,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: color.border,
-  },
-  suggestionTitle: {
-    color: color.text,
-    fontSize: type.body,
-    fontWeight: weight.bold,
-  },
-  suggestionMeta: {
-    color: color.textMuted,
-    fontSize: 11,
-    marginTop: 2,
-    fontVariant: ['tabular-nums'],
-  },
+    suggestionsContainer: {
+      position: 'absolute',
+      top: 52, // TextInput minHeight is 44 + marginTop space.xs (4 or 8)
+      left: 0,
+      right: 0,
+      backgroundColor: color.surface,
+      borderRadius: radius.md,
+      overflow: 'hidden',
+      borderWidth: 1,
+      borderColor: color.border,
+      zIndex: 10,
+      elevation: 4,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.2,
+      shadowRadius: 4,
+    },
+    suggestionRow: {
+      padding: space.sm,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: color.border,
+    },
+    suggestionTitle: {
+      color: color.text,
+      fontSize: type.body,
+      fontWeight: weight.bold,
+    },
+    suggestionMeta: {
+      color: color.textMuted,
+      fontSize: 11,
+      marginTop: 2,
+      fontVariant: ['tabular-nums'],
+    },
 
-  picker: { marginTop: space.md },
-  pickRow: {
-    minHeight: 52,
-    justifyContent: 'center',
-    paddingHorizontal: space.md,
-    borderRadius: radius.md,
-    backgroundColor: color.surface,
-    marginBottom: space.sm,
-  },
-  pickName: { color: color.text, fontSize: type.body, fontWeight: weight.bold },
+    picker: { marginTop: space.md },
+    pickRow: {
+      minHeight: 52,
+      justifyContent: 'center',
+      paddingHorizontal: space.md,
+      borderRadius: radius.md,
+      backgroundColor: color.surface,
+      marginBottom: space.sm,
+    },
+    pickName: { color: color.text, fontSize: type.body, fontWeight: weight.bold },
 
-  primary: {
-    marginTop: space.md,
-    height: 52,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: radius.md,
-    backgroundColor: color.accent,
-  },
-  primaryLabel: {
-    color: color.onAccent,
-    fontSize: type.body,
-    fontWeight: weight.bold,
-  },
-  cancel: {
-    color: color.textMuted,
-    fontSize: type.label,
-    textAlign: 'center',
-    marginTop: space.sm,
-  },
-});
+    primary: {
+      marginTop: space.md,
+      height: 52,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: radius.md,
+      backgroundColor: color.accent,
+    },
+    primaryLabel: {
+      color: color.onAccent,
+      fontSize: type.body,
+      fontWeight: weight.bold,
+    },
+    cancel: {
+      color: color.textMuted,
+      fontSize: type.label,
+      textAlign: 'center',
+      marginTop: space.sm,
+    },
+  });
+}

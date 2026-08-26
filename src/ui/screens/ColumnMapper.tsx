@@ -46,7 +46,15 @@ import {
   describeMatch,
   matchTemplates,
 } from '../../core/logic/templateMatch';
-import { HIT_SIZE, color, radius, space, type, weight } from '../theme';
+import {
+  HIT_SIZE,
+  radius,
+  space,
+  type,
+  useTheme,
+  weight,
+  type Theme,
+} from '../theme';
 
 /** How many rows to show as a sample. Enough to see the pattern, few enough to fit. */
 const SAMPLE = 6;
@@ -85,6 +93,9 @@ export default function ColumnMapper({
   onSaveTemplate?: (name: string, mapping: ColumnMapping) => void;
   onTemplateUsed?: (id: MappingTemplateId) => void;
 }) {
+  const { color } = useTheme();
+  const styles = useMemo(() => makeStyles(color), [color]);
+
   const [mapping, setMapping] = useState<ColumnMapping>(emptyMapping);
   /** Which cell's field picker is open, as `row:column`. */
   const [picking, setPicking] = useState<string | null>(null);
@@ -380,188 +391,190 @@ export default function ColumnMapper({
   );
 }
 
-const styles = StyleSheet.create({
-  pressed: { opacity: 0.7 },
-  disabled: { opacity: 0.4 },
+function makeStyles(color: Theme['color']) {
+  return StyleSheet.create({
+    pressed: { opacity: 0.7 },
+    disabled: { opacity: 0.4 },
 
-  label: {
-    color: color.textFaint,
-    fontSize: type.label,
-    fontWeight: weight.bold,
-    letterSpacing: 1.5,
-    marginTop: space.lg,
-  },
-  help: {
-    color: color.textMuted,
-    fontSize: type.label,
-    marginTop: space.xs,
-    lineHeight: 17,
-  },
+    label: {
+      color: color.textFaint,
+      fontSize: type.label,
+      fontWeight: weight.bold,
+      letterSpacing: 1.5,
+      marginTop: space.lg,
+    },
+    help: {
+      color: color.textMuted,
+      fontSize: type.label,
+      marginTop: space.xs,
+      lineHeight: 17,
+    },
 
-  strideRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space.sm,
-    marginTop: space.sm,
-  },
-  strideLabel: { color: color.text, fontSize: type.label, flex: 1 },
-  strideValue: {
-    color: color.text,
-    fontSize: type.body,
-    fontWeight: weight.bold,
-    fontVariant: ['tabular-nums'],
-    width: 24,
-    textAlign: 'center',
-  },
-  step: {
-    width: HIT_SIZE - 12,
-    height: HIT_SIZE - 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: radius.md,
-    backgroundColor: color.surfaceRaised,
-  },
-  stepLabel: { color: color.text, fontSize: 20, fontWeight: weight.bold },
+    strideRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: space.sm,
+      marginTop: space.sm,
+    },
+    strideLabel: { color: color.text, fontSize: type.label, flex: 1 },
+    strideValue: {
+      color: color.text,
+      fontSize: type.body,
+      fontWeight: weight.bold,
+      fontVariant: ['tabular-nums'],
+      width: 24,
+      textAlign: 'center',
+    },
+    step: {
+      width: HIT_SIZE - 12,
+      height: HIT_SIZE - 12,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: radius.md,
+      backgroundColor: color.surfaceRaised,
+    },
+    stepLabel: { color: color.text, fontSize: 20, fontWeight: weight.bold },
 
-  gridScroll: { marginTop: space.sm },
-  gridRow: { flexDirection: 'row', alignItems: 'stretch', gap: space.xs, marginBottom: space.xs },
-  // The first row of a multi-row record, so the rhythm is visible.
-  recordStart: { borderTopWidth: 1, borderTopColor: color.border, paddingTop: space.xs },
-  offset: {
-    color: color.textFaint,
-    fontSize: 11,
-    width: 14,
-    alignSelf: 'center',
-    textAlign: 'center',
-  },
+    gridScroll: { marginTop: space.sm },
+    gridRow: { flexDirection: 'row', alignItems: 'stretch', gap: space.xs, marginBottom: space.xs },
+    // The first row of a multi-row record, so the rhythm is visible.
+    recordStart: { borderTopWidth: 1, borderTopColor: color.border, paddingTop: space.xs },
+    offset: {
+      color: color.textFaint,
+      fontSize: 11,
+      width: 14,
+      alignSelf: 'center',
+      textAlign: 'center',
+    },
 
-  cell: {
-    width: 118,
-    minHeight: HIT_SIZE - 12,
-    justifyContent: 'center',
-    paddingHorizontal: space.sm,
-    paddingVertical: space.xs,
-    borderRadius: radius.sm,
-    backgroundColor: color.surface,
-    borderWidth: 1,
-    borderColor: 'transparent',
-  },
-  cellAssigned: { borderColor: color.accent },
-  cellPicking: { backgroundColor: color.surfaceRaised, borderColor: color.text },
-  cellText: { color: color.text, fontSize: 11 },
-  cellField: {
-    color: color.accent,
-    fontSize: 10,
-    fontWeight: weight.bold,
-    marginTop: 2,
-  },
+    cell: {
+      width: 118,
+      minHeight: HIT_SIZE - 12,
+      justifyContent: 'center',
+      paddingHorizontal: space.sm,
+      paddingVertical: space.xs,
+      borderRadius: radius.sm,
+      backgroundColor: color.surface,
+      borderWidth: 1,
+      borderColor: 'transparent',
+    },
+    cellAssigned: { borderColor: color.accent },
+    cellPicking: { backgroundColor: color.surfaceRaised, borderColor: color.text },
+    cellText: { color: color.text, fontSize: 11 },
+    cellField: {
+      color: color.accent,
+      fontSize: 10,
+      fontWeight: weight.bold,
+      marginTop: 2,
+    },
 
-  notEntry: {
-    minHeight: HIT_SIZE - 12,
-    paddingHorizontal: space.sm,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: radius.sm,
-    backgroundColor: color.surfaceRaised,
-  },
-  notEntryLabel: { color: color.textMuted, fontSize: 10, fontWeight: weight.bold },
+    notEntry: {
+      minHeight: HIT_SIZE - 12,
+      paddingHorizontal: space.sm,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: radius.sm,
+      backgroundColor: color.surfaceRaised,
+    },
+    notEntryLabel: { color: color.textMuted, fontSize: 10, fontWeight: weight.bold },
 
-  picker: {
-    marginTop: space.sm,
-    padding: space.sm,
-    borderRadius: radius.md,
-    backgroundColor: color.surfaceRaised,
-  },
-  pickerTitle: { color: color.textMuted, fontSize: 11, fontWeight: weight.bold },
-  pickerRow: { flexDirection: 'row', flexWrap: 'wrap', gap: space.xs, marginTop: space.xs },
-  pick: {
-    minHeight: 44,
-    paddingHorizontal: space.md,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: radius.md,
-    backgroundColor: color.surface,
-  },
-  pickOn: { backgroundColor: color.accent },
-  pickLabel: { color: color.text, fontSize: type.label, fontWeight: weight.bold },
-  pickLabelOn: { color: color.onAccent },
+    picker: {
+      marginTop: space.sm,
+      padding: space.sm,
+      borderRadius: radius.md,
+      backgroundColor: color.surfaceRaised,
+    },
+    pickerTitle: { color: color.textMuted, fontSize: 11, fontWeight: weight.bold },
+    pickerRow: { flexDirection: 'row', flexWrap: 'wrap', gap: space.xs, marginTop: space.xs },
+    pick: {
+      minHeight: 44,
+      paddingHorizontal: space.md,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: radius.md,
+      backgroundColor: color.surface,
+    },
+    pickOn: { backgroundColor: color.accent },
+    pickLabel: { color: color.text, fontSize: type.label, fontWeight: weight.bold },
+    pickLabelOn: { color: color.onAccent },
 
-  status: {
-    color: color.text,
-    fontSize: type.label,
-    marginTop: space.xs,
-    backgroundColor: color.surface,
-    borderRadius: radius.sm,
-    padding: space.sm,
-  },
+    status: {
+      color: color.text,
+      fontSize: type.label,
+      marginTop: space.xs,
+      backgroundColor: color.surface,
+      borderRadius: radius.sm,
+      padding: space.sm,
+    },
 
-  preview: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space.sm,
-    marginTop: space.xs,
-    padding: space.sm,
-    borderRadius: radius.md,
-    backgroundColor: color.surface,
-  },
-  previewNumber: {
-    color: color.text,
-    fontSize: type.label,
-    fontWeight: weight.bold,
-    fontVariant: ['tabular-nums'],
-    width: 36,
-  },
-  previewBody: { flex: 1 },
-  previewTitle: { color: color.text, fontSize: type.label, fontWeight: weight.bold },
-  previewMeta: { color: color.textMuted, fontSize: 11, marginTop: 2 },
+    preview: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: space.sm,
+      marginTop: space.xs,
+      padding: space.sm,
+      borderRadius: radius.md,
+      backgroundColor: color.surface,
+    },
+    previewNumber: {
+      color: color.text,
+      fontSize: type.label,
+      fontWeight: weight.bold,
+      fontVariant: ['tabular-nums'],
+      width: 36,
+    },
+    previewBody: { flex: 1 },
+    previewTitle: { color: color.text, fontSize: type.label, fontWeight: weight.bold },
+    previewMeta: { color: color.textMuted, fontSize: 11, marginTop: 2 },
 
-  suggestion: {
-    marginTop: space.md,
-    padding: space.sm,
-    borderRadius: radius.md,
-    backgroundColor: color.surface,
-    borderWidth: 1,
-    borderColor: color.accent,
-  },
-  suggestionText: { color: color.text, fontSize: type.label, lineHeight: 18 },
-  suggestionActions: { flexDirection: 'row', gap: space.sm, marginTop: space.sm },
+    suggestion: {
+      marginTop: space.md,
+      padding: space.sm,
+      borderRadius: radius.md,
+      backgroundColor: color.surface,
+      borderWidth: 1,
+      borderColor: color.accent,
+    },
+    suggestionText: { color: color.text, fontSize: type.label, lineHeight: 18 },
+    suggestionActions: { flexDirection: 'row', gap: space.sm, marginTop: space.sm },
 
-  saveBox: { marginTop: space.md },
-  saveInput: {
-    marginTop: space.xs,
-    minHeight: 44,
-    backgroundColor: color.surfaceRaised,
-    borderRadius: radius.sm,
-    paddingHorizontal: space.sm,
-    color: color.text,
-    fontSize: type.label,
-  },
-  btn: {
-    height: 48,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: radius.md,
-    backgroundColor: color.surfaceRaised,
-  },
-  btnLabel: { color: color.text, fontSize: type.label, fontWeight: weight.bold },
+    saveBox: { marginTop: space.md },
+    saveInput: {
+      marginTop: space.xs,
+      minHeight: 44,
+      backgroundColor: color.surfaceRaised,
+      borderRadius: radius.sm,
+      paddingHorizontal: space.sm,
+      color: color.text,
+      fontSize: type.label,
+    },
+    btn: {
+      height: 48,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: radius.md,
+      backgroundColor: color.surfaceRaised,
+    },
+    btnLabel: { color: color.text, fontSize: type.label, fontWeight: weight.bold },
 
-  actions: { flexDirection: 'row', gap: space.sm, marginTop: space.md },
-  secondary: {
-    flex: 1,
-    height: 52,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: radius.md,
-    backgroundColor: color.surfaceRaised,
-  },
-  secondaryLabel: { color: color.text, fontSize: type.label, fontWeight: weight.bold },
-  primary: {
-    flex: 2,
-    height: 52,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: radius.md,
-    backgroundColor: color.accent,
-  },
-  primaryLabel: { color: color.onAccent, fontSize: type.body, fontWeight: weight.bold },
-});
+    actions: { flexDirection: 'row', gap: space.sm, marginTop: space.md },
+    secondary: {
+      flex: 1,
+      height: 52,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: radius.md,
+      backgroundColor: color.surfaceRaised,
+    },
+    secondaryLabel: { color: color.text, fontSize: type.label, fontWeight: weight.bold },
+    primary: {
+      flex: 2,
+      height: 52,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: radius.md,
+      backgroundColor: color.accent,
+    },
+    primaryLabel: { color: color.onAccent, fontSize: type.body, fontWeight: weight.bold },
+  });
+}

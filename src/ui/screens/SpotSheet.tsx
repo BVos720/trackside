@@ -8,7 +8,7 @@
  * taken in-app — not typed in. A ±15° stepper was a worse answer than no answer,
  * because a hand-guessed bearing looks identical to a measured one downstream.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Image,
   Pressable,
@@ -30,7 +30,7 @@ import {
 import { toggleUse } from '../../core/logic/spotUse';
 import { type Media, ReferenceKind } from '../../core/domain/media';
 import type { SpotDraft } from '../state/useSpots';
-import { color, radius, space, type, weight } from '../theme';
+import { radius, space, type, useTheme, weight, type Theme } from '../theme';
 
 /**
  * Access classification is chosen, never derived — spec §0.1, §9.1.
@@ -188,6 +188,9 @@ export default function SpotSheet({
   onPickPhoto: (kind: ReferenceKind | null, isKey: boolean) => void;
   onRemovePhoto: (id: string) => void;
 }) {
+  const { color } = useTheme();
+  const styles = useMemo(() => makeStyles(color), [color]);
+
   const position = spot
     ? { latitude: spot.position.latitude, longitude: spot.position.longitude }
     : draftPosition;
@@ -904,291 +907,293 @@ export default function SpotSheet({
   );
 }
 
-const styles = StyleSheet.create({
-  sheet: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    maxHeight: '82%',
-    backgroundColor: color.surface,
-    borderTopLeftRadius: radius.lg,
-    borderTopRightRadius: radius.lg,
-    borderTopWidth: 1,
-    borderColor: color.border,
-  },
-  grabber: {
-    alignSelf: 'center',
-    width: 44,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: color.border,
-    marginTop: space.sm,
-  },
-  body: { flexGrow: 0 },
-  bodyContent: { padding: space.md, paddingBottom: space.lg },
-  pressed: { opacity: 0.7 },
+function makeStyles(color: Theme['color']) {
+  return StyleSheet.create({
+    sheet: {
+      position: 'absolute',
+      left: 0,
+      right: 0,
+      bottom: 0,
+      maxHeight: '82%',
+      backgroundColor: color.surface,
+      borderTopLeftRadius: radius.lg,
+      borderTopRightRadius: radius.lg,
+      borderTopWidth: 1,
+      borderColor: color.border,
+    },
+    grabber: {
+      alignSelf: 'center',
+      width: 44,
+      height: 4,
+      borderRadius: 2,
+      backgroundColor: color.border,
+      marginTop: space.sm,
+    },
+    body: { flexGrow: 0 },
+    bodyContent: { padding: space.md, paddingBottom: space.lg },
+    pressed: { opacity: 0.7 },
 
-  kicker: {
-    color: color.accent,
-    fontSize: type.label,
-    fontWeight: weight.bold,
-    letterSpacing: 2,
-  },
-  coords: {
-    color: color.text,
-    fontSize: type.body,
-    fontWeight: weight.bold,
-    fontVariant: ['tabular-nums'],
-    marginTop: 2,
-  },
+    kicker: {
+      color: color.accent,
+      fontSize: type.label,
+      fontWeight: weight.bold,
+      letterSpacing: 2,
+    },
+    coords: {
+      color: color.text,
+      fontSize: type.body,
+      fontWeight: weight.bold,
+      fontVariant: ['tabular-nums'],
+      marginTop: 2,
+    },
 
-  label: {
-    color: color.textFaint,
-    fontSize: type.label,
-    fontWeight: weight.bold,
-    letterSpacing: 1.5,
-    marginTop: space.lg,
-  },
-  help: {
-    color: color.textMuted,
-    fontSize: type.label,
-    marginTop: space.xs,
-    lineHeight: 17,
-  },
+    label: {
+      color: color.textFaint,
+      fontSize: type.label,
+      fontWeight: weight.bold,
+      letterSpacing: 1.5,
+      marginTop: space.lg,
+    },
+    help: {
+      color: color.textMuted,
+      fontSize: type.label,
+      marginTop: space.xs,
+      lineHeight: 17,
+    },
 
-  useRow: { flexDirection: 'row', gap: space.sm, marginTop: space.sm },
-  /** 64pt: a gloved tap in the rain, per §5.14. */
-  use: {
-    flex: 1,
-    minHeight: 64,
-    justifyContent: 'center',
-    paddingHorizontal: space.md,
-    borderRadius: radius.md,
-    backgroundColor: color.surface,
-    borderWidth: 1,
-    borderColor: color.border,
-  },
-  useOn: { borderColor: color.accent, backgroundColor: color.surfaceRaised },
-  useLabel: {
-    color: color.textMuted,
-    fontSize: type.body,
-    fontWeight: weight.bold,
-  },
-  useLabelOn: { color: color.text },
-  useHint: { color: color.textFaint, fontSize: 11, marginTop: 2 },
-  useHintBlocked: { color: color.danger },
+    useRow: { flexDirection: 'row', gap: space.sm, marginTop: space.sm },
+    /** 64pt: a gloved tap in the rain, per §5.14. */
+    use: {
+      flex: 1,
+      minHeight: 64,
+      justifyContent: 'center',
+      paddingHorizontal: space.md,
+      borderRadius: radius.md,
+      backgroundColor: color.surface,
+      borderWidth: 1,
+      borderColor: color.border,
+    },
+    useOn: { borderColor: color.accent, backgroundColor: color.surfaceRaised },
+    useLabel: {
+      color: color.textMuted,
+      fontSize: type.body,
+      fontWeight: weight.bold,
+    },
+    useLabelOn: { color: color.text },
+    useHint: { color: color.textFaint, fontSize: 11, marginTop: 2 },
+    useHintBlocked: { color: color.danger },
 
-  clearLink: {
-    color: color.textFaint,
-    fontSize: type.label,
-    marginTop: space.xs,
-  },
+    clearLink: {
+      color: color.textFaint,
+      fontSize: type.label,
+      marginTop: space.xs,
+    },
 
-  input: {
-    marginTop: space.sm,
-    backgroundColor: color.surfaceRaised,
-    borderRadius: radius.md,
-    paddingHorizontal: space.md,
-    paddingVertical: space.sm,
-    color: color.text,
-    fontSize: type.body,
-    minHeight: 44,
-  },
-  inputMulti: { minHeight: 88, textAlignVertical: 'top' },
+    input: {
+      marginTop: space.sm,
+      backgroundColor: color.surfaceRaised,
+      borderRadius: radius.md,
+      paddingHorizontal: space.md,
+      paddingVertical: space.sm,
+      color: color.text,
+      fontSize: type.body,
+      minHeight: 44,
+    },
+    inputMulti: { minHeight: 88, textAlignVertical: 'top' },
 
-  option: {
-    marginTop: space.sm,
-    padding: space.sm,
-    borderRadius: radius.md,
-    backgroundColor: color.surfaceRaised,
-    borderWidth: 1,
-    borderColor: 'transparent',
-  },
-  optionActive: { borderColor: color.accent },
-  optionLabel: {
-    color: color.textMuted,
-    fontSize: type.body,
-    fontWeight: weight.bold,
-  },
-  optionLabelActive: { color: color.text },
-  optionHint: { color: color.textFaint, fontSize: type.label, marginTop: 2 },
+    option: {
+      marginTop: space.sm,
+      padding: space.sm,
+      borderRadius: radius.md,
+      backgroundColor: color.surfaceRaised,
+      borderWidth: 1,
+      borderColor: 'transparent',
+    },
+    optionActive: { borderColor: color.accent },
+    optionLabel: {
+      color: color.textMuted,
+      fontSize: type.body,
+      fontWeight: weight.bold,
+    },
+    optionLabelActive: { color: color.text },
+    optionHint: { color: color.textFaint, fontSize: type.label, marginTop: 2 },
 
-  keySlot: { marginTop: space.sm },
-  keyImage: { width: '100%', height: 150, borderRadius: radius.md },
-  keyEmpty: {
-    backgroundColor: color.surfaceRaised,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  keyEmptyText: {
-    color: color.textMuted,
-    fontSize: type.body,
-    fontWeight: weight.bold,
-  },
+    keySlot: { marginTop: space.sm },
+    keyImage: { width: '100%', height: 150, borderRadius: radius.md },
+    keyEmpty: {
+      backgroundColor: color.surfaceRaised,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    keyEmptyText: {
+      color: color.textMuted,
+      fontSize: type.body,
+      fontWeight: weight.bold,
+    },
 
-  chipRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: space.sm,
-    marginTop: space.sm,
-  },
-  chip: {
-    paddingHorizontal: space.md,
-    height: 40,
-    justifyContent: 'center',
-    borderRadius: radius.md,
-    backgroundColor: color.surfaceRaised,
-  },
-  chipActive: { backgroundColor: color.accent },
-  chipLabel: {
-    color: color.textMuted,
-    fontSize: type.label,
-    fontWeight: weight.bold,
-  },
-  chipLabelActive: { color: color.onAccent },
-  customRow: { flexDirection: 'row', gap: space.sm, alignItems: 'center' },
-  customInput: { flex: 1 },
-  addChip: {
-    height: 44,
-    paddingHorizontal: space.md,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: radius.md,
-    backgroundColor: color.surfaceRaised,
-    marginTop: space.sm,
-  },
-  addChipLabel: {
-    color: color.text,
-    fontSize: type.label,
-    fontWeight: weight.bold,
-  },
+    chipRow: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: space.sm,
+      marginTop: space.sm,
+    },
+    chip: {
+      paddingHorizontal: space.md,
+      height: 40,
+      justifyContent: 'center',
+      borderRadius: radius.md,
+      backgroundColor: color.surfaceRaised,
+    },
+    chipActive: { backgroundColor: color.accent },
+    chipLabel: {
+      color: color.textMuted,
+      fontSize: type.label,
+      fontWeight: weight.bold,
+    },
+    chipLabelActive: { color: color.onAccent },
+    customRow: { flexDirection: 'row', gap: space.sm, alignItems: 'center' },
+    customInput: { flex: 1 },
+    addChip: {
+      height: 44,
+      paddingHorizontal: space.md,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: radius.md,
+      backgroundColor: color.surfaceRaised,
+      marginTop: space.sm,
+    },
+    addChipLabel: {
+      color: color.text,
+      fontSize: type.label,
+      fontWeight: weight.bold,
+    },
 
-  shotRow: {
-    marginTop: space.sm,
-    padding: space.sm,
-    borderRadius: radius.md,
-    backgroundColor: color.surfaceRaised,
-  },
-  shotTechnique: {
-    color: color.text,
-    fontSize: type.body,
-    fontWeight: weight.bold,
-  },
-  shotDetail: {
-    color: color.textMuted,
-    fontSize: type.label,
-    marginTop: 2,
-    fontVariant: ['tabular-nums'],
-  },
-  shotForm: { marginTop: space.sm },
-  shotGrid: { flexDirection: 'row', gap: space.sm },
-  shotCell: { flex: 1 },
+    shotRow: {
+      marginTop: space.sm,
+      padding: space.sm,
+      borderRadius: radius.md,
+      backgroundColor: color.surfaceRaised,
+    },
+    shotTechnique: {
+      color: color.text,
+      fontSize: type.body,
+      fontWeight: weight.bold,
+    },
+    shotDetail: {
+      color: color.textMuted,
+      fontSize: type.label,
+      marginTop: 2,
+      fontVariant: ['tabular-nums'],
+    },
+    shotForm: { marginTop: space.sm },
+    shotGrid: { flexDirection: 'row', gap: space.sm },
+    shotCell: { flex: 1 },
 
-  pickRow: { flexDirection: 'row', gap: space.sm, marginTop: space.sm },
-  pickBtn: {
-    flex: 1,
-    height: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: radius.md,
-    backgroundColor: color.surfaceRaised,
-  },
-  pickLabel: {
-    color: color.text,
-    fontSize: type.label,
-    fontWeight: weight.bold,
-  },
+    pickRow: { flexDirection: 'row', gap: space.sm, marginTop: space.sm },
+    pickBtn: {
+      flex: 1,
+      height: 44,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: radius.md,
+      backgroundColor: color.surfaceRaised,
+    },
+    pickLabel: {
+      color: color.text,
+      fontSize: type.label,
+      fontWeight: weight.bold,
+    },
 
-  thumbRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: space.sm,
-    marginTop: space.sm,
-  },
-  thumb: { width: 96 },
-  thumbImage: { width: 96, height: 72, borderRadius: radius.sm },
-  thumbMissing: {
-    backgroundColor: color.surfaceRaised,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  thumbMissingText: { color: color.textFaint, fontSize: 11 },
-  thumbKind: {
-    color: color.textFaint,
-    fontSize: 11,
-    marginTop: 2,
-    textTransform: 'uppercase',
-  },
+    thumbRow: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: space.sm,
+      marginTop: space.sm,
+    },
+    thumb: { width: 96 },
+    thumbImage: { width: 96, height: 72, borderRadius: radius.sm },
+    thumbMissing: {
+      backgroundColor: color.surfaceRaised,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    thumbMissingText: { color: color.textFaint, fontSize: 11 },
+    thumbKind: {
+      color: color.textFaint,
+      fontSize: 11,
+      marginTop: 2,
+      textTransform: 'uppercase',
+    },
 
-  actions: {
-    flexDirection: 'row',
-    gap: space.sm,
-    padding: space.md,
-    borderTopWidth: 1,
-    borderTopColor: color.border,
-  },
-  cancelBtn: {
-    flex: 1,
-    height: 48,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: radius.md,
-    backgroundColor: color.surfaceRaised,
-  },
-  cancelLabel: {
-    color: color.textMuted,
-    fontSize: type.body,
-    fontWeight: weight.bold,
-  },
-  saveBtn: {
-    flex: 1,
-    height: 48,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: radius.md,
-    backgroundColor: color.accent,
-  },
-  saveLabel: { color: color.onAccent, fontSize: type.body, fontWeight: weight.bold },
+    actions: {
+      flexDirection: 'row',
+      gap: space.sm,
+      padding: space.md,
+      borderTopWidth: 1,
+      borderTopColor: color.border,
+    },
+    cancelBtn: {
+      flex: 1,
+      height: 48,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: radius.md,
+      backgroundColor: color.surfaceRaised,
+    },
+    cancelLabel: {
+      color: color.textMuted,
+      fontSize: type.body,
+      fontWeight: weight.bold,
+    },
+    saveBtn: {
+      flex: 1,
+      height: 48,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: radius.md,
+      backgroundColor: color.accent,
+    },
+    saveLabel: { color: color.onAccent, fontSize: type.body, fontWeight: weight.bold },
 
-  /**
-   * Next is the expected action, so it is the wide one.
-   *
-   * Save keeps the accent colour because it is the one that commits, but Next
-   * gets the room — on three of the four steps it is what you are reaching for,
-   * and the two must not be confusable by a thumb that is not looking.
-   */
-  nextBtn: {
-    flex: 1.4,
-    height: 48,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: radius.md,
-    backgroundColor: color.surfaceRaised,
-    borderWidth: 1,
-    borderColor: color.accent,
-  },
-  nextLabel: { color: color.accent, fontSize: type.body, fontWeight: weight.bold },
+    /**
+     * Next is the expected action, so it is the wide one.
+     *
+     * Save keeps the accent colour because it is the one that commits, but Next
+     * gets the room — on three of the four steps it is what you are reaching for,
+     * and the two must not be confusable by a thumb that is not looking.
+     */
+    nextBtn: {
+      flex: 1.4,
+      height: 48,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: radius.md,
+      backgroundColor: color.surfaceRaised,
+      borderWidth: 1,
+      borderColor: color.accent,
+    },
+    nextLabel: { color: color.accent, fontSize: type.body, fontWeight: weight.bold },
 
-  steps: { flexDirection: 'row', gap: 6, marginTop: space.md },
-  stepChip: {
-    flex: 1,
-    minHeight: 34,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: radius.sm,
-    backgroundColor: color.surface,
-  },
-  stepChipOn: { backgroundColor: color.accent },
-  stepChipLabel: {
-    color: color.textMuted,
-    fontSize: 12,
-    fontWeight: weight.bold,
-  },
-  stepChipLabelOn: { color: color.onAccent },
-  stepHint: {
-    color: color.textFaint,
-    fontSize: type.label,
-    marginTop: space.xs,
-  },
-});
+    steps: { flexDirection: 'row', gap: 6, marginTop: space.md },
+    stepChip: {
+      flex: 1,
+      minHeight: 34,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: radius.sm,
+      backgroundColor: color.surface,
+    },
+    stepChipOn: { backgroundColor: color.accent },
+    stepChipLabel: {
+      color: color.textMuted,
+      fontSize: 12,
+      fontWeight: weight.bold,
+    },
+    stepChipLabelOn: { color: color.onAccent },
+    stepHint: {
+      color: color.textFaint,
+      fontSize: type.label,
+      marginTop: space.xs,
+    },
+  });
+}
