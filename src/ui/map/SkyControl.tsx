@@ -67,7 +67,7 @@
  * shadow for contrast against the map's own brightness instead of a
  * background box (D4).
  */
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   PanResponder,
   Pressable,
@@ -100,6 +100,15 @@ import type { MapClock } from '../state/useMapClock';
 const STRIP_HEIGHT_EXPANDED = 36;
 /** D2's "quiet" height — a hint of the day's shape, not a control. */
 const STRIP_HEIGHT_COLLAPSED = 10;
+
+/**
+ * How long the expanded strip stays up once you stop touching it.
+ *
+ * Long enough to move a thumb from the strip to the date arrows and press one,
+ * which is the interaction that was impossible before. Short enough that it is
+ * gone by the time you look back at the map. Any interaction restarts it.
+ */
+const LINGER_MS = 5000;
 const KNOB_SIZE = 18;
 /**
  * Extra invisible touch margin so the collapsed strip stays glove-sized
@@ -151,17 +160,69 @@ export default function SkyControl({
 
   const [stripWidth, setStripWidth] = useState(0);
   const [expanded, setExpanded] = useState(false);
+
+  /**
+   * Stay open after the thumb lifts, and close on a timer instead.
+   *
+   * ── The bug this fixes ────────────────────────────────────────────────
+   * The date row lives inside the expanded section, and expansion used to last
+   * exactly as long as a thumb was down. So changing the day meant holding the
+   * strip with one finger and reaching the arrows with another — and letting go
+   * to do it collapsed the very row you were reaching for. Reported from the
+   * phone: "you have to hold down the slider to adjust the date, but you're
+   * holding the slider, and it pops back down when released."
+   *
+   * ── Why a timer rather than a toggle ──────────────────────────────────
+   * D2 in this file's header is right: this is furniture for something used a
+   * few seconds at a time, and it should recede. A tap-to-toggle keeps that
+   * promise only if people remember to close it, which on a map they are
+   * holding one-handed at a circuit they will not.
+   *
+   * So it still recedes on its own — just after you have had a chance to use
+   * it. Every interaction restarts the wait, so it never closes under a thumb
+   * that is still working; it closes when you have actually stopped.
+   */
+  const lingerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const keepOpen = useCallback(() => {
+    setExpanded(true);
+    if (lingerRef.current !== null) clearTimeout(lingerRef.current);
+    lingerRef.current = setTimeout(() => setExpanded(false), LINGER_MS);
+  }, []);
+
+  const holdOpen = useCallback(() => {
+    // During a drag there is no deadline at all — a finger held still on the
+    // strip is someone reading it, and closing under them would be absurd.
+    if (lingerRef.current !== null) clearTimeout(lingerRef.current);
+    lingerRef.current = null;
+    setExpanded(true);
+  }, []);
+
+  // A timer outliving the component would call setState on something unmounted
+  // — and this unmounts on every venue switch.
+  useEffect(
+    () => () => {
+      if (lingerRef.current !== null) clearTimeout(lingerRef.current);
+    },
+    [],
+  );
   const stripHeight = expanded ? STRIP_HEIGHT_EXPANDED : STRIP_HEIGHT_COLLAPSED;
 
   // Written every render, read only from inside PanResponder callbacks — see
   // the file header for why a plain closure over `clock`/`stripWidth` would
   // go stale.
-  const latestRef = useRef<{ clock: MapClock; stripWidth: number }>({
-    clock,
-    stripWidth,
-  });
+  const latestRef = useRef<{
+    clock: MapClock;
+    stripWidth: number;
+    keepOpen: () => void;
+    holdOpen: () => void;
+  }>({ clock, stripWidth, keepOpen: () => {}, holdOpen: () => {} });
   latestRef.current.clock = clock;
   latestRef.current.stripWidth = stripWidth;
+  // Through the ref like everything else the PanResponder touches: it is built
+  // once, so a callback captured directly would be the first render's forever.
+  latestRef.current.keepOpen = keepOpen;
+  latestRef.current.holdOpen = holdOpen;
 
   const onStripLayout = useCallback((e: LayoutChangeEvent) => {
     setStripWidth(e.nativeEvent.layout.width);
@@ -172,12 +233,15 @@ export default function SkyControl({
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: () => true,
       onPanResponderGrant: (evt: GestureResponderEvent) => {
-        setExpanded(true);
+        latestRef.current.holdOpen();
         scrubToLocationX(evt);
       },
       onPanResponderMove: (evt: GestureResponderEvent) => scrubToLocationX(evt),
-      onPanResponderRelease: () => setExpanded(false),
-      onPanResponderTerminate: () => setExpanded(false),
+      // Release starts the countdown rather than closing, so the date row is
+      // still there to be tapped. Terminate does the same: a gesture taken by
+      // the OS is not a decision to close.
+      onPanResponderRelease: () => latestRef.current.keepOpen(),
+      onPanResponderTerminate: () => latestRef.current.keepOpen(),
     }),
   ).current;
 
@@ -219,6 +283,10 @@ export default function SkyControl({
   const currentQuality = lightQuality(solarPosition(clock.now, position).altitude);
 
   const goToDay = (deltaDays: number) => {
+    // Restart the countdown. Stepping through several days is one continuous
+    // act, and closing between two presses would be the original bug wearing a
+    // different hat.
+    keepOpen();
     clock.scrubTo(shiftDay(clock.now, deltaDays));
   };
 
