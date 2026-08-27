@@ -24,12 +24,38 @@
  * So: needs a connection, proves nothing about §1.4, and is reached only from
  * the developer section. If the approach is adopted this file is replaced; if
  * it is not, this file is deleted. Either way it does not survive.
+ *
+ * ── Day 2: can the page read our own basemap? ─────────────────────────────
+ * Day 1 passed — 56fps, a real mesh, elevation 1201m at the Nordschleife. The
+ * question now is delivery, and it is the harder one.
+ *
+ * The basemap is a 3–7MB `.pmtiles` archive in the app bundle. pmtiles is
+ * normally read with HTTP **range requests**, and `file://` has no range
+ * semantics — so the usual route is closed before it starts. Two ways round it,
+ * tried in order because the first is dramatically better if it works:
+ *
+ *   1. Fetch the whole archive once, as a plain GET with no Range header, and
+ *      serve pmtiles from an in-memory buffer. Its `Source` interface is two
+ *      methods, so a buffer-backed source is a handful of lines. Nothing
+ *      crosses the React Native bridge.
+ *
+ *   2. Read the file on the native side and hand the bytes over as base64.
+ *      Certain to work, but 4.5MB becomes a 6MB string through a bridge that
+ *      was not built for it.
+ *
+ * Whichever succeeds, the page then renders the *real* style rather than a
+ * demo one — which is also the honest performance test, since 56fps was a bare
+ * hillshade and the real document carries the circuit, the corridor mask,
+ * buildings and up to 14k tree points.
  */
-import { useState } from 'react';
+import { Asset } from 'expo-asset';
+import { File } from 'expo-file-system';
+import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { PDF_BRIDGE_SUPPORTED } from '../../storage-local/pdfBridge';
 import { VENUE_VIEW, type VenueKey } from '../map/style';
+import { TILE_ASSETS } from './MapScreen';
 
 /*
  * The same lazy require the PDF bridge uses.
@@ -67,7 +93,7 @@ const TERRAIN_TILES =
  */
 const FLAT_VENUES = new Set<VenueKey>(['zolder', 'zandvoort', 'suzuka', 'le-mans']);
 
-function buildHtml(venue: VenueKey): string {
+function buildHtml(venue: VenueKey, archiveUrl: string): string {
   const useVenue = !FLAT_VENUES.has(venue);
   const view = VENUE_VIEW[useVenue ? venue : ('nordschleife' as VenueKey)];
   const [lon, lat] = view.centre;
@@ -93,6 +119,7 @@ function buildHtml(venue: VenueKey): string {
   <div id="map"></div>
   <div id="err"></div>
   <script src="https://unpkg.com/maplibre-gl@5.6.0/dist/maplibre-gl.js"></script>
+  <script src="https://unpkg.com/pmtiles@4.5.0/dist/pmtiles.js"></script>
   <script>
     var post = function (payload) {
       if (window.ReactNativeWebView) {
@@ -124,6 +151,62 @@ function buildHtml(venue: VenueKey): string {
       post({ stage: gl ? 'webgl-ok' : 'webgl-MISSING' });
 
       /*
+       * Load our own archive before building the map.
+       *
+       * Reported either way: which route worked, how long it took, and how
+       * many bytes arrived. A silent fallback would hide the answer this whole
+       * screen exists to produce.
+       */
+      var ARCHIVE_URL = '${archiveUrl}';
+
+      function bufferSource(buffer) {
+        // pmtiles' Source is two methods. Ranges become slices, which is the
+        // entire trick: no HTTP, no partial requests, no file:// semantics.
+        return {
+          getKey: function () { return 'bundled'; },
+          getBytes: function (offset, length) {
+            return Promise.resolve({ data: buffer.slice(offset, offset + length) });
+          }
+        };
+      }
+
+      function loadArchive() {
+        var started = Date.now();
+        return fetch(ARCHIVE_URL)
+          .then(function (r) {
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            return r.arrayBuffer();
+          })
+          .then(function (buf) {
+            post({
+              stage: 'archive-via-fetch',
+              bytes: buf.byteLength,
+              ms: Date.now() - started
+            });
+            return buf;
+          })
+          .catch(function (e) {
+            post({ stage: 'archive-fetch-failed', error: String(e && e.message || e) });
+            // The native side is watching for this and will inject the bytes.
+            return new Promise(function (resolve) {
+              window.__acceptArchive = function (base64) {
+                var began = Date.now();
+                var bin = atob(base64);
+                var bytes = new Uint8Array(bin.length);
+                for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+                post({
+                  stage: 'archive-via-bridge',
+                  bytes: bytes.byteLength,
+                  ms: Date.now() - began
+                });
+                resolve(bytes.buffer);
+              };
+              post({ stage: 'awaiting-bridge' });
+            });
+          });
+      }
+
+      /*
        * An empty style plus hillshading, rather than a basemap.
        *
        * The first run used MapLibre's demotiles, which is a country-outline
@@ -135,6 +218,20 @@ function buildHtml(venue: VenueKey): string {
        * Hillshading from the same DEM makes the landform itself the picture,
        * so there is nothing to confuse a working mesh with a missing basemap.
        */
+      if (!window.pmtiles) throw new Error('pmtiles did not load from the CDN');
+      post({ stage: 'pmtiles-loaded' });
+
+      loadArchive().then(function (buffer) {
+        buildMap(buffer);
+      }).catch(function (e) { fail('archive', e); });
+
+      function buildMap(buffer) {
+      var archive = new pmtiles.PMTiles(bufferSource(buffer));
+      var protocol = new pmtiles.Protocol();
+      protocol.add(archive);
+      maplibregl.addProtocol('pmtiles', protocol.tile);
+      post({ stage: 'protocol-registered' });
+
       var map = new maplibregl.Map({
         container: 'map',
         style: {
@@ -146,10 +243,27 @@ function buildHtml(venue: VenueKey): string {
               encoding: 'terrarium',
               tileSize: 256,
               maxzoom: 14
-            }
+            },
+            // Our own archive, read from memory. If this draws, the offline
+            // half of the problem is solved.
+            base: { type: 'vector', url: 'pmtiles://bundled' }
           },
           layers: [
             { id: 'sky-bg', type: 'background', paint: { 'background-color': '#0B0D10' } },
+            {
+              id: 'land',
+              type: 'fill',
+              source: 'base',
+              'source-layer': 'landuse',
+              paint: { 'fill-color': '#16241C', 'fill-opacity': 0.7 }
+            },
+            {
+              id: 'roads',
+              type: 'line',
+              source: 'base',
+              'source-layer': 'roads',
+              paint: { 'line-color': '#4A5361', 'line-width': 1.2 }
+            },
             {
               id: 'shade',
               type: 'hillshade',
@@ -236,6 +350,7 @@ function buildHtml(venue: VenueKey): string {
 
         post({ stage: 'pitch', pitch: Math.round(map.getPitch()) });
       });
+      } // end buildMap
 
       // Rough frame timing while the user drags, which is the question that
       // decides whether this is usable rather than merely possible.
@@ -266,6 +381,54 @@ export default function TerrainSpike({
   const [log, setLog] = useState<string[]>([]);
   const [fps, setFps] = useState<number | null>(null);
 
+  /**
+   * Where the bundled archive lives on disk, once unpacked.
+   *
+   * Null until it is known, and the WebView is not rendered before then —
+   * building the page without a URL would only test the fallback.
+   */
+  const [archiveUrl, setArchiveUrl] = useState<string | null>(null);
+  const webRef = useRef<{ injectJavaScript: (js: string) => void } | null>(null);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const asset = Asset.fromModule(TILE_ASSETS[venue]);
+        await asset.downloadAsync();
+        setArchiveUrl(asset.localUri ?? asset.uri ?? '');
+      } catch {
+        // An empty URL still builds a page; its fetch fails and the bridge
+        // path takes over, which is a result rather than a dead end.
+        setArchiveUrl('');
+      }
+    })();
+  }, [venue]);
+
+  /**
+   * Hand the archive over as base64, when the page could not read it itself.
+   *
+   * The expensive path, and the one that is certain to work: 4.5MB of
+   * Nordschleife becomes about 6MB of string crossing a bridge not built for
+   * it. Worth measuring rather than assuming — if this is the only route that
+   * works, how long it takes decides whether the whole approach is usable.
+   */
+  const sendArchiveOverBridge = async () => {
+    if (archiveUrl === null || archiveUrl === '') {
+      note('bridge: no archive path to read');
+      return;
+    }
+    try {
+      const began = Date.now();
+      const base64 = await new File(archiveUrl).base64();
+      note(`bridge: read ${Math.round(base64.length / 1024)}KB in ${Date.now() - began}ms`);
+      webRef.current?.injectJavaScript(
+        `window.__acceptArchive && window.__acceptArchive("${base64}"); true;`,
+      );
+    } catch (e) {
+      note(`bridge read failed — ${e instanceof Error ? e.message : String(e)}`);
+    }
+  };
+
   const note = (line: string) =>
     setLog((prev) => (prev.length > 12 ? [...prev.slice(1), line] : [...prev, line]));
 
@@ -287,10 +450,32 @@ export default function TerrainSpike({
 
   const WebView = WebViewComponent;
 
+  if (archiveUrl === null) {
+    return (
+      <View style={styles.centre}>
+        <ActivityIndicator color="#F2F5F8" />
+        <Text style={styles.body}>Unpacking the basemap…</Text>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.root}>
       <WebView
-        source={{ html: buildHtml(venue), baseUrl: 'https://trackside.invalid/' }}
+        ref={webRef as never}
+        source={{ html: buildHtml(venue, archiveUrl), baseUrl: 'https://trackside.invalid/' }}
+        /*
+         * File access, for the good path.
+         *
+         * The page tries to fetch the archive off disk before falling back to
+         * the bridge. Whether a page on an https origin may read a file:// URL
+         * is exactly what is being tested — these props are what make it
+         * possible at all, not what make it certain.
+         */
+        allowFileAccess
+        allowFileAccessFromFileURLs
+        allowUniversalAccessFromFileURLs
+        allowingReadAccessToURL={archiveUrl}
         originWhitelist={['*']}
         style={styles.web}
         // The library and the DEM both come over the network here. See the
@@ -327,6 +512,9 @@ export default function TerrainSpike({
               `${m.stage ?? '?'}${extra ? ' ' + extra : ''}` +
                 (m.error ? ` — ${m.error}` : ''),
             );
+
+            // The page could not read the file itself. Send it across.
+            if (m.stage === 'awaiting-bridge') void sendArchiveOverBridge();
           } catch {
             note('unreadable message');
           }

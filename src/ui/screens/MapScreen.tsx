@@ -75,7 +75,14 @@ import {
  * no tiles. `metro.config.js` adds `pmtiles` to `assetExts`; without that the
  * require fails outright.
  */
-const TILE_ASSETS: Record<VenueKey, number> = {
+/**
+ * The bundled basemap archive per venue.
+ *
+ * Exported so the terrain spike can reach the same file the map uses — see
+ * TerrainSpike.tsx. Nothing else should import it; the map screen owns how
+ * these are unpacked.
+ */
+export const TILE_ASSETS: Record<VenueKey, number> = {
   nordschleife: require('../../../assets/tiles/nordschleife.pmtiles'),
   'le-mans': require('../../../assets/tiles/le-mans.pmtiles'),
   zolder: require('../../../assets/tiles/zolder.pmtiles'),
