@@ -99,6 +99,20 @@ const TERRAIN_TILES =
  */
 const FLAT_VENUES = new Set<VenueKey>(['zolder', 'zandvoort', 'suzuka', 'le-mans']);
 
+/**
+ * The style document, as a string, for the venue actually shown.
+ *
+ * Scenery is off. The woodland scatter is 1.26MB of the 2.4MB total and it is
+ * the least of what Branco asked for — circuit, paths, buildings — so it stays
+ * out until the rest is proven. Turning it back on is one argument.
+ */
+function buildStyleJson(venue: VenueKey): string {
+  const shown = (FLAT_VENUES.has(venue) ? 'nordschleife' : venue) as VenueKey;
+  return JSON.stringify(
+    buildMapStyle('bundled', shown, undefined, false, true, REMOTE_GLYPHS_URL, false),
+  );
+}
+
 function buildHtml(venue: VenueKey, archiveUrl: string): string {
   const useVenue = !FLAT_VENUES.has(venue);
   const shown = (useVenue ? venue : 'nordschleife') as VenueKey;
@@ -119,9 +133,7 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
    * because there is no native <GeoJSONSource> to declare it separately.
    * `terrain3d` is true so the 3D layers exist to be switched on.
    */
-  const styleJson = JSON.stringify(
-    buildMapStyle('bundled', shown, undefined, false, true, REMOTE_GLYPHS_URL, true),
-  );
+  // Computed by the caller now and sent in chunks — see buildStyleJson.
 
   return `<!doctype html>
 <html>
@@ -246,9 +258,38 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
        * cannot read it, and here it is set imperatively exactly as
        * MapScreen.web.tsx does.
        */
-      var style = ${styleJson};
-      post({ stage: 'style-built', bytes: JSON.stringify(style).length });
+      /*
+       * The style arrives after the page is alive, in pieces.
+       *
+       * It used to be baked into this HTML, and that was the reason nothing
+       * happened at all: buildMapStyle inlines every GeoJSON the map needs —
+       * 1.26MB of tree points, 430KB of paths, 320KB of buildings — so the
+       * document handed to loadHTMLString was about 2.5MB. Thirty seconds
+       * later the page had still not run its first line.
+       *
+       * Bulk data does not belong in a document. It comes across in chunks
+       * now, which also means the page can report that it is alive *before*
+       * any of it arrives — the thing that was missing when this hung.
+       */
+      var styleParts = [];
+      window.__stylePart = function (part) { styleParts.push(part); };
+      window.__styleDone = function () {
+        var began = Date.now();
+        var text = styleParts.join('');
+        styleParts = [];
+        var style;
+        try {
+          style = JSON.parse(text);
+        } catch (e) {
+          return fail('style-parse', e);
+        }
+        post({ stage: 'style-received', bytes: text.length, ms: Date.now() - began });
+        buildMapWithStyle(style);
+      };
 
+      post({ stage: 'awaiting-style' });
+
+      function buildMapWithStyle(style) {
       var map = new maplibregl.Map({
         container: 'map',
         style: style,
@@ -338,6 +379,7 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
 
         post({ stage: 'pitch', pitch: Math.round(map.getPitch()) });
       });
+      } // end buildMapWithStyle
       } // end buildMap
 
       // Rough frame timing while the user drags, which is the question that
@@ -400,6 +442,39 @@ export default function TerrainSpike({
    * it. Worth measuring rather than assuming — if this is the only route that
    * works, how long it takes decides whether the whole approach is usable.
    */
+  /**
+   * Push the style across in chunks.
+   *
+   * 64KB at a time: one injectJavaScript call carrying a megabyte of string
+   * is the same mistake as putting it in the document, just later. Chunking
+   * also means a failure part-way is visible in the log rather than silent.
+   */
+  const sendStyle = () => {
+    try {
+      const json = buildStyleJson(venue);
+      const CHUNK = 64 * 1024;
+      note(`style: ${Math.round(json.length / 1024)}KB in ${Math.ceil(json.length / CHUNK)} chunks`);
+
+      for (let i = 0; i < json.length; i += CHUNK) {
+        const part = json
+          .slice(i, i + CHUNK)
+          // The chunk is injected inside a JS string literal, so anything that
+          // could close it early has to go — including the line separators
+          // JSON leaves alone but JavaScript treats as newlines.
+          .replace(/\\/g, '\\\\')
+          .replace(/"/g, '\\"')
+          .replace(/\n/g, '\\n')
+          .replace(/\r/g, '\\r')
+          .replace(/\u2028/g, '\\u2028')
+          .replace(/\u2029/g, '\\u2029');
+        webRef.current?.injectJavaScript(`window.__stylePart("${part}"); true;`);
+      }
+      webRef.current?.injectJavaScript('window.__styleDone(); true;');
+    } catch (e) {
+      note(`style send failed — ${e instanceof Error ? e.message : String(e)}`);
+    }
+  };
+
   const sendArchiveOverBridge = async () => {
     if (archiveUrl === null || archiveUrl === '') {
       note('bridge: no archive path to read');
@@ -503,6 +578,7 @@ export default function TerrainSpike({
 
             // The page could not read the file itself. Send it across.
             if (m.stage === 'awaiting-bridge') void sendArchiveOverBridge();
+            if (m.stage === 'awaiting-style') sendStyle();
           } catch {
             note('unreadable message');
           }
