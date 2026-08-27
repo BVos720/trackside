@@ -54,9 +54,25 @@ try {
 const TERRAIN_TILES =
   'https://elevation-tiles-prod.s3.amazonaws.com/terrarium/{z}/{x}/{y}.png';
 
+/**
+ * Where to point the test.
+ *
+ * The venue, unless the venue is flat. Zolder has about forty metres of relief
+ * and Zandvoort is dunes — at either, a perfectly working mesh looks like
+ * nothing at all, which is exactly how the first run wasted a build.
+ *
+ * The Nordschleife is the honest local test: three hundred metres of Eifel,
+ * and the circuit Branco actually knows, so "does that look right" is a
+ * question he can answer rather than guess at.
+ */
+const FLAT_VENUES = new Set<VenueKey>(['zolder', 'zandvoort', 'suzuka', 'le-mans']);
+
 function buildHtml(venue: VenueKey): string {
-  const view = VENUE_VIEW[venue];
+  const useVenue = !FLAT_VENUES.has(venue);
+  const view = VENUE_VIEW[useVenue ? venue : ('nordschleife' as VenueKey)];
   const [lon, lat] = view.centre;
+  // Pulled back a little: relief reads at a distance, not from inside a corner.
+  const zoom = 12.5;
 
   return `<!doctype html>
 <html>
@@ -99,19 +115,57 @@ function buildHtml(venue: VenueKey): string {
       if (!window.maplibregl) throw new Error('maplibre-gl did not load from the CDN');
       post({ stage: 'library-loaded', version: maplibregl.getVersion ? maplibregl.getVersion() : '?' });
 
-      if (!maplibregl.supported || !maplibregl.supported()) {
-        // Not fatal on its own — newer versions dropped this helper — but if it
-        // exists and says no, WebGL is the answer to why nothing appears.
-        post({ stage: 'webgl-unsupported' });
-      }
+      // v5 removed maplibregl.supported(), so its absence says nothing. Ask
+      // the browser directly instead — the first run reported
+      // "webgl-unsupported" purely because the helper had been deleted, while
+      // the map rendered fine at 38fps.
+      var probe = document.createElement('canvas');
+      var gl = probe.getContext('webgl2') || probe.getContext('webgl');
+      post({ stage: gl ? 'webgl-ok' : 'webgl-MISSING' });
 
+      /*
+       * An empty style plus hillshading, rather than a basemap.
+       *
+       * The first run used MapLibre's demotiles, which is a country-outline
+       * demo with nothing at all at zoom 13 — so the screen was a flat beige
+       * field and the terrain could have been working perfectly without
+       * showing it. Zolder did not help either: forty metres of relief in
+       * Belgium is invisible however good the mesh is.
+       *
+       * Hillshading from the same DEM makes the landform itself the picture,
+       * so there is nothing to confuse a working mesh with a missing basemap.
+       */
       var map = new maplibregl.Map({
         container: 'map',
-        // A demo style, deliberately: this tests the renderer, not our basemap.
-        style: 'https://demotiles.maplibre.org/style.json',
+        style: {
+          version: 8,
+          sources: {
+            dem: {
+              type: 'raster-dem',
+              tiles: ['${TERRAIN_TILES}'],
+              encoding: 'terrarium',
+              tileSize: 256,
+              maxzoom: 14
+            }
+          },
+          layers: [
+            { id: 'sky-bg', type: 'background', paint: { 'background-color': '#0B0D10' } },
+            {
+              id: 'shade',
+              type: 'hillshade',
+              source: 'dem',
+              paint: {
+                'hillshade-exaggeration': 0.9,
+                'hillshade-shadow-color': '#05070A',
+                'hillshade-highlight-color': '#8FA3B8',
+                'hillshade-accent-color': '#1A222C'
+              }
+            }
+          ]
+        },
         center: [${lon}, ${lat}],
-        zoom: 13,
-        pitch: 65,
+        zoom: ${zoom},
+        pitch: 70,
         bearing: 20,
         attributionControl: false
       });
@@ -121,14 +175,10 @@ function buildHtml(venue: VenueKey): string {
       map.on('load', function () {
         post({ stage: 'map-loaded' });
         try {
-          map.addSource('dem', {
-            type: 'raster-dem',
-            tiles: ['${TERRAIN_TILES}'],
-            encoding: 'terrarium',
-            tileSize: 256,
-            maxzoom: 14
-          });
-          map.setTerrain({ source: 'dem', exaggeration: 1.6 });
+          // The source is declared in the style above, so this only attaches
+          // the mesh. Exaggeration is high on purpose: this is a yes/no test,
+          // not a finished look.
+          map.setTerrain({ source: 'dem', exaggeration: 2.0 });
           post({ stage: 'terrain-set' });
         } catch (e) { fail('setTerrain', e); }
       });
