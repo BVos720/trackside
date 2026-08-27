@@ -796,6 +796,8 @@ export default function MapScreen({
       <SkyControl
         clock={clock}
         position={position}
+        // The circuit's clock, not the phone's. See formatClock in SkyControl.
+        timeZone={view.timezone}
         bottom={insets.bottom + BOTTOM_BAR_CLEARANCE}
       />
 

@@ -718,7 +718,23 @@ export function buildMapStyle(
    * `MIN_CORNER_RADIUS_M` so the two stay matched — see the margin comment on
    * the latter.
    */
-  const SHOW_KERBS = true;
+  /*
+   * Off, and it should stay off until the geometry is done properly.
+   *
+   * Reported from the phone as simply not working reliably, and the comment
+   * above already conceded why: `line-offset` is applied in screen pixels
+   * rather than real geometry, so the kerbing drifts away from the asphalt at
+   * any zoom far from where `kerbOffset` was tuned. It was drawn from inferred
+   * corner curvature rather than mapped data in the first place — OSM does not
+   * map kerbs — so a wrong result here is the map asserting something nobody
+   * surveyed.
+   *
+   * Left as a flag rather than deleted: the generator, the offset stops and the
+   * reasoning are all still here, and doing it properly means mitred offset
+   * polygons generated at build time. That is a real piece of work, not a
+   * tweak, and the note above says how.
+   */
+  const SHOW_KERBS = false;
   const kerbLayers = SHOW_KERBS
     ? [...kerbSide('left'), ...kerbSide('right')]
     : [];
@@ -1091,6 +1107,25 @@ export interface VenueView {
   label: string;
   /** Short label for the dropdown trigger. */
   country: string;
+  /**
+   * The circuit's own IANA timezone.
+   *
+   * ── Why the device's clock is the wrong one ───────────────────────────
+   * The sun dial reads the sky at the circuit — its position comes from the
+   * venue's latitude and longitude, so it has always been correct. The *time*
+   * beside it did not: it was the phone's. Looking at Suzuka from the
+   * Netherlands showed "13:41 · DARK", which is two true statements that read
+   * as a contradiction. It is dark at Suzuka, because there it is 20:41.
+   *
+   * A photographer plans against the session sheet, and a session sheet is
+   * always in the circuit's local time. So that is what the dial shows, at
+   * every venue, whether you are stood there or at a desk a continent away.
+   *
+   * Same reasoning as `Circuit.timezone` in the domain and as the forecast
+   * conversion in storage-local/metno.ts — this app has one rule about time
+   * and it is that the circuit's clock wins.
+   */
+  timezone: string;
   centre: [number, number];
   zoom: number;
   /** Camera limit, [[west, south], [east, north]] — the tile extract area. */
@@ -1126,6 +1161,7 @@ export const VENUE_VIEW: Record<VenueKey, VenueView> = {
   nordschleife: {
     label: 'Nürburgring',
     country: 'DE',
+    timezone: 'Europe/Berlin',
     centre: [6.9628, 50.3523],
     zoom: 12.2,
     bounds: [
@@ -1143,6 +1179,7 @@ export const VENUE_VIEW: Record<VenueKey, VenueView> = {
   'spa-francorchamps': {
     label: 'Spa-Francorchamps',
     country: 'BE',
+    timezone: 'Europe/Brussels',
     centre: [5.9686, 50.437],
     zoom: 13.6,
     bounds: [
@@ -1162,6 +1199,7 @@ export const VENUE_VIEW: Record<VenueKey, VenueView> = {
   zandvoort: {
     label: 'Zandvoort',
     country: 'NL',
+    timezone: 'Europe/Amsterdam',
     centre: [4.5459, 52.3881],
     zoom: 14.5,
     bounds: [
@@ -1197,6 +1235,7 @@ export const VENUE_VIEW: Record<VenueKey, VenueView> = {
      */
     label: 'Le Mans (WIP)',
     country: 'FR',
+    timezone: 'Europe/Paris',
     centre: [0.2184, 47.9471],
     zoom: 13.4,
     bounds: [
@@ -1214,6 +1253,7 @@ export const VENUE_VIEW: Record<VenueKey, VenueView> = {
   zolder: {
     label: 'Zolder',
     country: 'BE',
+    timezone: 'Europe/Brussels',
     centre: [5.2576, 50.9904],
     zoom: 14.2,
     bounds: [
@@ -1230,6 +1270,7 @@ export const VENUE_VIEW: Record<VenueKey, VenueView> = {
   suzuka: {
     label: 'Suzuka',
     country: 'JP',
+    timezone: 'Asia/Tokyo',
     centre: [136.5327, 34.8438],
     zoom: 14.2,
     bounds: [
@@ -1247,6 +1288,7 @@ export const VENUE_VIEW: Record<VenueKey, VenueView> = {
   fuji: {
     label: 'Fuji Speedway',
     country: 'JP',
+    timezone: 'Asia/Tokyo',
     centre: [138.9294, 35.3712],
     zoom: 14.2,
     bounds: [

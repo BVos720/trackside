@@ -114,14 +114,53 @@ const STRIP_HIT_SLOP = { top: 6, bottom: 24, left: 4, right: 4 };
 /** The Now/Live control gets its own slop rather than relying on the strip's falling short of it. */
 const NOW_BUTTON_HIT_SLOP = { top: 10, bottom: 10, left: 10, right: 10 };
 
-function formatClock(at: Date): string {
-  const h = at.getHours().toString().padStart(2, '0');
-  const m = at.getMinutes().toString().padStart(2, '0');
-  return `${h}:${m}`;
+/**
+ * The time at the circuit, not on this phone.
+ *
+ * ── The bug this fixes ────────────────────────────────────────────────────
+ * The dial's sun comes from the venue's latitude and longitude, so it has
+ * always described the right sky. The clock beside it did not — it was the
+ * device's. Opening Suzuka from the Netherlands read "13:41 · DARK": two true
+ * statements that together look like a contradiction. It is dark at Suzuka,
+ * because there it is 20:41.
+ *
+ * A photographer plans against a session sheet, and a session sheet is always
+ * in the circuit's local time. So that is what this shows, wherever you are.
+ *
+ * ── Falls back rather than lying ──────────────────────────────────────────
+ * If the engine cannot resolve the zone, this returns the device's own time
+ * rather than nothing: a clock that is an hour out is still a clock, and a
+ * blank where the time should be helps nobody. That path should not happen —
+ * every venue carries a real IANA zone — but this is drawn over a live map and
+ * is not worth an exception.
+ */
+function formatClock(at: Date, timeZone: string): string {
+  try {
+    return new Intl.DateTimeFormat('en-GB', {
+      timeZone,
+      hour: '2-digit',
+      minute: '2-digit',
+      // h23 rather than hour12:false — some engines render midnight as "24".
+      hourCycle: 'h23',
+    }).format(at);
+  } catch {
+    const h = at.getHours().toString().padStart(2, '0');
+    const m = at.getMinutes().toString().padStart(2, '0');
+    return `${h}:${m}`;
+  }
 }
 
-function formatDate(at: Date): string {
+/**
+ * The date at the circuit.
+ *
+ * Follows the clock for the same reason: at Suzuka seen from Europe the day
+ * turns over eight hours before this phone's does, and a dial whose time and
+ * date disagreed about which day it was would be worse than either being
+ * wrong on its own.
+ */
+function formatDate(at: Date, timeZone: string): string {
   return at.toLocaleDateString(undefined, {
+    timeZone,
     weekday: 'short',
     month: 'short',
     day: 'numeric',
@@ -141,11 +180,14 @@ export default function SkyControl({
   top,
   /** Distance from the bottom of the screen, already clear of the safe area. */
   bottom,
+  timeZone,
 }: {
   clock: MapClock;
   position: LatLon;
   top?: number;
   bottom?: number;
+  /** The circuit's IANA zone — see `formatClock`. */
+  timeZone: string;
 }) {
   const { color } = useTheme();
   const styles = useMemo(() => makeStyles(color), [color]);
@@ -302,7 +344,7 @@ export default function SkyControl({
     >
       <View style={styles.header}>
         <Text style={styles.title}>SKY</Text>
-        <Text style={styles.timeLabel}>{formatClock(clock.now)}</Text>
+        <Text style={styles.timeLabel}>{formatClock(clock.now, timeZone)}</Text>
         {currentQuality && (
           <Text style={styles.qualityLabel}>{currentQuality.toUpperCase()}</Text>
         )}
@@ -376,7 +418,7 @@ export default function SkyControl({
             >
               ‹
             </Text>
-            <Text style={styles.dateLabel}>{formatDate(clock.now)}</Text>
+            <Text style={styles.dateLabel}>{formatDate(clock.now, timeZone)}</Text>
             <Text
               style={styles.dateArrow}
               accessibilityRole="button"
