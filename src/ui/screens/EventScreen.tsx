@@ -134,6 +134,23 @@ export default function EventScreen({
 
   return (
     <ScrollView
+      /*
+        The keyboard must not sit over the field being typed into.
+
+        `automaticallyAdjustKeyboardInsets` is the iOS-native answer: the
+        scroll view insets its own content by the keyboard height, so the
+        focused field scrolls into view and everything below stays
+        reachable. Better than a KeyboardAvoidingView around a ScrollView,
+        which fights it for the same space and makes the layout jump.
+        Ignored on Android, where `softwareKeyboardLayoutMode: resize` in
+        app.json does the same at the window level.
+
+        `keyboardShouldPersistTaps` is the other half. Without it the first
+        tap after typing only dismisses the keyboard, so every button under
+        a focused field quietly needs pressing twice.
+      */
+      automaticallyAdjustKeyboardInsets
+      keyboardShouldPersistTaps="handled"
       style={styles.root}
       // Clears the floating menu trigger. The back link is the first row, so
       // getting this wrong hides the way out behind the menu.
@@ -141,7 +158,6 @@ export default function EventScreen({
         styles.content,
         { paddingTop: insets.top + MENU_CLEARANCE },
       ]}
-      keyboardShouldPersistTaps="handled"
     >
       <Pressable
         onPress={onBack}

@@ -82,6 +82,126 @@ function isSecondaryCourse(name) {
   return typeof name === 'string' && SECONDARY_COURSE.test(name);
 }
 
+/**
+ * Keep the circuit, drop everything that merely shares its postcode.
+ *
+ * ── Why names were not enough ─────────────────────────────────────────────
+ * The first attempt filtered by name, which caught Fuji's drift course and
+ * Suzuka's kart track and left the rest. The rest turned out to be substantial:
+ * Suzuka still drew eleven separate networks, and the extra ten are the rides
+ * in the amusement park next to the circuit — DREAM R, ロッキーコースター,
+ * アドベンチャードライブ, チララのフラワーワゴン — all tagged
+ * `highway=raceway` and all perfectly reasonable to tag that way. No name list
+ * would have anticipated them, and the next venue will have its own.
+ *
+ * ── Connectivity, measured by length rather than by count ─────────────────
+ * A circuit is one connected network. The rides are not connected to it, so
+ * one pass of union-find over shared coordinates separates them without
+ * knowing anything about what they are called.
+ *
+ * The size test is total length, not number of ways, and Fuji is why: its main
+ * circuit is three ways of six kilometres, while junk fragments outnumber it
+ * nine to one. Counting ways would have thrown away the circuit and kept the
+ * litter.
+ *
+ * ── The one exception ─────────────────────────────────────────────────────
+ * A pit lane is sometimes mapped without touching the circuit — Le Mans has
+ * one 360m away from everything else. It is kept by name, because "is it a pit
+ * lane" is the only question here that a name genuinely answers, and because
+ * the alternative is a length threshold: Le Mans' detached pit lane is 2.7% of
+ * its circuit, Suzuka's largest ride is 6.8% of its, so no threshold separates
+ * them.
+ *
+ * Venues that were already a single network — Spa, the Nordschleife, Zandvoort,
+ * Zolder — are unaffected. This was checked before it was written: the earlier
+ * fear that the Nordschleife and the GP-Strecke were separate components was
+ * simply wrong, they are one.
+ */
+function keepMainCircuit(features, isPitLane) {
+  if (features.length === 0) return features;
+
+  const parent = new Map();
+  const find = (x) => {
+    while (parent.get(x) !== x) {
+      parent.set(x, parent.get(parent.get(x)));
+      x = parent.get(x);
+    }
+    return x;
+  };
+  const union = (a, b) => {
+    a = find(a);
+    b = find(b);
+    if (a !== b) parent.set(a, b);
+  };
+
+  const coordsOf = (f) =>
+    f.geometry.type === 'LineString'
+      ? f.geometry.coordinates
+      : f.geometry.coordinates.flat();
+
+  // Six decimals is ~0.1m — far below any mapping precision, so this joins
+  // ways that genuinely share a node without joining ways that merely pass
+  // close to one another.
+  const nodeKey = (c) => 'n' + c[0].toFixed(6) + ',' + c[1].toFixed(6);
+
+  features.forEach((f, i) => parent.set('w' + i, 'w' + i));
+  features.forEach((f, i) => {
+    for (const c of coordsOf(f)) {
+      const k = nodeKey(c);
+      if (!parent.has(k)) parent.set(k, k);
+      union('w' + i, k);
+    }
+  });
+
+  const R = 6371000;
+  const toRad = (d) => (d * Math.PI) / 180;
+  const between = (a, b) => {
+    const dLat = toRad(b[1] - a[1]);
+    const dLon = toRad(b[0] - a[0]);
+    const la1 = toRad(a[1]);
+    const la2 = toRad(b[1]);
+    const h =
+      Math.sin(dLat / 2) ** 2 +
+      Math.cos(la1) * Math.cos(la2) * Math.sin(dLon / 2) ** 2;
+    return 2 * R * Math.asin(Math.sqrt(h));
+  };
+  const lengthOf = (f) => {
+    const cs = coordsOf(f);
+    let total = 0;
+    for (let i = 1; i < cs.length; i++) total += between(cs[i - 1], cs[i]);
+    return total;
+  };
+
+  const byComponent = new Map();
+  features.forEach((f, i) => {
+    const root = find('w' + i);
+    byComponent.set(root, (byComponent.get(root) ?? 0) + lengthOf(f));
+  });
+
+  let main = null;
+  let longest = -1;
+  for (const [root, metres] of byComponent) {
+    if (metres > longest) {
+      longest = metres;
+      main = root;
+    }
+  }
+
+  const kept = features.filter(
+    (f, i) => find('w' + i) === main || isPitLane(f.properties?.name),
+  );
+
+  const dropped = features.length - kept.length;
+  if (dropped > 0) {
+    console.log(
+      `  dropped ${dropped} way${dropped === 1 ? '' : 's'} not connected to the circuit` +
+        ` (${byComponent.size - 1} separate network${byComponent.size === 2 ? '' : 's'})`,
+    );
+  }
+
+  return kept;
+}
+
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, '..');
 const OUT_DIR = join(root, 'assets', 'circuits');
@@ -177,6 +297,13 @@ for (const key of keys) {
   const clustered = keepMainCluster(features);
   features.length = 0;
   features.push(...clustered);
+
+  // Spatial clustering keeps what is near the circuit; this keeps what is
+  // actually part of it. Suzuka needs both: its amusement-park rides sit well
+  // inside the bounding box and survive any proximity test.
+  const connected = keepMainCircuit(features, (n) => n != null && /pits*lane/i.test(n));
+  features.length = 0;
+  features.push(...connected);
 
   let west = 180, south = 90, east = -180, north = -90, points = 0;
   for (const f of features) {
