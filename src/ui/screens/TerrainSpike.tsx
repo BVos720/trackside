@@ -183,9 +183,59 @@ function buildHtml(venue: VenueKey): string {
         } catch (e) { fail('setTerrain', e); }
       });
 
-      // One frame after the first idle is the honest moment to say it works:
-      // the style is loaded, the terrain is attached, and something is on screen.
-      map.on('idle', function () { post({ stage: 'idle' }); });
+      /*
+       * Is the elevation data actually arriving?
+       *
+       * "terrain-set" only means setTerrain() did not throw. The Nordschleife
+       * came back flat with that stage reported, so the call being accepted
+       * says nothing about whether a mesh exists. These three probes separate
+       * the possibilities, and they answer different questions:
+       *
+       *   dem-fetch    can this page reach the DEM endpoint at all? A WebView
+       *                on a made-up origin (trackside.invalid) has to satisfy
+       *                CORS like anything else, and a blocked fetch here would
+       *                leave both the mesh and the hillshading empty — which
+       *                is exactly what a flat dark screen looks like.
+       *
+       *   terrain-attached  does the map agree it has terrain, a moment later?
+       *
+       *   elevation    the decisive one. queryTerrainElevation returns metres
+       *                at a point. The Nordschleife sits around 600m, so a
+       *                number near that means the mesh has real data and the
+       *                problem is how it is being drawn. Null or zero means
+       *                the data never arrived, which is a different bug
+       *                entirely.
+       */
+      fetch('https://elevation-tiles-prod.s3.amazonaws.com/terrarium/12/2133/1377.png')
+        .then(function (r) { return r.ok ? r.arrayBuffer() : Promise.reject(new Error('HTTP ' + r.status)); })
+        .then(function (b) { post({ stage: 'dem-fetch', bytes: b.byteLength }); })
+        .catch(function (e) { post({ stage: 'dem-fetch', error: String(e && e.message || e) }); });
+
+      var probed = false;
+      map.on('idle', function () {
+        post({ stage: 'idle' });
+        if (probed) return;
+        probed = true;
+
+        try {
+          post({ stage: 'terrain-attached', attached: !!map.getTerrain() });
+        } catch (e) {
+          post({ stage: 'terrain-attached', error: String(e && e.message || e) });
+        }
+
+        try {
+          if (typeof map.queryTerrainElevation === 'function') {
+            var m = map.queryTerrainElevation(map.getCenter());
+            post({ stage: 'elevation', metres: m === null || m === undefined ? null : Math.round(m) });
+          } else {
+            post({ stage: 'elevation', error: 'queryTerrainElevation missing' });
+          }
+        } catch (e) {
+          post({ stage: 'elevation', error: String(e && e.message || e) });
+        }
+
+        post({ stage: 'pitch', pitch: Math.round(map.getPitch()) });
+      });
 
       // Rough frame timing while the user drags, which is the question that
       // decides whether this is usable rather than merely possible.
@@ -254,13 +304,27 @@ export default function TerrainSpike({
               error?: string;
               fps?: number;
               version?: string;
+              bytes?: number;
+              attached?: boolean;
+              metres?: number | null;
+              pitch?: number;
             };
             if (typeof m.fps === 'number') {
               setFps(m.fps);
               return;
             }
+            const extra = [
+              m.version ? 'v' + m.version : null,
+              typeof m.bytes === 'number' ? m.bytes + ' bytes' : null,
+              typeof m.attached === 'boolean' ? (m.attached ? 'yes' : 'NO') : null,
+              m.metres !== undefined ? (m.metres === null ? 'null' : m.metres + ' m') : null,
+              typeof m.pitch === 'number' ? m.pitch + '°' : null,
+            ]
+              .filter(Boolean)
+              .join(' ');
+
             note(
-              `${m.stage ?? '?'}${m.version ? ' v' + m.version : ''}` +
+              `${m.stage ?? '?'}${extra ? ' ' + extra : ''}` +
                 (m.error ? ` — ${m.error}` : ''),
             );
           } catch {
