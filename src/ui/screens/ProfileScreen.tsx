@@ -110,6 +110,7 @@ export default function ProfileScreen({
   gearItems,
   onAddGearItem,
   onRemoveGearItem,
+  onOpenTerrainSpike,
 }: {
   /** Null means unnamed — see `setProfileName`. */
   displayName: string | null;
@@ -123,6 +124,8 @@ export default function ProfileScreen({
     cropFactor?: number | null;
   }) => void;
   onRemoveGearItem: (id: UserGearItemId) => void;
+  /** Opens the throwaway WebView terrain test. See TerrainSpike.tsx. */
+  onOpenTerrainSpike: () => void;
 }) {
   const insets = useSafeAreaInsets();
   const [name, setName] = useState(displayName ?? '');
@@ -496,6 +499,21 @@ export default function ProfileScreen({
             reinstalling it, which is minutes between every attempt.
           </Text>
 
+          {/*
+            The terrain spike, reachable but not advertised.
+
+            It answers one question — can a WebView render a terrain map
+            on this phone — and needs a connection to do it. See the
+            header of TerrainSpike.tsx. Deleted either way once the
+            question is settled.
+          */}
+          <Pressable
+            onPress={onOpenTerrainSpike}
+            style={({ pressed }) => [styles.secondaryDev, pressed && styles.pressed]}
+          >
+            <Text style={styles.secondaryDevLabel}>Terrain spike (needs signal)</Text>
+          </Pressable>
+
           <Pressable
             onPress={clearApp}
             style={({ pressed }) => [styles.destructive, pressed && styles.pressed]}
@@ -800,6 +818,20 @@ function makeStyles(color: Theme['color']) {
       fontVariant: ['tabular-nums'],
     },
 
+    secondaryDev: {
+      marginTop: space.sm,
+      height: HIT_SIZE,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: radius.md,
+      borderWidth: 1,
+      borderColor: color.border,
+    },
+    secondaryDevLabel: {
+      color: color.textMuted,
+      fontSize: type.label,
+      fontWeight: weight.bold,
+    },
     destructive: {
       marginTop: space.sm,
       height: HIT_SIZE,

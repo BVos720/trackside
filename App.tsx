@@ -20,6 +20,7 @@ import { usePosition } from './src/ui/state/usePosition';
 import { buildWalkNetwork, routeBetween } from './src/core/logic/route';
 import { formatDateRange } from './src/ui/DateRangePicker';
 import ErrorBoundary from './src/ui/ErrorBoundary';
+import TerrainSpike from './src/ui/screens/TerrainSpike';
 import MainMenu, { type Destination } from './src/ui/MainMenu';
 import SafetyNotice, {
   SAFETY_NOTICE_VERSION,
@@ -851,6 +852,9 @@ function AppShell() {
    * state variable, so state cannot block the second one. This has to be
    * readable and writable synchronously to be a lock at all.
    */
+  /** The throwaway terrain test is open. See TerrainSpike.tsx. */
+  const [terrainSpike, setTerrainSpike] = useState(false);
+
   const saving = useRef(false);
 
   const onSave = async (draft: SpotDraft) => {
@@ -1533,6 +1537,7 @@ function AppShell() {
             gearItems={gearItems}
             onAddGearItem={addGearItem}
             onRemoveGearItem={removeGearItem}
+            onOpenTerrainSpike={() => setTerrainSpike(true)}
           />
         ) : (
           // `where` is exhaustively handled by the branches above once
@@ -1545,7 +1550,20 @@ function AppShell() {
 
 
 
-      {!sheetOpen && (
+      {/*
+        Over everything, including the menu.
+
+        A full-screen diagnostic with its own way out. Leaving the app’s
+        chrome on top would only invite tapping something else while
+        trying to read a frame rate.
+      */}
+      {terrainSpike && (
+        <View style={StyleSheet.absoluteFill}>
+          <TerrainSpike venue={venue} onClose={() => setTerrainSpike(false)} />
+        </View>
+      )}
+
+      {!sheetOpen && !terrainSpike && (
         <MainMenu
           open={menuOpen}
           onOpenChange={setMenuOpen}

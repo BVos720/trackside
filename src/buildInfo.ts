@@ -11,10 +11,10 @@
  */
 export const BUILD_INFO = {
   version: "1.0.0",
-  commit: "01cf131",
+  commit: "ac9b2d8",
   /** True when the tree had uncommitted changes at build time. */
   modified: true,
-  builtAt: "2026-08-27T11:55:13.345Z",
+  builtAt: "2026-08-27T12:08:37.069Z",
 } as const;
 
 /** One line for a settings row: `1.0.0 · a1b2c3d`, with a marker when dirty. */
