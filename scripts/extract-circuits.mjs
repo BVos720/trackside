@@ -23,7 +23,7 @@
  *   npm run circuits                 # every venue
  *   npm run circuits -- nordschleife
  */
-import { writeFileSync, mkdirSync, readFileSync } from 'fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { dirname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { buffer, mask, union, featureCollection } from '@turf/turf';
@@ -117,6 +117,9 @@ function isSecondaryCourse(name) {
  * fear that the Nordschleife and the GP-Strecke were separate components was
  * simply wrong, they are one.
  */
+/** "Pit Lane", "pitlane", "Pit lane" — the space is optional, not forbidden. */
+const isPitLaneName = (n) => n != null && /pit\s*lane/i.test(n);
+
 function keepMainCircuit(features, isPitLane) {
   if (features.length === 0) return features;
 
@@ -200,6 +203,76 @@ function keepMainCircuit(features, isPitLane) {
   }
 
   return kept;
+}
+
+/**
+ * Hand-drawn track, merged in after the OSM extraction.
+ *
+ * ── Why this has to exist ─────────────────────────────────────────────────
+ * The extractor finds `highway=raceway`, which is the right filter and finds
+ * nothing at all on a street circuit. Le Mans is the case in front of us: the
+ * Mulsanne runs six kilometres down the D338, a public road tagged
+ * `highway=trunk`, so no query over raceway will ever return it. What comes
+ * back is the permanent section — Tertre Rouge, the Esses, Maison Blanche, the
+ * Ford chicane — and it reads as the Bugatti circuit, because that is
+ * essentially what is left.
+ *
+ * Filtering harder cannot fix that. The data is not there to filter.
+ *
+ * ── Drawn by a person, and marked as such ─────────────────────────────────
+ * So a venue may carry `<venue>.manual.json`: an ordinary GeoJSON
+ * FeatureCollection of LineStrings, traced by hand and committed alongside the
+ * generated files. Trace it wherever is comfortable — geojson.io over
+ * satellite imagery is enough, and a 6km straight is a handful of clicks.
+ *
+ * Every feature it contributes is tagged `manual: true`. That is not
+ * bookkeeping: spec §0.2 reserves human sourcing for humans, and a later
+ * reader deserves to know which lines came from a survey and which came from
+ * somebody following a road on a photograph. It also means a re-extraction
+ * cannot silently overwrite the traced part — this file is an input, and
+ * `npm run circuits` never writes it.
+ *
+ * The merge happens after the connectivity filter deliberately. A hand-drawn
+ * link is often exactly what joins two OSM fragments that were never
+ * connected — precisely the Le Mans case — so filtering afterwards would
+ * throw away the thing the tracing was for.
+ */
+function loadManualGeometry(key) {
+  const path = join(OUT_DIR, `${key}.manual.json`);
+  if (!existsSync(path)) return [];
+
+  let parsed;
+  try {
+    parsed = JSON.parse(readFileSync(path, 'utf8'));
+  } catch (e) {
+    throw new Error(`${key}.manual.json is not valid JSON: ${e.message}`);
+  }
+
+  const features = Array.isArray(parsed?.features) ? parsed.features : [];
+  const lines = features.filter((f) => f?.geometry?.type === 'LineString');
+
+  if (lines.length !== features.length) {
+    // Loud rather than quiet: a Polygon or Point in here is a tracing mistake,
+    // and dropping it silently would leave a gap nobody could account for.
+    console.log(
+      `  WARNING: ${features.length - lines.length} non-LineString feature(s) in ` +
+        `${key}.manual.json ignored — trace the track as lines`,
+    );
+  }
+
+  return lines.map((f, i) => ({
+    type: 'Feature',
+    id: `manual-${i}`,
+    properties: {
+      osmId: null,
+      name: f.properties?.name ?? null,
+      ref: f.properties?.ref ?? null,
+      oneway: f.properties?.oneway ?? null,
+      /** Drawn by a person, not surveyed. See loadManualGeometry. */
+      manual: true,
+    },
+    geometry: { type: 'LineString', coordinates: f.geometry.coordinates },
+  }));
 }
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -301,9 +374,17 @@ for (const key of keys) {
   // Spatial clustering keeps what is near the circuit; this keeps what is
   // actually part of it. Suzuka needs both: its amusement-park rides sit well
   // inside the bounding box and survive any proximity test.
-  const connected = keepMainCircuit(features, (n) => n != null && /pits*lane/i.test(n));
+  const connected = keepMainCircuit(features, isPitLaneName);
   features.length = 0;
   features.push(...connected);
+
+  // After the filter, never before: a traced line is often exactly what joins
+  // two OSM fragments that were never connected, which is the Le Mans case.
+  const manual = loadManualGeometry(key);
+  if (manual.length > 0) {
+    console.log(`  merged ${manual.length} hand-drawn way(s) from ${key}.manual.json`);
+    features.push(...manual);
+  }
 
   let west = 180, south = 90, east = -180, north = -90, points = 0;
   for (const f of features) {

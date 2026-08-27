@@ -1,0 +1,18 @@
+{
+  "type": "FeatureCollection",
+  "trackside": {
+    "note": "HAND-DRAWN. This file is an input, not build output. `npm run circuits` reads it and never writes it.",
+    "why": "The extractor finds highway=raceway. Le Mans' Mulsanne runs 6km down the D338, a public road, so no query over raceway will ever return it — what comes back is the permanent section and it reads as the Bugatti circuit. The data is not there to filter harder for.",
+    "howToTrace": [
+      "1. Open https://geojson.io and switch the basemap to satellite.",
+      "2. Find Le Mans: roughly 47.95 N, 0.21 E.",
+      "3. Use the line tool and click along the centre of the racing surface. A long straight needs very few points; corners want one every few metres.",
+      "4. Draw the missing part only — the permanent section already comes from OSM. For Le Mans that is Tertre Rouge down the D338, through the two Mulsanne chicanes, Mulsanne corner, Indianapolis, Arnage, and back to the Porsche curves.",
+      "5. Start and end each line ON an existing OSM way so the pieces connect. The connectivity filter runs before this merge, so a traced line is what joins fragments rather than something that gets filtered out.",
+      "6. Copy the GeoJSON from the right-hand panel into the `features` array below.",
+      "7. Run `npm run circuits -- le-mans`."
+    ],
+    "accuracy": "Trace the centreline, not the kerb. Spots are placed relative to this, walking distances are measured against it, and the corridor mask is drawn 300m either side of it — so a line that wanders into the run-off moves all three."
+  },
+  "features": []
+}
