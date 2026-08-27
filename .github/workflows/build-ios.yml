@@ -18,6 +18,12 @@ jobs:
       - name: Installeer dependencies
         run: npm install
 
+      # Stempel de build met de commit, zodat de app zelf kan zeggen
+      # welke versie erop staat. Moet vóór prebuild, want daarna wordt de
+      # JS-bundel samengesteld.
+      - name: Schrijf build-informatie
+        run: node scripts/write-build-info.mjs
+
       - name: Expo Prebuild (Genereer iOS map)
         run: npx expo prebuild --platform ios
 

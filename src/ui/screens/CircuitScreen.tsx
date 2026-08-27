@@ -105,6 +105,15 @@ export default function CircuitScreen({
 /**
  * Download state for one venue's elevation tiles.
  *
+ * ── What this actually buys you ───────────────────────────────────────────
+ * Relief *shading*, offline. Not a 3D landscape: maplibre-react-native has no
+ * terrain-mesh support at all — no handling of a 'terrain' style key in either
+ * native bridge, and the only mention of the word in its style types is a
+ * hillshade paint property. The tilted view on the phone is camera pitch,
+ * extruded buildings and this shading, and it is worth being plain about that
+ * rather than letting a button labelled '3D terrain' imply hills that will
+ * never arrive.
+ *
  * ── Why this is on the circuit list ───────────────────────────────────────
  * This is the screen where you decide which circuit you are going to, which is
  * the moment you still have a connection and the last one where downloading is
@@ -153,7 +162,7 @@ function TerrainRow({
   if (status.complete && !busy) {
     return (
       <Text style={styles.terrainDone}>
-        3D terrain saved · works with no signal
+        Relief data saved · shading works with no signal
       </Text>
     );
   }
@@ -165,10 +174,10 @@ function TerrainRow({
     >
       <Text style={styles.terrainLabel}>
         {busy
-          ? `Downloading 3D terrain… ${status.have}/${status.need}`
+          ? `Downloading relief data… ${status.have}/${status.need}`
           : status.have > 0
-            ? `Resume 3D terrain (${status.have}/${status.need})`
-            : `Download 3D terrain (${status.need} tiles)`}
+            ? `Resume relief data (${status.have}/${status.need})`
+            : `Download relief data (${status.need} tiles)`}
       </Text>
     </Pressable>
   );

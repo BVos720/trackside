@@ -57,7 +57,8 @@
     "postinstall": "node scripts/copy-pdfjs.mjs",
     "sprites": "node scripts/build-sprites.mjs",
     "glyphs": "node scripts/extract-glyphs.mjs",
-    "pdfjsassets": "node scripts/copy-pdfjs.mjs"
+    "pdfjsassets": "node scripts/copy-pdfjs.mjs",
+    "build-info": "node scripts/write-build-info.mjs"
   },
   "private": true
 }

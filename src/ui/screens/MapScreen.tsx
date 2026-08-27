@@ -716,7 +716,9 @@ export default function MapScreen({
           pointerEvents="none"
         >
           <Text style={styles.terrainNoteText}>
-            Terrain streams over the network — not available offline yet
+            Relief shading streams over the network until this circuit is
+            downloaded. There is no 3D landscape on iPhone — see the note in
+            map/style.ts.
           </Text>
         </View>
       )}

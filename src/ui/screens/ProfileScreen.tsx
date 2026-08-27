@@ -76,6 +76,7 @@ import { deriveAccent } from '../../core/logic/accentColor';
 import { bodies, lenses, GearKind, type GearItem } from '../../core/domain/gear';
 import type { UserGearItemId } from '../../core/domain/ids';
 import { getMapSceneryEnabled, setMapSceneryEnabled } from '../../storage-local/preferences';
+import { BUILD_LABEL } from '../../buildInfo';
 import { resetApp } from '../../storage-local/resetApp';
 import Collapsible from '../Collapsible';
 import {
@@ -442,6 +443,22 @@ export default function ProfileScreen({
       </Collapsible>
 
       {/*
+        Which build this is, and why it is not hidden in an "About" section.
+
+        A sideloaded build carries no version anyone can see, and that has cost
+        real time: bugs reported against a build that already had the fix, with
+        "still broken" and "not built yet" indistinguishable from a screenshot.
+        The commit is the only thing that settles it, so it sits in plain sight
+        at the bottom of the first settings screen rather than two taps down.
+
+        `+local` means the tree had uncommitted changes when it was built — so
+        the commit alone does not describe it.
+      */}
+      <Text style={styles.buildLine} selectable>
+        {BUILD_LABEL}
+      </Text>
+
+      {/*
         Not gated on `__DEV__`.
 
         The builds this is actually tested on are Release — the GitHub Actions
@@ -758,6 +775,13 @@ function makeStyles(color: Theme['color']) {
     },
 
     credit: { marginTop: space.sm },
+    buildLine: {
+      color: color.textFaint,
+      fontSize: type.label,
+      textAlign: 'center',
+      marginTop: space.lg,
+      fontVariant: ['tabular-nums'],
+    },
 
     destructive: {
       marginTop: space.sm,
