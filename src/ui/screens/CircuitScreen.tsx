@@ -111,8 +111,14 @@ export default function CircuitScreen({
  * native bridge, and the only mention of the word in its style types is a
  * hillshade paint property. The tilted view on the phone is camera pitch,
  * extruded buildings and this shading, and it is worth being plain about that
- * rather than letting a button labelled '3D terrain' imply hills that will
- * never arrive.
+ * rather than letting a button labelled '3D terrain' imply hills that a
+ * phone cannot draw today.
+ *
+ * Not forever, though: a terrain mesh is in active development for MapLibre
+ * Native upstream. When it ships, and once the React Native binding exposes
+ * it, these same tiles are what it will read — which is the reason to keep
+ * downloading them under a name that is true now rather than one that is only
+ * true later.
  *
  * ── Why this is on the circuit list ───────────────────────────────────────
  * This is the screen where you decide which circuit you are going to, which is

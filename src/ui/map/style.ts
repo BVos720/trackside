@@ -964,6 +964,16 @@ export function buildMapStyle(
      * directly (MapScreen.web.tsx), and calls `buildMapStyle` without the
      * `terrain3d` argument at all. So this key only ever reached native.
      *
+     * ── Not permanent: this is a "not yet" ────────────────────────────────
+     * 3D terrain for MapLibre Native is in active development upstream — see
+     * maplibre/maplibre discussion #326 — and hillshade improvements have
+     * already merged ahead of it. When it lands, and once the React Native
+     * binding exposes it, this key becomes the right thing to send again.
+     *
+     * Which is why the DEM download in storage-local/terrainCache.ts is not
+     * wasted work: the tiles a mesh will need are the same tiles the shading
+     * needs today.
+     *
      * ── Why removing it is a fix and not a loss ───────────────────────────
      * An unrecognised root-level key is a plausible reason for the native SDK
      * to reject the whole style, which would make 3D appear completely broken
