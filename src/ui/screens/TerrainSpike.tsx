@@ -205,40 +205,29 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
         };
       }
 
+      /*
+       * Straight to the bridge.
+       *
+       * The fetch-off-disk attempt is gone with the props that were meant to
+       * permit it. It was the cheaper route, not the necessary one, and it is
+       * worth re-trying only once there is a working map to compare against.
+       */
       function loadArchive() {
-        var started = Date.now();
-        return fetch(ARCHIVE_URL)
-          .then(function (r) {
-            if (!r.ok) throw new Error('HTTP ' + r.status);
-            return r.arrayBuffer();
-          })
-          .then(function (buf) {
+        return new Promise(function (resolve) {
+          window.__acceptArchive = function (base64) {
+            var began = Date.now();
+            var bin = atob(base64);
+            var bytes = new Uint8Array(bin.length);
+            for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
             post({
-              stage: 'archive-via-fetch',
-              bytes: buf.byteLength,
-              ms: Date.now() - started
+              stage: 'archive-via-bridge',
+              bytes: bytes.byteLength,
+              ms: Date.now() - began
             });
-            return buf;
-          })
-          .catch(function (e) {
-            post({ stage: 'archive-fetch-failed', error: String(e && e.message || e) });
-            // The native side is watching for this and will inject the bytes.
-            return new Promise(function (resolve) {
-              window.__acceptArchive = function (base64) {
-                var began = Date.now();
-                var bin = atob(base64);
-                var bytes = new Uint8Array(bin.length);
-                for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-                post({
-                  stage: 'archive-via-bridge',
-                  bytes: bytes.byteLength,
-                  ms: Date.now() - began
-                });
-                resolve(bytes.buffer);
-              };
-              post({ stage: 'awaiting-bridge' });
-            });
-          });
+            resolve(bytes.buffer);
+          };
+          post({ stage: 'awaiting-bridge' });
+        });
       }
 
       /*
@@ -420,6 +409,25 @@ export default function TerrainSpike({
   const [archiveUrl, setArchiveUrl] = useState<string | null>(null);
   const webRef = useRef<{ injectJavaScript: (js: string) => void } | null>(null);
 
+  /*
+   * Say something if the page says nothing.
+   *
+   * Twice now the answer has been an empty panel, which is the least useful
+   * result there is — it cannot be told apart from a screen that has not
+   * finished starting. Eight seconds of silence is a finding, and it should
+   * read as one.
+   */
+  useEffect(() => {
+    const id = setTimeout(() => {
+      setLog((prev) =>
+        prev.length === 0
+          ? ['no message from the page after 8s — it is not running at all']
+          : prev,
+      );
+    }, 8000);
+    return () => clearTimeout(id);
+  }, []);
+
   useEffect(() => {
     void (async () => {
       try {
@@ -528,17 +536,24 @@ export default function TerrainSpike({
         ref={webRef as never}
         source={{ html: buildHtml(venue, archiveUrl), baseUrl: 'https://trackside.invalid/' }}
         /*
-         * File access, for the good path.
+         * No file-access props, and `allowingReadAccessToURL` in particular.
          *
-         * The page tries to fetch the archive off disk before falling back to
-         * the bridge. Whether a page on an https origin may read a file:// URL
-         * is exactly what is being tested — these props are what make it
-         * possible at all, not what make it certain.
+         * They were added for the fetch-off-disk path and the page stopped
+         * loading entirely at the same moment — thirty seconds with not one
+         * message, before *and* after the document shrank from 2.4MB to 10KB,
+         * which rules the payload out. On iOS that prop changes which
+         * WKWebView load method is used, and combining it with an `html`
+         * source is the kind of thing that quietly loads nothing.
+         *
+         * They are not needed anyway. Reading the archive off disk was only
+         * ever the cheaper of two routes, and the bridge is the one that is
+         * certain to work.
          */
-        allowFileAccess
-        allowFileAccessFromFileURLs
-        allowUniversalAccessFromFileURLs
-        allowingReadAccessToURL={archiveUrl}
+        onLoadStart={() => note('webview: load started')}
+        onLoad={() => note('webview: loaded')}
+        onHttpError={(e: { nativeEvent: { statusCode?: number } }) =>
+          note(`webview: HTTP ${e.nativeEvent.statusCode ?? '?'}`)
+        }
         originWhitelist={['*']}
         style={styles.web}
         // The library and the DEM both come over the network here. See the
