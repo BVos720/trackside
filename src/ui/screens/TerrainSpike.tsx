@@ -54,7 +54,13 @@ import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { PDF_BRIDGE_SUPPORTED } from '../../storage-local/pdfBridge';
-import { VENUE_VIEW, type VenueKey } from '../map/style';
+import {
+  REMOTE_GLYPHS_URL,
+  TERRAIN_SOURCE,
+  VENUE_VIEW,
+  buildMapStyle,
+  type VenueKey,
+} from '../map/style';
 import { TILE_ASSETS } from './MapScreen';
 
 /*
@@ -95,10 +101,27 @@ const FLAT_VENUES = new Set<VenueKey>(['zolder', 'zandvoort', 'suzuka', 'le-mans
 
 function buildHtml(venue: VenueKey, archiveUrl: string): string {
   const useVenue = !FLAT_VENUES.has(venue);
-  const view = VENUE_VIEW[useVenue ? venue : ('nordschleife' as VenueKey)];
+  const shown = (useVenue ? venue : 'nordschleife') as VenueKey;
+  const view = VENUE_VIEW[shown];
   const [lon, lat] = view.centre;
-  // Pulled back a little: relief reads at a distance, not from inside a corner.
-  const zoom = 12.5;
+  // Close enough to read the circuit, far enough that relief still shows.
+  const zoom = 13.2;
+
+  /*
+   * The whole style, serialised into the page.
+   *
+   * 'bundled' is the pmtiles key registered on the page, so the style's own
+   * `pmtiles://bundled` resolves to the in-memory archive. Glyphs come over
+   * the network for now — bundling them is the same job as the native app's
+   * `npm run glyphs` and is not what this is testing.
+   *
+   * `omitSpots` is false: the spots source belongs in the document here,
+   * because there is no native <GeoJSONSource> to declare it separately.
+   * `terrain3d` is true so the 3D layers exist to be switched on.
+   */
+  const styleJson = JSON.stringify(
+    buildMapStyle('bundled', shown, undefined, false, true, REMOTE_GLYPHS_URL, true),
+  );
 
   return `<!doctype html>
 <html>
@@ -207,76 +230,28 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
       }
 
       /*
-       * An empty style plus hillshading, rather than a basemap.
+       * The real style, not a stand-in.
        *
-       * The first run used MapLibre's demotiles, which is a country-outline
-       * demo with nothing at all at zoom 13 — so the screen was a flat beige
-       * field and the terrain could have been working perfectly without
-       * showing it. Zolder did not help either: forty metres of relief in
-       * Belgium is invisible however good the mesh is.
+       * 'buildMapStyle' already produces the whole document — circuit, paths,
+       * buildings, the corridor mask, the woodland scatter — and the web build
+       * hands exactly this to maplibre-gl. So the spike does too, rather than
+       * approximating it: anything else would test something we are not going
+       * to ship.
        *
-       * Hillshading from the same DEM makes the landform itself the picture,
-       * so there is nothing to confuse a working mesh with a missing basemap.
+       * Two substitutions. The tile URL is 'bundled', which is the key the
+       * pmtiles protocol was registered under above, so the style's
+       * 'pmtiles://bundled' resolves to the archive in memory. And terrain is
+       * attached after load with setTerrain rather than through the style,
+       * because the 'terrain' key was removed from buildMapStyle — native
+       * cannot read it, and here it is set imperatively exactly as
+       * MapScreen.web.tsx does.
        */
-      if (!window.pmtiles) throw new Error('pmtiles did not load from the CDN');
-      post({ stage: 'pmtiles-loaded' });
-
-      loadArchive().then(function (buffer) {
-        buildMap(buffer);
-      }).catch(function (e) { fail('archive', e); });
-
-      function buildMap(buffer) {
-      var archive = new pmtiles.PMTiles(bufferSource(buffer));
-      var protocol = new pmtiles.Protocol();
-      protocol.add(archive);
-      maplibregl.addProtocol('pmtiles', protocol.tile);
-      post({ stage: 'protocol-registered' });
+      var style = ${styleJson};
+      post({ stage: 'style-built', bytes: JSON.stringify(style).length });
 
       var map = new maplibregl.Map({
         container: 'map',
-        style: {
-          version: 8,
-          sources: {
-            dem: {
-              type: 'raster-dem',
-              tiles: ['${TERRAIN_TILES}'],
-              encoding: 'terrarium',
-              tileSize: 256,
-              maxzoom: 14
-            },
-            // Our own archive, read from memory. If this draws, the offline
-            // half of the problem is solved.
-            base: { type: 'vector', url: 'pmtiles://bundled' }
-          },
-          layers: [
-            { id: 'sky-bg', type: 'background', paint: { 'background-color': '#0B0D10' } },
-            {
-              id: 'land',
-              type: 'fill',
-              source: 'base',
-              'source-layer': 'landuse',
-              paint: { 'fill-color': '#16241C', 'fill-opacity': 0.7 }
-            },
-            {
-              id: 'roads',
-              type: 'line',
-              source: 'base',
-              'source-layer': 'roads',
-              paint: { 'line-color': '#4A5361', 'line-width': 1.2 }
-            },
-            {
-              id: 'shade',
-              type: 'hillshade',
-              source: 'dem',
-              paint: {
-                'hillshade-exaggeration': 0.9,
-                'hillshade-shadow-color': '#05070A',
-                'hillshade-highlight-color': '#8FA3B8',
-                'hillshade-accent-color': '#1A222C'
-              }
-            }
-          ]
-        },
+        style: style,
         center: [${lon}, ${lat}],
         zoom: ${zoom},
         pitch: 70,
@@ -289,11 +264,24 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
       map.on('load', function () {
         post({ stage: 'map-loaded' });
         try {
-          // The source is declared in the style above, so this only attaches
-          // the mesh. Exaggeration is high on purpose: this is a yes/no test,
-          // not a finished look.
-          map.setTerrain({ source: 'dem', exaggeration: 2.0 });
+          /*
+           * The style already declares the DEM source, so this only attaches
+           * the mesh — and it is the same call, on the same source, that the
+           * web build makes.
+           *
+           * 1.4, not the spike's earlier 2.0: this is meant to look like the
+           * map now rather than prove a point, and the web build's own
+           * exaggeration is the value that has already been judged by eye.
+           */
+          map.setTerrain({ source: '${TERRAIN_SOURCE}', exaggeration: 1.4 });
           post({ stage: 'terrain-set' });
+
+          // The 3D layers are hidden by default in the style — the same
+          // visibility switch the native screen drives from its 2D/3D button.
+          ['terrain-hillshade', 'buildings-3d', 'trees', 'ground-detail'].forEach(function (id) {
+            try { map.setLayoutProperty(id, 'visibility', 'visible'); } catch (e) {}
+          });
+          post({ stage: '3d-layers-shown' });
         } catch (e) { fail('setTerrain', e); }
       });
 
