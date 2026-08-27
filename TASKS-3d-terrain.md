@@ -86,87 +86,105 @@ feature exists to answer.
 
 ---
 
-## Day 1 — prove the riskiest thing first
+## Day 1 — DONE. The spike passed.
 
-- [ ] **T1. Verify data-driven `fill-extrusion-base` on the device.** Buildings
-      use a constant `base: 0`. Terracing needs base *and* height driven by a
-      property. If the native SDK only honours a constant base, the fallback is
-      one layer per band (~30 layers) — workable, but it changes the shape of
-      everything after this. **Half a day, and everything else depends on it.**
-      Test with a hand-written GeoJSON of three boxes at different bases before
-      writing any pipeline.
+Ran on the phone, 27 August:
 
-- [ ] **T2. Decode a Terrarium tile to an elevation grid.** Terrarium encodes
-      height as `(R * 256 + G + B / 256) - 32768` metres. Needs a PNG decoder;
-      `pngjs` as a **devDependency** — build-time only, so no pod, no app size,
-      no rebuild risk. (`scripts/build-sprites.mjs` hand-rolls a PNG *encoder*
-      with `zlib`; a decoder is the same trick backwards if adding the dep is
-      unwanted.)
+    terrain-attached  yes
+    elevation         1201 m
+    pitch             59°
+    56 fps
 
-- [ ] **T3. Contours from the grid.** `d3-contour` is pure JS and does marching
-      squares properly. Output is GeoJSON MultiPolygons per threshold, which is
-      already the shape needed.
+1201m is 600m of Eifel times the 2.0 exaggeration the spike sets, so the number
+is not merely non-zero, it is *right*. Real relief on screen, ridges and
+valleys, at a frame rate better than the first attempt's 38.
 
-**End of day 1: a `nordschleife.terrain.json` on disk, and certainty about T1.**
+That settles every question the WebView route could have died on: the component
+works on this device despite the PDF bridge's troubles, WebGL is available,
+maplibre-gl loads from a CDN, the DEM endpoint is reachable from a page on a
+made-up origin, and `setTerrain` produces a mesh rather than merely being
+accepted.
 
----
+**The approach is viable.** The contour-band fallback in the section above is
+no longer needed and should not be built.
 
-## Day 2 — get it on the map
-
-- [ ] **T4. `npm run terrain -- <venue>`**, alongside the other extract scripts.
-      Reads the DEM, writes `<venue>.terrain.json`. Bands at 10m; make the
-      interval an argument, because the right value differs between the Eifel
-      and Zandvoort and will only be found by looking.
-
-- [ ] **T5. A `terrain-bands` fill-extrusion layer**, visible only in 3D like
-      the hillshade and buildings, driven off `terrain3d` through
-      `threeDVisibility`.
-
-- [ ] **T6. Make it look like ground rather than a bar chart.** Below the
-      circuit in draw order, muted, low opacity, colour ramped by elevation.
-      This is where it either reads as a landscape or as clutter, and it is
-      worth more of the day than it sounds.
-
-- [ ] **T7. Watch the size.** 14k tree points already make style rebuilds
-      expensive, and a 3D toggle rebuilds the whole document. If the bands push
-      it too far, drop to a coarser interval before doing anything cleverer.
-
-**End of day 2: relief on the phone, at one venue.**
+Two false starts worth remembering, both mine: `webgl-unsupported` was my own
+check firing because maplibre-gl v5 deleted the helper it called, and the first
+run's flat beige screen was demotiles at zoom 13 over Zolder — a demo style
+with no detail, at a venue with forty metres of relief. Neither was the app's
+fault, and both cost a build.
 
 ---
 
-## Day 3 — all venues, or revert
+## What is actually left, and the one hard part
 
-- [ ] **T8. Generate for all seven.** Cheap once the script exists.
-- [ ] **T9. Verify offline.** The bands ship in the bundle, so this should be
-      free — but "should be" is what has cost us most of this week.
-- [ ] **T10. Check it against reality at a circuit you know.** Does Eau Rouge
-      rise? Is Brünnchen in a bowl? If the answer is no, the interval or the
-      exaggeration is wrong, not the approach.
-- [ ] **T11. A flag to switch it off**, like `SHOW_KERBS`.
+The renderer is proven. Everything remaining is **delivery and integration**,
+and one piece of it is genuinely hard.
+
+### Day 2 — offline pmtiles into the WebView
+
+**This is the risk now.** The basemap is a 3–7MB `.pmtiles` archive in the app
+bundle, and the page has to read it with no signal.
+
+The obvious route does not work: pmtiles normally reads with HTTP **range
+requests**, and `file://` has no range semantics. Giving the WebView file
+access does not solve it.
+
+- [ ] **T1. Whole-archive in memory.** pmtiles' JS exposes a `Source`
+      interface, so a source backed by an in-memory ArrayBuffer sidesteps
+      ranges completely. The archives are 3–7MB — large for a message, but a
+      once-per-venue cost, and `MapScreen.tsx` already unpacks the file to a
+      `file://` path that `expo-file-system` can read.
+      **Try this first: it needs no new native dependency.**
+
+- [ ] **T2. If that is too slow or too big, a local HTTP server.** Serving
+      `http://localhost:PORT/` from inside the app restores real range
+      requests and is the clean answer — at the cost of another native module,
+      which is exactly the sort of thing that has broken builds this week.
+
+- [ ] **T3. Measure honestly.** 56 fps is a bare hillshade. The real style
+      carries the circuit, the corridor mask, buildings and up to 14k tree
+      points. Re-measure with all of it before believing the number.
+
+### Day 3 — integration
+
+The overlays stay native and do not move: sun dial, sky strip, ruler, menu,
+navigator, spot sheet. Only the map itself goes into the WebView, so the bridge
+is small but real:
+
+- [ ] **T4. Spots in** — the GeoJSON the map already builds, passed through.
+- [ ] **T5. Taps out** — tapping a spot must open it; tapping the map must
+      place one. Both need coordinates back on the native side.
+- [ ] **T6. Camera out** — zoom drives callout visibility, and the ruler reads
+      the viewport.
+- [ ] **T7. Camera in** — venue switch, and the 2D/3D toggle.
+- [ ] **T8. Keep the native map.** Ship both behind a setting rather than
+      replacing MapScreen outright. The native one works, is fast, and is what
+      the app has been tested on; the WebView one is new and has a WebView's
+      failure modes. Choosing is cheap, and being wrong about this in the field
+      is not.
 
 ---
 
 ## When to stop
 
-Revert if any of these is true at the end of day 2:
+Revert if, at the end of day 2:
 
-- `fill-extrusion-base` cannot be data-driven **and** 30 layers per venue is too
-  slow on the phone.
-- The bands cost more than roughly 500KB per venue, or make the 3D toggle
-  visibly slower than it already is.
-- It reads as clutter rather than landscape, and one afternoon of tuning has not
-  fixed it.
+- The archive cannot reach the page without a native HTTP server **and** adding
+  one destabilises the build.
+- The frame rate with the real style drops below roughly 25fps on this phone.
+- Touch through the WebView feels worse than the native map in a way tuning
+  does not fix.
 
-Reverting is genuinely cheap here: the layer is additive, the generated files
-are new, and nothing existing changes except a few lines of style composition.
-That is the main argument for doing it this way rather than the WebView.
+Reverting stays cheap: the WebView map is additive, behind a setting, and the
+native map is untouched.
 
 ---
 
 ## Done means
 
-- Tilting the map at the Nürburgring shows the Eifel rising around the circuit.
+- Tilting at the Nürburgring shows the Eifel rising around the circuit.
 - It works with no signal.
-- It can be switched off in one line if it turns out to be a bad idea.
-- Nobody is told it is a terrain mesh, because it is not one.
+- The native map is still there and still the default until the new one earns
+  its place.
+- Nobody has to choose between "3D" and "works at a circuit".
