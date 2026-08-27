@@ -187,6 +187,16 @@ export default function MapScreen({
   const [tilesUri, setTilesUri] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [zoom, setZoom] = useState(VENUE_VIEW[venue].zoom);
+
+  /*
+   * The live zoom, for the camera effect.
+   *
+   * Through a ref so that effect depends on `is3D` alone. Depending on `zoom`
+   * would re-run it on every pinch, which would fight the user for control of
+   * the pitch on a gesture that has nothing to do with it.
+   */
+  const zoomRef = useRef(zoom);
+  zoomRef.current = zoom;
   const [is3D, setIs3D] = useState(false);
   /**
    * Performance toggle — TASKS-profile.md D1. Defaults to `true` (matching
@@ -225,6 +235,58 @@ export default function MapScreen({
   }, []);
   const insets = useSafeAreaInsets();
   const cameraRef = useRef<CameraRef>(null);
+
+  /**
+   * Square the camera up *after* the style change, not during it.
+   *
+   * ── Why this is an effect and not part of the button ──────────────────
+   * Toggling 3D rebuilds the whole style document — `is3D` is a dependency of
+   * `mapStyle` below, and that document carries up to 14k tree points. Calling
+   * the camera from the button's own handler ran it *before* that rebuild
+   * reached MapLibre:
+   *
+   *   1. setIs3D schedules a render
+   *   2. the camera animation starts, 700ms
+   *   3. the render commits and MapLibre is handed a brand-new style
+   *   4. loading it discards the animation, part-way
+   *
+   * Which is exactly the reported symptom: leaving 3D left the map still
+   * tilted. Entering looked fine only because an interrupted tilt is still a
+   * tilt — the failure was always there, just invisible in that direction.
+   *
+   * An effect runs after commit, so the style is already MapLibre's problem by
+   * the time the camera is asked to move.
+   *
+   * ── And the reset does not animate ────────────────────────────────────
+   * `duration: 0` going back to 2D. Partly belt and braces — an instant change
+   * has no in-flight animation left to interrupt — and partly because it is
+   * the better behaviour anyway: this is a mode switch, not a journey, and
+   * flattening should feel like a switch being thrown.
+   */
+  const firstRender = useRef(true);
+
+  useEffect(() => {
+    // Skip the mount. The camera starts from `initialViewState`'s bounds, and
+    // overriding that on the first frame would throw away the framing that
+    // puts the whole circuit on screen.
+    if (firstRender.current) {
+      firstRender.current = false;
+      return;
+    }
+
+    cameraRef.current?.zoomTo(zoomRef.current, {
+      // 60, not MapLibre's 85: past roughly 70 the camera ends up looking
+      // through a hillside rather than over it.
+      pitch: is3D ? 60 : 0,
+      // Rotation is only reachable by gesture while tilted, so leaving 3D has
+      // to put it straight — there is no other control that would. Entering
+      // says nothing about bearing, deliberately: the key is omitted rather
+      // than sent as undefined, which is a property that still crosses the
+      // bridge.
+      ...(is3D ? {} : { bearing: 0 }),
+      duration: is3D ? 900 : 0,
+    });
+  }, [is3D]);
 
   /**
    * Resolve the bundled archive to a local file URI.
@@ -675,22 +737,9 @@ export default function MapScreen({
         the question.
       */}
       <Pressable
-        onPress={() => {
-          const next = !is3D;
-          setIs3D(next);
-          // zoomTo, not easeTo: every centre-taking method on the camera
-          // *requires* a centre, and supplying one is the teleport described
-          // above. zoomTo takes the camera options without it, and the zoom it
-          // is handed is the one already tracked in state, so the view holds
-          // still while only the pitch and rotation change.
-          cameraRef.current?.zoomTo(zoom, {
-            // 60, not MapLibre's 85: past roughly 70 with terrain on, the
-            // camera ends up looking through a hillside rather than over it.
-            pitch: next ? 60 : 0,
-            ...(next ? {} : { bearing: 0 }),
-            duration: next ? 900 : 700,
-          });
-        }}
+        // Only the state. The camera follows in an effect below, and the
+        // reason is worth reading before moving it back here.
+        onPress={() => setIs3D((on) => !on)}
         style={({ pressed }) => [
           styles.modeButton,
           // Beneath the menu, sharing its left edge: both are things you press
