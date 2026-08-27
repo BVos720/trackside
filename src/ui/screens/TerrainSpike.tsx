@@ -114,26 +114,11 @@ function buildStyleJson(venue: VenueKey): string {
 }
 
 function buildHtml(venue: VenueKey, archiveUrl: string): string {
-  const useVenue = !FLAT_VENUES.has(venue);
-  const shown = (useVenue ? venue : 'nordschleife') as VenueKey;
+  const shown = (FLAT_VENUES.has(venue) ? "nordschleife" : venue) as VenueKey;
   const view = VENUE_VIEW[shown];
   const [lon, lat] = view.centre;
   // Close enough to read the circuit, far enough that relief still shows.
   const zoom = 13.2;
-
-  /*
-   * The whole style, serialised into the page.
-   *
-   * 'bundled' is the pmtiles key registered on the page, so the style's own
-   * `pmtiles://bundled` resolves to the in-memory archive. Glyphs come over
-   * the network for now — bundling them is the same job as the native app's
-   * `npm run glyphs` and is not what this is testing.
-   *
-   * `omitSpots` is false: the spots source belongs in the document here,
-   * because there is no native <GeoJSONSource> to declare it separately.
-   * `terrain3d` is true so the 3D layers exist to be switched on.
-   */
-  // Computed by the caller now and sent in chunks — see buildStyleJson.
 
   return `<!doctype html>
 <html>
@@ -143,247 +128,150 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
   <link href="https://unpkg.com/maplibre-gl@5.6.0/dist/maplibre-gl.css" rel="stylesheet" />
   <style>
     html, body, #map { margin: 0; padding: 0; height: 100%; background: #0B0D10; }
-    #err {
-      position: absolute; left: 0; right: 0; top: 0; padding: 12px;
-      font: 12px/1.4 -apple-system, sans-serif; color: #F2F5F8;
-      background: rgba(180,60,60,0.95); display: none; white-space: pre-wrap;
-    }
   </style>
 </head>
 <body>
   <div id="map"></div>
-  <div id="err"></div>
   <script src="https://unpkg.com/maplibre-gl@5.6.0/dist/maplibre-gl.js"></script>
   <script src="https://unpkg.com/pmtiles@4.5.0/dist/pmtiles.js"></script>
   <script>
-    var post = function (payload) {
-      if (window.ReactNativeWebView) {
-        window.ReactNativeWebView.postMessage(JSON.stringify(payload));
-      }
+    var post = function (p) {
+      if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage(JSON.stringify(p));
     };
-
     var fail = function (stage, e) {
-      var msg = String((e && (e.message || e)) || 'unknown');
-      document.getElementById('err').style.display = 'block';
-      document.getElementById('err').textContent = stage + ': ' + msg;
-      post({ stage: stage, error: msg });
+      post({ stage: stage, error: String((e && (e.message || e)) || "unknown") });
     };
+    window.onerror = function (m, s, l, c) { fail("window.onerror", m + " @" + l + ":" + c); };
 
-    window.onerror = function (m) { fail('window.onerror', m); };
+    post({ stage: "script-ran" });
 
-    try {
-      post({ stage: 'script-ran' });
+    /*
+      Two things have to arrive before a map can be built: the basemap
+      archive and the style. Both come from the native side, independently
+      and in no fixed order, so each is a promise and the map waits on both.
 
-      if (!window.maplibregl) throw new Error('maplibre-gl did not load from the CDN');
-      post({ stage: 'library-loaded', version: maplibregl.getVersion ? maplibregl.getVersion() : '?' });
+      Sequencing them would have been simpler and wrong: whichever went
+      second would sit behind the first for no reason, and a failure in one
+      would look like silence from the other.
+    */
+    var archiveReady = new Promise(function (resolve) {
+      window.__acceptArchive = function (base64) {
+        var began = Date.now();
+        var bin = atob(base64);
+        var bytes = new Uint8Array(bin.length);
+        for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        post({ stage: "archive-received", bytes: bytes.byteLength, ms: Date.now() - began });
+        resolve(bytes.buffer);
+      };
+    });
 
-      // v5 removed maplibregl.supported(), so its absence says nothing. Ask
-      // the browser directly instead — the first run reported
-      // "webgl-unsupported" purely because the helper had been deleted, while
-      // the map rendered fine at 38fps.
-      var probe = document.createElement('canvas');
-      var gl = probe.getContext('webgl2') || probe.getContext('webgl');
-      post({ stage: gl ? 'webgl-ok' : 'webgl-MISSING' });
-
-      /*
-       * Load our own archive before building the map.
-       *
-       * Reported either way: which route worked, how long it took, and how
-       * many bytes arrived. A silent fallback would hide the answer this whole
-       * screen exists to produce.
-       */
-      var ARCHIVE_URL = '${archiveUrl}';
-
-      function bufferSource(buffer) {
-        // pmtiles' Source is two methods. Ranges become slices, which is the
-        // entire trick: no HTTP, no partial requests, no file:// semantics.
-        return {
-          getKey: function () { return 'bundled'; },
-          getBytes: function (offset, length) {
-            return Promise.resolve({ data: buffer.slice(offset, offset + length) });
-          }
-        };
-      }
-
-      /*
-       * Straight to the bridge.
-       *
-       * The fetch-off-disk attempt is gone with the props that were meant to
-       * permit it. It was the cheaper route, not the necessary one, and it is
-       * worth re-trying only once there is a working map to compare against.
-       */
-      function loadArchive() {
-        return new Promise(function (resolve) {
-          window.__acceptArchive = function (base64) {
-            var began = Date.now();
-            var bin = atob(base64);
-            var bytes = new Uint8Array(bin.length);
-            for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-            post({
-              stage: 'archive-via-bridge',
-              bytes: bytes.byteLength,
-              ms: Date.now() - began
-            });
-            resolve(bytes.buffer);
-          };
-          post({ stage: 'awaiting-bridge' });
-        });
-      }
-
-      /*
-       * The real style, not a stand-in.
-       *
-       * 'buildMapStyle' already produces the whole document — circuit, paths,
-       * buildings, the corridor mask, the woodland scatter — and the web build
-       * hands exactly this to maplibre-gl. So the spike does too, rather than
-       * approximating it: anything else would test something we are not going
-       * to ship.
-       *
-       * Two substitutions. The tile URL is 'bundled', which is the key the
-       * pmtiles protocol was registered under above, so the style's
-       * 'pmtiles://bundled' resolves to the archive in memory. And terrain is
-       * attached after load with setTerrain rather than through the style,
-       * because the 'terrain' key was removed from buildMapStyle — native
-       * cannot read it, and here it is set imperatively exactly as
-       * MapScreen.web.tsx does.
-       */
-      /*
-       * The style arrives after the page is alive, in pieces.
-       *
-       * It used to be baked into this HTML, and that was the reason nothing
-       * happened at all: buildMapStyle inlines every GeoJSON the map needs —
-       * 1.26MB of tree points, 430KB of paths, 320KB of buildings — so the
-       * document handed to loadHTMLString was about 2.5MB. Thirty seconds
-       * later the page had still not run its first line.
-       *
-       * Bulk data does not belong in a document. It comes across in chunks
-       * now, which also means the page can report that it is alive *before*
-       * any of it arrives — the thing that was missing when this hung.
-       */
-      var styleParts = [];
+    var styleParts = [];
+    var styleReady = new Promise(function (resolve) {
       window.__stylePart = function (part) { styleParts.push(part); };
       window.__styleDone = function () {
         var began = Date.now();
-        var text = styleParts.join('');
+        var text = styleParts.join("");
         styleParts = [];
-        var style;
         try {
-          style = JSON.parse(text);
+          var parsed = JSON.parse(text);
+          post({ stage: "style-received", bytes: text.length, ms: Date.now() - began });
+          resolve(parsed);
         } catch (e) {
-          return fail('style-parse', e);
+          fail("style-parse", e);
         }
-        post({ stage: 'style-received', bytes: text.length, ms: Date.now() - began });
-        buildMapWithStyle(style);
       };
+    });
 
-      post({ stage: 'awaiting-style' });
+    try {
+      if (!window.maplibregl) throw new Error("maplibre-gl did not load");
+      post({ stage: "library-loaded", version: maplibregl.getVersion ? maplibregl.getVersion() : "?" });
+      if (!window.pmtiles) throw new Error("pmtiles did not load");
+      post({ stage: "pmtiles-loaded" });
 
-      function buildMapWithStyle(style) {
-      var map = new maplibregl.Map({
-        container: 'map',
-        style: style,
-        center: [${lon}, ${lat}],
-        zoom: ${zoom},
-        pitch: 70,
-        bearing: 20,
-        attributionControl: false
-      });
+      // v5 removed maplibregl.supported(), so ask the browser directly.
+      var probe = document.createElement("canvas");
+      post({ stage: (probe.getContext("webgl2") || probe.getContext("webgl")) ? "webgl-ok" : "webgl-MISSING" });
 
-      map.on('error', function (e) { fail('map.error', e && e.error); });
+      post({ stage: "awaiting-archive" });
+      post({ stage: "awaiting-style" });
 
-      map.on('load', function () {
-        post({ stage: 'map-loaded' });
-        try {
-          /*
-           * The style already declares the DEM source, so this only attaches
-           * the mesh — and it is the same call, on the same source, that the
-           * web build makes.
-           *
-           * 1.4, not the spike's earlier 2.0: this is meant to look like the
-           * map now rather than prove a point, and the web build's own
-           * exaggeration is the value that has already been judged by eye.
-           */
-          map.setTerrain({ source: '${TERRAIN_SOURCE}', exaggeration: 1.4 });
-          post({ stage: 'terrain-set' });
+      Promise.all([archiveReady, styleReady]).then(function (both) {
+        var buffer = both[0];
+        var style = both[1];
 
-          // The 3D layers are hidden by default in the style — the same
-          // visibility switch the native screen drives from its 2D/3D button.
-          ['terrain-hillshade', 'buildings-3d', 'trees', 'ground-detail'].forEach(function (id) {
-            try { map.setLayoutProperty(id, 'visibility', 'visible'); } catch (e) {}
-          });
-          post({ stage: '3d-layers-shown' });
-        } catch (e) { fail('setTerrain', e); }
-      });
+        /*
+          pmtiles from a buffer, not a URL.
 
-      /*
-       * Is the elevation data actually arriving?
-       *
-       * "terrain-set" only means setTerrain() did not throw. The Nordschleife
-       * came back flat with that stage reported, so the call being accepted
-       * says nothing about whether a mesh exists. These three probes separate
-       * the possibilities, and they answer different questions:
-       *
-       *   dem-fetch    can this page reach the DEM endpoint at all? A WebView
-       *                on a made-up origin (trackside.invalid) has to satisfy
-       *                CORS like anything else, and a blocked fetch here would
-       *                leave both the mesh and the hillshading empty — which
-       *                is exactly what a flat dark screen looks like.
-       *
-       *   terrain-attached  does the map agree it has terrain, a moment later?
-       *
-       *   elevation    the decisive one. queryTerrainElevation returns metres
-       *                at a point. The Nordschleife sits around 600m, so a
-       *                number near that means the mesh has real data and the
-       *                problem is how it is being drawn. Null or zero means
-       *                the data never arrived, which is a different bug
-       *                entirely.
-       */
-      fetch('https://elevation-tiles-prod.s3.amazonaws.com/terrarium/12/2133/1377.png')
-        .then(function (r) { return r.ok ? r.arrayBuffer() : Promise.reject(new Error('HTTP ' + r.status)); })
-        .then(function (b) { post({ stage: 'dem-fetch', bytes: b.byteLength }); })
-        .catch(function (e) { post({ stage: 'dem-fetch', error: String(e && e.message || e) }); });
-
-      var probed = false;
-      map.on('idle', function () {
-        post({ stage: 'idle' });
-        if (probed) return;
-        probed = true;
-
-        try {
-          post({ stage: 'terrain-attached', attached: !!map.getTerrain() });
-        } catch (e) {
-          post({ stage: 'terrain-attached', error: String(e && e.message || e) });
-        }
-
-        try {
-          if (typeof map.queryTerrainElevation === 'function') {
-            var m = map.queryTerrainElevation(map.getCenter());
-            post({ stage: 'elevation', metres: m === null || m === undefined ? null : Math.round(m) });
-          } else {
-            post({ stage: 'elevation', error: 'queryTerrainElevation missing' });
+          Its Source interface is two methods, so a range request becomes a
+          slice of an ArrayBuffer. That sidesteps the whole problem: the
+          archive is a bundled file, and file:// has no range semantics for
+          the usual HTTP path to use.
+        */
+        var archive = new pmtiles.PMTiles({
+          getKey: function () { return "bundled"; },
+          getBytes: function (offset, length) {
+            return Promise.resolve({ data: buffer.slice(offset, offset + length) });
           }
-        } catch (e) {
-          post({ stage: 'elevation', error: String(e && e.message || e) });
-        }
+        });
+        var protocol = new pmtiles.Protocol();
+        protocol.add(archive);
+        maplibregl.addProtocol("pmtiles", protocol.tile);
+        post({ stage: "protocol-registered" });
 
-        post({ stage: 'pitch', pitch: Math.round(map.getPitch()) });
-      });
-      } // end buildMapWithStyle
-      } // end buildMap
+        var map = new maplibregl.Map({
+          container: "map",
+          style: style,
+          center: [${lon}, ${lat}],
+          zoom: ${zoom},
+          pitch: 70,
+          bearing: 20,
+          attributionControl: false
+        });
 
-      // Rough frame timing while the user drags, which is the question that
-      // decides whether this is usable rather than merely possible.
-      var frames = 0, since = Date.now();
-      map.on('move', function () {
-        frames++;
-        var elapsed = Date.now() - since;
-        if (elapsed >= 1000) {
-          post({ stage: 'fps', fps: Math.round((frames * 1000) / elapsed) });
-          frames = 0; since = Date.now();
-        }
-      });
+        map.on("error", function (e) { fail("map.error", e && e.error); });
+
+        map.on("load", function () {
+          post({ stage: "map-loaded" });
+          try {
+            // Same call, same source, same exaggeration the web build uses.
+            map.setTerrain({ source: "${TERRAIN_SOURCE}", exaggeration: 1.4 });
+            post({ stage: "terrain-set" });
+          } catch (e) { fail("setTerrain", e); }
+
+          // The style hides these until 3D is asked for, which is the same
+          // switch the native screen drives from its 2D/3D button.
+          ["terrain-hillshade", "buildings-3d", "trees", "ground-detail"].forEach(function (id) {
+            try { map.setLayoutProperty(id, "visibility", "visible"); } catch (e) {}
+          });
+          post({ stage: "3d-layers-shown" });
+        });
+
+        var probed = false;
+        map.on("idle", function () {
+          if (probed) return;
+          probed = true;
+          post({ stage: "idle" });
+          try {
+            var m = map.queryTerrainElevation(map.getCenter());
+            post({ stage: "elevation", metres: (m === null || m === undefined) ? null : Math.round(m) });
+          } catch (e) { post({ stage: "elevation", error: String(e && e.message || e) }); }
+          post({ stage: "pitch", pitch: Math.round(map.getPitch()) });
+        });
+
+        // Frame timing while dragging: the question is whether this is
+        // usable, not merely possible.
+        var frames = 0, since = Date.now();
+        map.on("move", function () {
+          frames++;
+          var elapsed = Date.now() - since;
+          if (elapsed >= 1000) {
+            post({ stage: "fps", fps: Math.round((frames * 1000) / elapsed) });
+            frames = 0; since = Date.now();
+          }
+        });
+      }).catch(function (e) { fail("build", e); });
     } catch (e) {
-      fail('setup', e);
+      fail("setup", e);
     }
   </script>
 </body>
@@ -592,7 +480,7 @@ export default function TerrainSpike({
             );
 
             // The page could not read the file itself. Send it across.
-            if (m.stage === 'awaiting-bridge') void sendArchiveOverBridge();
+            if (m.stage === 'awaiting-archive') void sendArchiveOverBridge();
             if (m.stage === 'awaiting-style') sendStyle();
           } catch {
             note('unreadable message');
