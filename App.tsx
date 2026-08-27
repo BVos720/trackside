@@ -177,6 +177,15 @@ const CIRCUIT_CHOICES = (Object.keys(CIRCUIT_IDS) as VenueKey[]).map((v) => ({
  * the thing you want every pixel of. So the container stays full-bleed and each
  * floating control offsets itself.
  */
+/**
+ * How long one photo may take to copy into the media store before it is given
+ * up on.
+ *
+ * A ceiling on a step that has already hung once on real hardware, not a
+ * performance target. See the note where it is used.
+ */
+const PHOTO_COPY_TIMEOUT_MS = 20000;
+
 export default function App() {
   return (
     /*
@@ -891,14 +900,37 @@ function AppShell() {
          * spot sheet.
          */
         try {
-          await addPhoto(
-            spot.id,
-            p.file,
-            p.kind,
-            p.isKey,
-            activeEvent?.tag ?? null,
-            p.metadataStripped,
-          );
+          /*
+           * Raced against a deadline, because a catch cannot catch a hang.
+           *
+           * The try/catch below only helps if the copy *fails*. If it simply
+           * never resolves — which is what a stalled read of an iCloud asset
+           * looks like — then nothing after this loop runs, the sheet never
+           * closes, and Save is dead until the app restarts. That is the
+           * original report, and the try/catch on its own would not have
+           * prevented it.
+           *
+           * Twenty seconds is long enough for a large photo to be re-encoded
+           * and written on a phone, and short enough that nobody concludes the
+           * button is broken. The spot is already saved by this point; what is
+           * being abandoned is one photo, and the alert says so.
+           */
+          await Promise.race([
+            addPhoto(
+              spot.id,
+              p.file,
+              p.kind,
+              p.isKey,
+              activeEvent?.tag ?? null,
+              p.metadataStripped,
+            ),
+            new Promise((_, reject) =>
+              setTimeout(
+                () => reject(new Error('Copying the photo took too long.')),
+                PHOTO_COPY_TIMEOUT_MS,
+              ),
+            ),
+          ]);
         } catch (e) {
           failedPhotos.push(e instanceof Error ? e.message : String(e));
         }

@@ -102,6 +102,23 @@ export async function pickImage(): Promise<PickedImage | null> {
     // image. Compressing here as well would be two lossy passes for one result.
     quality: 1,
     exif: false,
+    /*
+     * Fetch the photo from iCloud when it is not on the device.
+     *
+     * Defaults to false, and that default is why saving a spot with a photo
+     * appeared to do nothing. With Optimise iPhone Storage the full-resolution
+     * image lives in iCloud and only a thumbnail is local — enough for the
+     * preview, which is exactly why the picker looked like it had worked. The
+     * read that followed had nothing to read.
+     *
+     * Turning it on makes the picker do the download itself, with the system's
+     * own progress UI, before it hands anything back. That is a wait, and on a
+     * slow connection a long one — but it is a visible wait in a place that
+     * expects one, rather than a Save button that silently never finishes.
+     *
+     * iOS only; ignored elsewhere.
+     */
+    shouldDownloadFromNetwork: true,
   });
 
   if (result.canceled) return null;
