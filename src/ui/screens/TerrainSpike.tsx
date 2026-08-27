@@ -362,6 +362,17 @@ export default function TerrainSpike({
   const [fps, setFps] = useState<number | null>(null);
 
   /**
+   * The map is up and the diagnostics can go away.
+   *
+   * This started as a test screen and the log was the whole point of it. It is
+   * a feature now, and a wall of stage names over a landscape is the wrong
+   * thing to hand somebody who pressed 3D. The log stays while it is loading,
+   * because that is when something might go wrong and the last stage names
+   * where — then it gets out of the way.
+   */
+  const [ready, setReady] = useState(false);
+
+  /**
    * Where the bundled archive lives on disk, once unpacked.
    *
    * Null until it is known, and the WebView is not rendered before then —
@@ -492,7 +503,7 @@ export default function TerrainSpike({
           testing needed.
         </Text>
         <Pressable onPress={onClose} style={styles.button}>
-          <Text style={styles.buttonLabel}>Back</Text>
+          <Text style={styles.buttonLabel}>Back to map</Text>
         </Pressable>
       </View>
     );
@@ -579,6 +590,7 @@ export default function TerrainSpike({
               return;
             }
 
+            if (m.stage === '3d-layers-shown') setReady(true);
             if (m.stage === 'awaiting-archive') void sendArchiveOverBridge();
             if (m.stage === 'awaiting-style') sendStyle();
           } catch {
@@ -591,9 +603,10 @@ export default function TerrainSpike({
       />
 
       <View style={styles.overlay} pointerEvents="box-none">
+        {!ready && (
         <View style={styles.panel}>
           <Text style={styles.panelTitle}>
-            TERRAIN SPIKE{fps !== null ? ` · ${fps} fps` : ''}
+            LOADING TERRAIN{fps !== null ? ` · ${fps} fps` : ''}
           </Text>
           {log.length === 0 ? (
             <View style={styles.waiting}>
@@ -608,9 +621,10 @@ export default function TerrainSpike({
             ))
           )}
         </View>
+        )}
 
         <Pressable onPress={onClose} style={styles.button}>
-          <Text style={styles.buttonLabel}>Back</Text>
+          <Text style={styles.buttonLabel}>Back to map</Text>
         </Pressable>
       </View>
     </View>

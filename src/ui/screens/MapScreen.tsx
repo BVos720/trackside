@@ -129,6 +129,7 @@ export default function MapScreen({
   mediaUris = {},
   onMapTap,
   onSpotTap,
+  onOpenTerrainView,
   placing = false,
   route,
   here,
@@ -141,6 +142,8 @@ export default function MapScreen({
   mediaUris?: Record<string, string>;
   onMapTap?: (lngLat: { latitude: number; longitude: number }) => void;
   onSpotTap?: (id: string) => void;
+  /** Open the terrain map. This is what the 3D button does now. */
+  onOpenTerrainView?: () => void;
   placing?: boolean;
   /**
    * The navigation route, as a FeatureCollection of legs.
@@ -746,7 +749,27 @@ export default function MapScreen({
       <Pressable
         // Only the state. The camera follows in an effect below, and the
         // reason is worth reading before moving it back here.
-        onPress={() => setIs3D((on) => !on)}
+        /*
+          3D is the terrain map now.
+
+          What this button used to do was tilt the camera and switch on
+          hillshading and extruded buildings — and on iOS that is all it could
+          ever do, because maplibre-react-native has no terrain mesh. The
+          result was a tilted 2D map: a button that looked like a feature and
+          was not one.
+
+          So it opens the real thing instead. 2D stays the native map, where
+          placing, editing, the navigator and the sun dial all live and all
+          work; 3D is where you go to see whether a corner sits below an
+          embankment.
+
+          The honest cost, stated because it is real: the terrain map is a
+          WebView and currently needs signal for its libraries. At a circuit
+          with none, 3D will not open. That is a worse trade than it sounds
+          only if you expected 3D to work there — and until today it did not
+          work anywhere.
+        */
+        onPress={() => onOpenTerrainView?.()}
         style={({ pressed }) => [
           styles.modeButton,
           // Beneath the menu, sharing its left edge: both are things you press
@@ -758,9 +781,14 @@ export default function MapScreen({
           pressed && styles.pressed,
         ]}
       >
-        <Text style={[styles.modeLabel, is3D && styles.modeLabelActive]}>
-          {is3D ? '3D' : '2D'}
-        </Text>
+        {/*
+          Always reads 3D, because it is a door rather than a switch.
+
+          Showing "2D" while looking at the 2D map invited the reading that
+          tapping it turns 2D off. It opens the terrain view; the label should
+          say where it goes.
+        */}
+        <Text style={styles.modeLabel}>3D</Text>
       </Pressable>
 
       {is3D && (

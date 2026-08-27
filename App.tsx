@@ -1053,6 +1053,7 @@ function AppShell() {
               key={venue}
               venue={venue}
               spots={visibleGeoJson}
+              onOpenTerrainView={() => setTerrainSpike(true)}
               route={routeGeoJson}
               here={fix?.position ?? null}
               heading={heading}
