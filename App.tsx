@@ -1559,7 +1559,21 @@ function AppShell() {
       */}
       {terrainSpike && (
         <View style={StyleSheet.absoluteFill}>
-          <TerrainSpike venue={venue} onClose={() => setTerrainSpike(false)} />
+          <TerrainSpike
+            venue={venue}
+            // The same shape the native map draws, so the two cannot drift.
+            spots={visibleGeoJson}
+            onOpenSpot={(id) => {
+              // Close the 3D view and open the spot on the map behind it.
+              // The sheet, its editing and its photos all live natively, and
+              // rebuilding any of that inside a WebView would be a lot of
+              // risk for something that already works.
+              setTerrainSpike(false);
+              setWhere('map');
+              setSheet({ kind: 'overview', id: id as never });
+            }}
+            onClose={() => setTerrainSpike(false)}
+          />
         </View>
       )}
 

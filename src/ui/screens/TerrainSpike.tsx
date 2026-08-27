@@ -114,7 +114,15 @@ function buildStyleJson(venue: VenueKey): string {
 }
 
 function buildHtml(venue: VenueKey, archiveUrl: string): string {
-  const shown = (FLAT_VENUES.has(venue) ? "nordschleife" : venue) as VenueKey;
+  /*
+   * The venue you are on, not a substitute for it.
+   *
+   * The spike redirected flat circuits to the Nordschleife so a working mesh
+   * would be visible while it was still in doubt. That is over — it works —
+   * and standing at Zolder while the screen shows the Eifel would now be a
+   * bug rather than a diagnostic.
+   */
+  const shown = venue;
   const view = VENUE_VIEW[shown];
   const [lon, lat] = view.centre;
   // Close enough to read the circuit, far enough that relief still shows.
@@ -144,6 +152,25 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
     window.onerror = function (m, s, l, c) { fail("window.onerror", m + " @" + l + ":" + c); };
 
     post({ stage: "script-ran" });
+
+    /*
+      Spots arrive whenever they change, before or after the map exists.
+
+      Held on window so a set that lands early is picked up when the layer is
+      created, and pushed straight to the source when it lands late. Without
+      that, editing a spot while the map was still loading would silently do
+      nothing.
+    */
+    var emptySpots = { type: "FeatureCollection", features: [] };
+    window.__spots = emptySpots;
+    window.__setSpots = function (json) {
+      try {
+        window.__spots = JSON.parse(json);
+        if (window.__map && window.__map.getSource("spots")) {
+          window.__map.getSource("spots").setData(window.__spots);
+        }
+      } catch (e) { fail("spots-parse", e); }
+    };
 
     /*
       Two things have to arrive before a map can be built: the basemap
@@ -228,6 +255,7 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
           attributionControl: false
         });
 
+        window.__map = map;
         map.on("error", function (e) { fail("map.error", e && e.error); });
 
         map.on("load", function () {
@@ -244,6 +272,45 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
             try { map.setLayoutProperty(id, "visibility", "visible"); } catch (e) {}
           });
           post({ stage: "3d-layers-shown" });
+
+          /*
+            Spots, added after load rather than baked into the style.
+
+            They change as you edit them and the style carries the whole
+            basemap, so rebuilding the document for a rename would be the same
+            mistake 'omitSpots' exists to avoid on the native screen.
+          */
+          try {
+            map.addSource("spots", { type: "geojson", data: window.__spots || emptySpots });
+            map.addLayer({
+              id: "spot-halo",
+              type: "circle",
+              source: "spots",
+              paint: { "circle-radius": 12, "circle-color": "#2E7DF6", "circle-opacity": 0.22 }
+            });
+            map.addLayer({
+              id: "spot-pin",
+              type: "circle",
+              source: "spots",
+              paint: {
+                "circle-radius": 6,
+                "circle-color": "#2E7DF6",
+                "circle-stroke-color": "#0B0D10",
+                "circle-stroke-width": 2
+              }
+            });
+            post({ stage: "spots-layer-added" });
+          } catch (e) { fail("spots", e); }
+
+          // Tapping a pin opens it on the native side, which owns the sheet.
+          map.on("click", "spot-pin", function (e) {
+            var f = e.features && e.features[0];
+            var id = f && f.properties && f.properties.id;
+            if (id) post({ tapSpot: String(id) });
+          });
+
+          map.on("mouseenter", "spot-pin", function () { map.getCanvas().style.cursor = "pointer"; });
+          map.on("mouseleave", "spot-pin", function () { map.getCanvas().style.cursor = ""; });
         });
 
         var probed = false;
@@ -280,9 +347,15 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
 
 export default function TerrainSpike({
   venue,
+  spots,
+  onOpenSpot,
   onClose,
 }: {
   venue: VenueKey;
+  /** The same GeoJSON the native map draws. */
+  spots?: unknown;
+  /** Tapping a pin opens it — the sheet stays on the native side. */
+  onOpenSpot?: (id: string) => void;
   onClose: () => void;
 }) {
   const [log, setLog] = useState<string[]>([]);
@@ -371,6 +444,24 @@ export default function TerrainSpike({
     }
   };
 
+  /**
+   * Push the spots into the page.
+   *
+   * Small enough to go in one call — a few hundred waypoints is kilobytes,
+   * not the megabyte the style needed — so no chunking. The page holds them
+   * on 'window' whether or not the map exists yet, so this is safe to call
+   * before it has loaded.
+   */
+  useEffect(() => {
+    if (spots === undefined) return;
+    const json = JSON.stringify(spots)
+      .replace(/\\/g, '\\\\')
+      .replace(/"/g, '\\"')
+      .replace(/\u2028/g, '\\u2028')
+      .replace(/\u2029/g, '\\u2029');
+    webRef.current?.injectJavaScript(`window.__setSpots && window.__setSpots("${json}"); true;`);
+  }, [spots]);
+
   const sendArchiveOverBridge = async () => {
     if (archiveUrl === null || archiveUrl === '') {
       note('bridge: no archive path to read');
@@ -424,13 +515,13 @@ export default function TerrainSpike({
         ref={webRef as never}
         source={{ html: buildHtml(venue, archiveUrl), baseUrl: 'https://trackside.invalid/' }}
         /*
-         * No file-access props, and `allowingReadAccessToURL` in particular.
+         * No file-access props, and 'allowingReadAccessToURL' in particular.
          *
          * They were added for the fetch-off-disk path and the page stopped
          * loading entirely at the same moment — thirty seconds with not one
          * message, before *and* after the document shrank from 2.4MB to 10KB,
          * which rules the payload out. On iOS that prop changes which
-         * WKWebView load method is used, and combining it with an `html`
+         * WKWebView load method is used, and combining it with an 'html'
          * source is the kind of thing that quietly loads nothing.
          *
          * They are not needed anyway. Reading the archive off disk was only
@@ -459,6 +550,7 @@ export default function TerrainSpike({
               attached?: boolean;
               metres?: number | null;
               pitch?: number;
+              tapSpot?: string;
             };
             if (typeof m.fps === 'number') {
               setFps(m.fps);
@@ -480,6 +572,13 @@ export default function TerrainSpike({
             );
 
             // The page could not read the file itself. Send it across.
+            // A pin was tapped. The sheet belongs to the native side, so
+            // this is handed straight back out rather than handled here.
+            if (typeof m.tapSpot === 'string') {
+              onOpenSpot?.(m.tapSpot);
+              return;
+            }
+
             if (m.stage === 'awaiting-archive') void sendArchiveOverBridge();
             if (m.stage === 'awaiting-style') sendStyle();
           } catch {
