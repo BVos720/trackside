@@ -991,7 +991,16 @@ export default function MapScreen({
           // pushes it further down when the shell has stacked something else
           // there, such as the back-to-event button.
           { top: insets.top + MENU_CLEARANCE + controlsTop },
-          is3D && styles.modeButtonActive,
+          /*
+            terrain3d, not is3D.
+
+            The label already switched on terrain3d while the background
+            switched on is3D — the older native-3D flag, which the terrain view
+            never sets. So in 3D the text turned its on-accent colour, meant to
+            sit on a bright button, while the button stayed dark: dark on dark,
+            and the control read as disabled exactly when it was active.
+          */
+          terrain3d && styles.modeButtonActive,
           pressed && styles.pressed,
         ]}
       >

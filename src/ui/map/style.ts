@@ -276,6 +276,27 @@ function normaliseFontStacks(
  * behind the circuit rather than a cliff edge into nothing. Only applied when
  * terrain is on — see the note on the DEM source's bounds.
  */
+/**
+ * Slide the hillshade in above the ground and below everything drawn on it.
+ *
+ * Relief has to be under the roads, the labels and the circuit — shading a
+ * road casing or a corner name just makes them harder to read — but over the
+ * fills, or there is nothing to shade. So it goes immediately before the first
+ * road or symbol layer the basemap declares, wherever that happens to be, and
+ * keeps working when the basemap package reorders itself.
+ */
+function withHillshade(keep: unknown[], hillshade: unknown): unknown[] {
+  const at = keep.findIndex((entry) => {
+    const layer = entry as { id?: string; type?: string };
+    return (
+      /^(roads|bridges|transit|pois|places|boundaries)/.test(layer.id ?? '') ||
+      layer.type === 'symbol'
+    );
+  });
+  const i = at === -1 ? keep.length : at;
+  return [...keep.slice(0, i), hillshade, ...keep.slice(i)];
+}
+
 export const HORIZON_MARGIN = 0.25;
 
 export const REMOTE_GLYPHS_URL =
@@ -654,10 +675,20 @@ export function buildMapStyle(
     // costs DEM tiles nobody asked for.
     layout: threeDVisibility(terrain3d),
     paint: {
-      'hillshade-exaggeration': 0.55,
-      'hillshade-shadow-color': '#05070A',
-      'hillshade-highlight-color': '#6E7C8A',
-      'hillshade-accent-color': '#1A222C',
+      /*
+        Translucent, because this now sits *over* the ground.
+
+        Opaque shading under the basemap was invisible — the landuse fills
+        covered it — and over the basemap it replaced the colour entirely,
+        which is how the map came to look like a grey relief model. There is no
+        hillshade-opacity, so the alpha lives in the colours: enough to read
+        which way a slope faces, little enough that the wood underneath is
+        still green.
+      */
+      'hillshade-exaggeration': 0.5,
+      'hillshade-shadow-color': 'rgba(4,7,10,0.42)',
+      'hillshade-highlight-color': 'rgba(198,214,230,0.20)',
+      'hillshade-accent-color': 'rgba(26,34,44,0.18)',
       'hillshade-illumination-direction': DEFAULT_ILLUMINATION,
       'hillshade-illumination-anchor': 'map',
     },
@@ -1102,21 +1133,7 @@ export function buildMapStyle(
      * and this file should not pretend otherwise.
      */
     layers: [
-      /*
-        Hillshade first, so the map's own colours survive it.
-
-        It was drawn after the basemap, which meant every landuse fill — the
-        woodland green, the field tones, the water — was painted over by a grey
-        shading layer. Flat, that was merely dull. With a terrain mesh under it
-        the whole landscape went the colour of the shading, and the map read as
-        a grey relief model rather than a map.
-
-        Underneath, it does what it should: the ground is shaded and the map is
-        drawn on the shading. In 3D it is doing less work anyway — the mesh
-        carries the shape, so the shading only has to hint at it.
-      */
-      hillshade,
-      ...keep,
+      ...withHillshade(keep, hillshade),
       buildings,
       ...trackLayers,
       // On top of the asphalt, under the trees — a tree at the edge of a corner

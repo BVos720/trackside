@@ -387,7 +387,11 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
       ridgeline the sun sets behind. It only ever needed a colour.
     */
     var GROUND_TONES = {
-      background: [[12, 15, 14], [38, 48, 42]],
+      // Forest green, matching landuse_park rather than sitting a shade off
+      // it. Out there the mesh has no detail at all, so anything that reads
+      // as a *different* surface invites you to look for a meaning that is
+      // not there. Continuous woodland is the honest reading of the Eifel.
+      background: [[10, 18, 13], [34, 60, 44]],
       earth: [[11, 14, 12], [38, 48, 42]],
       landcover: [[13, 17, 14], [46, 61, 48]],
       landuse_park: [[10, 18, 13], [36, 64, 47]],
@@ -857,24 +861,25 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
               data: window.__spots || emptySpots,
               cluster: true,
               /*
-                Tight enough that only touching pins stack.
+                Sized to the cards, not to the pins.
 
-                At 40px, two waypoints a comfortable distance apart merged as
-                soon as you zoomed out, and a merge looks like a disappearance:
-                you had two pins, now there is one. Which two happened to be
-                within 40px of each other depended entirely on where you were
-                looking, so it read as pins vanishing at random.
+                18px was the point where two *pins* touch, which sounded
+                right and was wrong: what overlaps on screen is the cards,
+                and they are 124px wide. So two spots would un-stack while
+                their labels were still sitting on top of each other —
+                exactly the pile the stack exists to prevent.
 
-                A pin is 6px with a 2px stroke, so 18px is about the point where
-                two of them actually touch — which is what was asked for: a
-                stack when waypoints overlap, not when they are merely near.
+                55px is about half a card, so they separate at the zoom
+                where both can actually be read side by side.
               */
-              clusterRadius: 18,
+              clusterRadius: 55,
               // Carried onto the cluster so a stack can be listed without
               // a second lookup, and so leaves keep their identity.
               clusterProperties: {},
               // Past this they are far enough apart to tap individually.
-              clusterMaxZoom: 17
+              // Stacks survive to a genuinely close zoom; past this you are
+              // near enough that two spots are metres apart on the ground.
+              clusterMaxZoom: 19
             });
             // Clusters first, so a stack reads as one object.
             map.addLayer({
@@ -1705,7 +1710,15 @@ export default function TerrainSpike({
       )}
 
       <View style={styles.overlay} pointerEvents="box-none">
-        {!ready && (
+        {/*
+          Diagnostics belong to the standalone spike, not to the map.
+
+          Embedded there is no onClose, and a wall of stage names over the map
+          is just noise on top of somebody's circuit — it was appearing every
+          time 3D was opened. Standalone it is still the fastest way to see
+          where a load stopped.
+        */}
+        {!ready && onClose !== undefined && (
         <View style={styles.panel}>
           <Text style={styles.panelTitle}>
             LOADING TERRAIN{fps !== null ? ` · ${fps} fps` : ''}
