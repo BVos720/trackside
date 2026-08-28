@@ -118,7 +118,21 @@ function buildStyleJson(venue: VenueKey): string {
   return JSON.stringify(
     // Scenery on: the trailing flag drops TREES_SOURCE from the style
     // altogether, and with it the tree line that makes a circuit legible.
-    buildMapStyle('bundled', shown, undefined, false, true, REMOTE_GLYPHS_URL, true),
+    /*
+      omitSpots: true — the page adds its own.
+
+      This was false, so the style arrived carrying spot-halo / spot-pin /
+      spot-label, and the page's own 'spots' source then failed to be added at
+      all: "Source 'spots' already exists". Every layer that depended on it went
+      with it, spot-cluster included.
+
+      The visible result was a map that looked almost right — pins were there,
+      because the style's unclustered ones were drawing them — but stacking
+      never happened, and every tap logged "the layer 'spot-cluster' does not
+      exist and cannot be queried". Clustering had not been broken; it had
+      never been added.
+    */
+    buildMapStyle('bundled', shown, undefined, true, true, REMOTE_GLYPHS_URL, true),
   );
 }
 
@@ -356,6 +370,86 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
 
         map.on("load", function () {
           post({ stage: "map-loaded" });
+
+          /*
+            Scenery icons, drawn here rather than fetched.
+
+            The native map registers tree/shrub/grass/rock as bundled PNGs
+            through addImage, and the style has no sprite on purpose. This
+            page has neither, so every scenery layer was silently drawing
+            nothing — "Image tree could not be loaded", repeated per kind,
+            and a circuit with no trees on it.
+
+            A canvas blob is enough. At the zoom these appear the icons are
+            a few pixels across; what matters is that there is green where
+            the woods are, not that it is leaf-shaped.
+          */
+          try {
+            var SCENERY = {
+              tree: ["#2F7A46", 7],
+              shrub: ["#3C8850", 5],
+              grass: ["#4A8B49", 4],
+              rock: ["#6B6F73", 4]
+            };
+            Object.keys(SCENERY).forEach(function (name) {
+              if (map.hasImage(name)) return;
+              var c = document.createElement("canvas");
+              c.width = 16;
+              c.height = 16;
+              var g = c.getContext("2d");
+              g.fillStyle = SCENERY[name][0];
+              g.beginPath();
+              g.arc(8, 8, SCENERY[name][1], 0, Math.PI * 2);
+              g.fill();
+              var px = g.getImageData(0, 0, 16, 16);
+              map.addImage(name, { width: 16, height: 16, data: px.data });
+            });
+            post({ stage: "scenery-icons-added" });
+          } catch (e) {
+            post({ stage: "scenery-icons-failed", error: String(e) });
+          }
+
+          /*
+            Ground colour, lifted for the 3D view only.
+
+            The basemap flavour is deliberately near-monochrome — earth is
+            #1f1f1f, grassland is rgb(30,41,31), park is #192a24. Flat and
+            overhead that reads as a tasteful dark map. Draped over a terrain
+            mesh it reads as no map at all: a grey landform with a road on
+            it, which is exactly what "no terrain colour" was describing.
+
+            Nothing was being covered up, so nothing could be uncovered.
+            The colour has to be put there.
+
+            Done here rather than in buildMapStyle so the flat map keeps the
+            palette it was designed with — this is about standing on a hill
+            and telling wood from field, which is a question only the 3D
+            view asks.
+          */
+          try {
+            var GROUND = {
+              earth: "#26302A",
+              landcover: "#2E3D30",
+              landuse_park: "#24402F",
+              landuse_urban_green: "#24402F",
+              landuse_zoo: "#2A3A2C",
+              water: "#1D3A4E",
+              water_river: "#1D3A4E",
+              water_stream: "#1D3A4E"
+            };
+            Object.keys(GROUND).forEach(function (id) {
+              var layer = map.getLayer(id);
+              if (!layer) return;
+              map.setPaintProperty(
+                id,
+                layer.type === "line" ? "line-color" : "fill-color",
+                GROUND[id]
+              );
+            });
+            post({ stage: "ground-coloured" });
+          } catch (e) {
+            post({ stage: "ground-colour-failed", error: String(e) });
+          }
           try {
             // Same call, same source, same exaggeration the web build uses.
             map.setTerrain({ source: "${TERRAIN_SOURCE}", exaggeration: 1.4 });
@@ -435,6 +529,7 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
               filter: ["has", "point_count"],
               layout: {
                 "text-field": ["get", "point_count_abbreviated"],
+                "text-font": ["Noto Sans Medium"],
                 "text-size": 12,
                 "text-allow-overlap": true
               },
@@ -513,6 +608,7 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
               filter: ["has", "heading"],
               layout: {
                 "text-field": "\u25B2",
+                "text-font": ["Noto Sans Medium"],
                 "text-size": 22,
                 "text-rotate": ["get", "heading"],
                 "text-rotation-alignment": "map",
@@ -595,9 +691,12 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
             waypoint would also try to create one underneath it.
           */
           map.on("click", function (e) {
-            var hits = map.queryRenderedFeatures(e.point, {
-              layers: ["spot-pin", "spot-cluster"]
+            // Only the layers that exist: querying a missing one throws, and
+            // an exception here would take the whole tap handler with it.
+            var probe = ["spot-pin", "spot-cluster"].filter(function (id) {
+              return !!map.getLayer(id);
             });
+            var hits = probe.length ? map.queryRenderedFeatures(e.point, { layers: probe }) : [];
             if (hits && hits.length > 0) return;
             post({ tapMap: { lon: e.lngLat.lng, lat: e.lngLat.lat } });
           });

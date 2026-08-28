@@ -217,7 +217,42 @@ export const BUNDLED_STACKS = [
  * bundled stack; anything unrecognised becomes Regular, because an unknown font
  * rendering in the wrong weight beats a label that does not render at all.
  */
-function normaliseFontStacks(layers: unknown[]): void {
+/**
+ * The same three faces, named the way each host names them.
+ *
+ * ── The bug this exists to prevent ────────────────────────────────────────
+ * These names were hardcoded to the bundled spelling, which is correct for
+ * `GLYPHS_URL` — `npm run glyphs` writes directories called NotoSansRegular.
+ * The remote host spells them with spaces: "Noto Sans Regular". So every glyph
+ * request from the 3D map, which is the one screen that uses the remote host,
+ * came back 404.
+ *
+ * That is not the small cosmetic failure it sounds like. When a glyph range
+ * fails, MapLibre abandons the whole tile it was building — not just the label.
+ * The basemap therefore rendered normally until zoom 13, where
+ * `water_waterway_label` switches on, and vanished from there upward: valid
+ * tiles arriving, 16-32KB each, every one producing zero buckets.
+ *
+ * Which is exactly what "no terrain colour, except a few tiles when you zoom
+ * right in" describes. The colour was never being covered up. The tiles that
+ * carried it were being thrown away over a missing font.
+ */
+const REMOTE_STACKS = {
+  regular: 'Noto Sans Regular',
+  medium: 'Noto Sans Medium',
+  italic: 'Noto Sans Italic',
+} as const;
+
+const BUNDLED_STACK_NAMES = {
+  regular: 'NotoSansRegular',
+  medium: 'NotoSansMedium',
+  italic: 'NotoSansItalic',
+} as const;
+
+function normaliseFontStacks(
+  layers: unknown[],
+  names: { regular: string; medium: string; italic: string },
+): void {
   for (const layer of layers) {
     const l = layer as { layout?: Record<string, unknown> };
     const font = l.layout?.['text-font'];
@@ -226,10 +261,10 @@ function normaliseFontStacks(layers: unknown[]): void {
     const joined = font.join(' ');
     l.layout!['text-font'] = [
       /italic/i.test(joined)
-        ? 'NotoSansItalic'
+        ? names.italic
         : /medium|bold/i.test(joined)
-          ? 'NotoSansMedium'
-          : 'NotoSansRegular',
+          ? names.medium
+          : names.regular,
     ];
   }
 }
@@ -1030,8 +1065,16 @@ export function buildMapStyle(
     ],
   };
 
-  // Must run on the finished document: the basemap layers are merged in above.
-  normaliseFontStacks(style.layers as unknown[]);
+  /*
+    Must run on the finished document: the basemap layers are merged in above.
+
+    Which spelling depends on the host actually being used — a remote glyph URL
+    means the protomaps naming, anything else means the bundled directories.
+  */
+  normaliseFontStacks(
+    style.layers as unknown[],
+    glyphsUrl.startsWith('http') ? REMOTE_STACKS : BUNDLED_STACK_NAMES,
+  );
   return style;
 }
 
