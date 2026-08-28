@@ -848,6 +848,23 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
         });
 
         applyGround();
+        /*
+          Paired with applyGround, and that pairing is the fix for a real bug.
+
+          fadeMask ran in exactly two places: once at load, and on the pitch
+          event. Both can miss. At load the style may still be arriving over
+          the bridge, so corridor-mask does not exist yet and the call quietly
+          no-ops on its own getLayer guard — and if you then look straight
+          down without ever tilting, no pitch event ever fires to correct it.
+          The mask stays fully opaque and the map is black outside the
+          corridor, which is precisely what a flat view in 3D looked like.
+
+          The sun updates on load, on every scrub of the slider and whenever
+          the native side pushes a new position, so hanging it here means the
+          mask is put right as soon as the layer exists, whatever order things
+          arrived in.
+        */
+        fadeMask();
 
         // Geographic, because hillshade-illumination-anchor is "map":
         // the shading turns with the sun, not with the camera.

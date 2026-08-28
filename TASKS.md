@@ -239,3 +239,127 @@ hand that back for a serialised pass.
   because nobody has tried.
 - **iOS** needs a paid Apple developer account to build from Windows.
 - **Run on a real phone.** Everything so far is emulator-only.
+
+---
+
+## Added 29 August 2026 — waypoint photos, filtering, and graphics
+
+### BUGS
+
+#### B1. 2D/3D transition flashes black
+
+When switching from 2D to 3D mode (or vice versa), the map briefly goes fully black. Probably a layer visibility or rendering order issue in the transition.
+
+- [ ] Reproduce and capture the timing of the flash.
+- [ ] Check if it is a terrain render blocking the flat map, or the flat map blocking the terrain render.
+
+#### B2. Navigation crashes the app
+
+Something about navigation functionality causes a complete app crash.
+
+- [ ] Narrow down: which navigation? Back button? Route navigation? Event start navigation?
+
+#### B3. Starting an event crashes the app
+
+Clicking "start event" crashes the whole application.
+
+- [ ] Reproduce and capture the error.
+- [ ] Check event lifecycle and state mutations for null/undefined.
+
+#### B4. Place names render out of bounds
+
+Labels for place names (towns, etc.) appear outside the circuit area on the map.
+
+- [ ] Likely a label-placement expression issue; revisit max-width and text-allow-overlap.
+
+#### B5. Suzuka 3D rendering glitch
+
+Minor priority. The 3D view of Suzuka has a visual glitch.
+
+- [ ] Specify what the glitch is (terrain mesh, tree rendering, label placement, etc.).
+
+### FUNCTIONS
+
+#### F1. Waypoint photo carousel
+
+Each waypoint should support multiple photos. Add a `+` button to add more photos; navigate with arrow buttons; show a carousel. Each photo is internally a new spot with all settings, grouped under the waypoint.
+
+- [ ] Design and implement photo carousel UI.
+- [ ] Store photos as a collection on the waypoint rather than independent spots.
+- [ ] Implement add/remove/reorder with proper data model.
+
+#### F2. Waypoint photo rating and filtering
+
+- Add a starring/rating system to each photo in the carousel.
+- Implement a filtering system for both spot view and the list view (F5 below):
+  - Filter by date created.
+  - Filter by name.
+  - Filter by star rating.
+  - Make everything more searchable.
+
+- [ ] Add a rating field to the photo model (e.g., 0–5 stars).
+- [ ] Build filter UI for the list view.
+- [ ] Add filter controls to the spot view (if photos are grouped on a waypoint).
+
+#### F3. Image center definition
+
+When choosing an image for a waypoint, allow the user to define the center point. The image fills the square with the defined center in the center of the display.
+
+- [ ] Add a center-point picker to the image upload/selection flow.
+- [ ] Store the center coordinates on the image.
+- [ ] Render the image with the defined center positioned centrally.
+
+#### F4. Time slider enhancements
+
+- Add a gradient to the time slider to show the day/night cycle visually.
+- Show weather status on the slider: small clouds and rain icons at appropriate times.
+
+- [ ] Implement gradient background on the slider (currently it is linear).
+- [ ] Fetch or derive weather status for the time range and render icons inline.
+
+#### F5. Spot list view with filtering
+
+A separate list view showing all waypoints, with filters by date, name, and rating.
+
+- [ ] Design and implement list view.
+- [ ] Wire filters to the data model.
+- [ ] Make it the secondary view alongside the spot carousel (F1).
+
+#### F6. Trees always visible with render-distance option
+
+Trees and scenery should be visible from any altitude, but add a setting to decrease render distance for performance.
+
+- [ ] Increase the tree scatter extent beyond the corridor (see D7 in TASKS-map-sky.md).
+- [ ] Add a "scenery render distance" or "view distance" setting to Graphics.
+- [ ] Implement distance-based fading or LOD for scenery.
+
+#### F7. Hand-drawn circuit from roads
+
+Allow the user to draw lines on the map, and the app snaps to the closest roads, auto-generating a circuit.
+
+- Useful for street circuits where the official route is just the public roads.
+
+- [ ] Design drawing UI (e.g., long-press to draw, snap-to-roads algorithm).
+- [ ] Integrate with the circuit editor or create a new workflow.
+
+#### F8. Graphics settings and presets
+
+With dynamic lighting (sun, shadows, etc.), add graphics settings:
+
+- Preset options: low, medium, high, ultra.
+- Individual toggles: dynamic shadows, dynamic rain, tree LOD, etc.
+
+- [ ] Define a graphics settings object and storage.
+- [ ] Build settings UI in the profile screen.
+- [ ] Wire each setting to the renderer (shadows, rain toggle already done; extend for others).
+
+#### F9. Visible sun indicator on map
+
+Replace the sun dial with:
+
+- A visible sun in the 3D sky (already rendered as part of the astro scene).
+- A small compass rose (without the dial) showing cardinal directions and the sun's azimuth.
+
+- [ ] Move or adapt the sun dial's compass into a minimal compass-only control.
+- [ ] Confirm the sun is visually prominent (may already be in the scene as the sky backlight).
+
