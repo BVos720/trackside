@@ -986,14 +986,48 @@ function AppShell() {
       if (!picked) return; // User backed out, or permission was refused.
 
       if (activeId) {
-        void addPhoto(
-          activeId,
-          picked.blob,
-          kind,
-          isKey,
-          activeEvent?.tag ?? null,
-          picked.metadataStripped,
-        );
+        /*
+         * Awaited, raced and caught — the same treatment the create path gets.
+         *
+         * This was `void addPhoto(...)`: the promise was thrown away, so a
+         * rejection went nowhere and a hang went nowhere even louder. Adding a
+         * photo to a spot that already exists could therefore fail completely
+         * silently — the picker closes, the sheet sits there, and no photo ever
+         * appears. Reported, accurately, as "images still don't work".
+         *
+         * The create path had already been hardened against exactly this after
+         * the nineteen-spots incident; this branch was simply missed, and it is
+         * the branch you use every time you add a photo to a waypoint you
+         * marked earlier.
+         *
+         * Same deadline, same reason: a catch cannot catch a hang, and a
+         * stalled read of an iCloud asset is a hang rather than an error.
+         */
+        try {
+          await Promise.race([
+            addPhoto(
+              activeId,
+              picked.blob,
+              kind,
+              isKey,
+              activeEvent?.tag ?? null,
+              picked.metadataStripped,
+            ),
+            new Promise((_, reject) =>
+              setTimeout(
+                () => reject(new Error('Copying the photo took too long.')),
+                PHOTO_COPY_TIMEOUT_MS,
+              ),
+            ),
+          ]);
+        } catch (e) {
+          Alert.alert(
+            'Photo not added',
+            `The photo could not be copied — if the original is stored in iCloud rather than on the phone, it may need downloading first.\n\n${
+              e instanceof Error ? e.message : String(e)
+            }`,
+          );
+        }
       } else {
         // Creating: hold it until the spot has an id.
         setPendingPhotos((p) => [
