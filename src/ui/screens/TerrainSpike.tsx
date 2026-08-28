@@ -166,6 +166,15 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
   // data URIs rather than as files or a sprite URL.
   const sceneryUris = JSON.stringify(SCENERY_DATA_URIS);
 
+  /*
+    Stack once two cards overlap by a quarter of their width.
+
+    Cards are CALLOUT_W wide and centred on their pin, so they are a quarter
+    buried once the pins are closer than three quarters of that. Derived here
+    rather than written as a number so it cannot drift if the card resizes.
+  */
+  const stackRadius = Math.round(CALLOUT_W * 0.75);
+
   const maxBounds = JSON.stringify([
     [view.bounds[0][0], view.bounds[0][1]],
     [view.bounds[1][0], view.bounds[1][1]],
@@ -361,23 +370,23 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
       Dimmed with the sun so it does not glow at midnight.
     */
     /*
-      The corridor mask, faded by viewing angle.
+      The corridor mask does not belong in this view at all.
 
-      Overhead it earns its place: the corridor is the subject and the
-      countryside around it is clutter. Tilted it does the opposite — it
-      paints the whole landscape black to the horizon, hiding the ridge the
-      sun goes down behind behind the very layer meant to help you focus.
+      It was faded by pitch, which turned out to be the "map goes dark at a
+      certain angle" glitch: anywhere below about 55 degrees it was partly
+      opaque, so the entire landscape outside the corridor sat under a
+      half-strength black wash. Tilt down to look at the circuit and the
+      world dimmed; tilt back up and it returned.
 
-      Driven from here rather than the style because maplibre-gl has no
-      'pitch' expression: passing one rejects the entire style document, and
-      the map comes up blank.
+      There is no angle at which it helps here. It exists to stop the
+      countryside competing with the corridor on a flat overhead map, and
+      this view is *about* the countryside — which ridge the sun goes behind,
+      where the ground falls away. The flat map keeps it, unchanged.
     */
     function fadeMask() {
       var map = window.__map;
-      if (!map || !map.getLayer('corridor-mask')) return;
-      var p = map.getPitch();
-      var o = p <= 35 ? 1 : p >= 55 ? 0 : 1 - (p - 35) / 20;
-      map.setPaintProperty('corridor-mask', 'fill-opacity', o);
+      if (!map || !map.getLayer("corridor-mask")) return;
+      map.setPaintProperty("corridor-mask", "fill-opacity", 0);
     }
 
     function daylight() {
@@ -1022,18 +1031,20 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
               data: window.__spots || emptySpots,
               cluster: true,
               /*
-                Sized to the cards, not to the pins.
+                A quarter of a card, expressed as a distance.
 
-                18px was the point where two *pins* touch, which sounded
-                right and was wrong: what overlaps on screen is the cards,
-                and they are 124px wide. So two spots would un-stack while
-                their labels were still sitting on top of each other —
-                exactly the pile the stack exists to prevent.
+                Cards are CALLOUT_W wide and centred over their pin, so two
+                of them overlap by a quarter of their width once their pins
+                are closer than three quarters of it. That is the rule —
+                stack before a card is a quarter buried — and 93 is simply
+                what it works out to.
 
-                55px is about half a card, so they separate at the zoom
-                where both can actually be read side by side.
+                Sized to the cards rather than the pins because the cards
+                are what collide: at 18px, two spots un-stacked while their
+                labels still sat on top of each other, which is the pile the
+                stack exists to prevent.
               */
-              clusterRadius: 55,
+              clusterRadius: ${stackRadius},
               // Carried onto the cluster so a stack can be listed without
               // a second lookup, and so leaves keep their identity.
               clusterProperties: {},

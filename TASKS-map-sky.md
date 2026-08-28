@@ -455,3 +455,105 @@ it, look at it on the emulator, then build.
   "cluttered"; the test is whether it still feels that way to him.
 - Light is gone from the menu and `LightScreen.tsx` is resolved.
 - No stray files, no stale worktrees.
+---
+
+## Added 28 August 2026 — the 3D sky, and what is still wanted
+
+The 3D terrain view now has a sky driven by real data: solar position from
+`solarPosition()`, moon position and phase from `moonState()`, and cloud cover
+and rainfall from a venue-scoped MET Norway fetch (`useVenueConditions`). All
+of it hangs off the shared map clock, so the time slider moves the sky.
+
+Everything below is Branco's list from seeing it running, in his order. None
+of it is started. **Read the feasibility note on each before planning** — two
+of these are cheap and two are a different kind of project.
+
+### D1. Valley mist — mist pooling in the hollows, hilltops clear
+
+The one with the best effect-to-effort ratio, and worth doing first.
+
+The trick that avoids custom WebGL: a **semi-transparent horizontal slab** at
+a chosen elevation, drawn as a `fill-extrusion` covering the venue with its
+base at ground level and its top at, say, 450m. Terrain above that height
+pokes through it; ground below is seen through the slab. That is exactly the
+inversion look — clear tops, filled crevasses — without a shader.
+
+Density should come from the forecast: high humidity and a still, cold dawn is
+when it actually happens, and faking it at 2pm in July would be a lie.
+
+- [ ] Slab layer, height configurable per venue.
+- [ ] Density and height from forecast conditions, not a constant.
+- [ ] Off entirely when the conditions do not call for it.
+
+### D2. Rain as a toggle
+
+Currently rain draws whenever the forecast says it is raining. It should be a
+setting, off-able. Belongs with the other map settings rather than as a
+control on the map.
+
+- [ ] Setting, persisted.
+- [ ] Applies to the world-space rain of D3 too, when that lands.
+
+### D3. Cloud and rain rendered in the world, not on the screen
+
+The present cloud and rain are canvas overlays. Cloud is projected from
+azimuth and altitude, so it holds station against the compass — that part is
+right. Rain is deliberately screen-space, which reads fine but means it cannot
+be occluded by a hill, and gusts cannot exist at a place.
+
+What is wanted is both in world coordinates: rain falling *over there* on that
+ridge and not here, and **wind gusts as movement in the sky itself** rather
+than a pattern on the glass.
+
+Feasible with the existing projection helper — particles carry a lat/lon and
+an altitude and are projected per frame — but the cost is real and it needs a
+particle budget measured on a phone, not assumed.
+
+- [ ] Particles anchored to coordinates, not to the viewport.
+- [ ] Gusts as sky movement, visible as drift and shear rather than a screen effect.
+- [ ] Frame cost measured on a real device before this is called done.
+
+### D4. Cloud density should be the actual density
+
+Cover currently reveals N of a fixed set of cloud blobs, so 85% looks busier
+than 20% but is not *shaped* like real 85% cover — which is closer to an
+unbroken sheet with gaps than to many separate clouds.
+
+- [ ] Overcast should read as a layer, not as a crowd of individual clouds.
+- [ ] Broken and scattered should still read as separate clouds.
+
+### D5. Volumetric clouds
+
+Named as a wish, and honestly out of reach in this renderer without a
+substantial custom-WebGL project: MapLibre GL JS has no volumetric anything,
+so this means a custom layer raymarching a noise field, depth-tested against
+the terrain, on a phone GPU.
+
+Not a reason to say no forever — but it should be picked up as its own piece
+of work with its own performance budget, not folded into a session about
+anything else.
+
+### D6. Dynamic cast shadows from the sun
+
+Also asked for, also a real project. What exists today is **hillshade**, whose
+illumination direction follows the true solar azimuth: slopes facing away from
+the sun darken, and that turns through the day. What it cannot do is cast — a
+hill throwing a shadow across the valley at six in the evening, which is
+precisely the thing a photographer wants to see.
+
+Doing it properly means rendering the DEM from the sun's point of view into a
+depth texture and sampling it in a custom layer. Everything needed is present
+(the DEM is already loaded, the sun vector is already computed); the work is
+the shader and making it cheap enough.
+
+- [ ] Decide against approximations that look like shadows but are not — a
+      shadow in the wrong place is worse than no shadow, because it will be
+      trusted.
+
+### Done on 28 August, for context
+
+- Sun-driven sky, ground tone and hillshade direction, continuous through dusk.
+- Stars and a real moon (position, phase, illuminated fraction).
+- Cloud and rain from the venue forecast.
+- Terrain to the horizon with no roads or names on it, camera still locked.
+- Hillshade restored over the ground, translucent, so hills have depth again.
