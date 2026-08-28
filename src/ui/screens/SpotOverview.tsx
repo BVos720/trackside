@@ -5,8 +5,17 @@
  * Editing is a deliberate second step, which also means a mis-tap on the map
  * cannot silently change a saved spot.
  */
-import { useMemo } from 'react';
-import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useMemo, useRef } from 'react';
+import {
+  Animated,
+  Image,
+  PanResponder,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 
 import { AccessClassification, type Spot } from '../../core/domain/spot';
 import type { Media } from '../../core/domain/media';
@@ -45,16 +54,83 @@ export default function SpotOverview({
   const keyUri = key?.storageKey ? mediaUris[key.storageKey] : undefined;
   const rest = media.filter((m) => !m.isKeyImage);
   const undocumented = spot.accessClassification === AccessClassification.Unknown;
+  /**
+   * Drag the panel down to close it.
+   *
+   * The grabber already closed on a tap, and that was not enough: it is a
+   * few pixels of bar and it looks exactly like every draggable sheet on
+   * the phone, so the gesture people try first is a drag. When that did
+   * nothing the panel read as stuck — reported as not being able to close
+   * it at all, which is what a control that ignores the obvious gesture
+   * feels like even when a different one works.
+   *
+   * The tap stays. Two ways out of a panel is not clutter when neither is
+   * a visible control.
+   */
+  // The PanResponder is created once, so a callback captured directly would be
+  // the first render's forever.
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
+  const dragY = useRef(new Animated.Value(0)).current;
+
+  const drag = useRef(
+    PanResponder.create({
+      // Past 6px and mostly vertical, so a scroll in the body still
+      // scrolls and a tap still taps.
+      onMoveShouldSetPanResponder: (_e, g) =>
+        Math.abs(g.dy) > 6 && Math.abs(g.dy) > Math.abs(g.dx),
+
+      onPanResponderMove: (_e, g) => {
+        // Down only: there is nothing above to reveal, and a panel that
+        // can be flung into empty space reads as broken.
+        dragY.setValue(Math.max(0, g.dy));
+      },
+
+      onPanResponderRelease: (_e, g) => {
+        // Distance or speed: a short sharp flick is how these get closed,
+        // and requiring travel alone makes the panel feel sticky.
+        if (g.dy > 120 || g.vy > 0.8) {
+          onCloseRef.current();
+          dragY.setValue(0);
+        } else {
+          Animated.spring(dragY, {
+            toValue: 0,
+            useNativeDriver: true,
+            bounciness: 0,
+            speed: 14,
+          }).start();
+        }
+      },
+
+      onPanResponderTerminate: () => {
+        Animated.spring(dragY, {
+          toValue: 0,
+          useNativeDriver: true,
+          bounciness: 0,
+          speed: 14,
+        }).start();
+      },
+    }),
+  ).current;
+
 
   return (
-    <View style={styles.sheet}>
+    <Animated.View
+      style={[styles.sheet, { transform: [{ translateY: dragY }] }]}
+    >
       {/*
         The grabber reads as "drag me down to dismiss", so it has to actually
         dismiss. It was decorative, and `onClose` was accepted but never
         called — which left Delete, Move and Edit as the only ways out of a
         spot you only wanted to look at.
       */}
-      <Pressable onPress={onClose} style={styles.grabZone} hitSlop={8}>
+      <Pressable
+        onPress={onClose}
+        style={styles.grabZone}
+        hitSlop={8}
+        {...drag.panHandlers}
+      >
         <View style={styles.grabber} />
       </Pressable>
 
@@ -184,7 +260,7 @@ export default function SpotOverview({
           <Text style={styles.editLabel}>Edit</Text>
         </Pressable>
       </View>
-    </View>
+    </Animated.View>
   );
 }
 

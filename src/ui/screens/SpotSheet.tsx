@@ -160,6 +160,17 @@ const SUGGESTED_TAGS = [
   'Close to track',
 ] as const;
 
+/**
+ * A KeyboardAvoidingView that can carry an animated transform.
+ *
+ * Created once at module scope: doing it inside the component would mint a new
+ * component type on every render, and React would unmount and remount the
+ * whole sheet each time — losing focus, scroll position and any half-typed
+ * field.
+ */
+const AnimatedKeyboardAvoidingView =
+  Animated.createAnimatedComponent(KeyboardAvoidingView);
+
 export default function SpotSheet({
   spot,
   draftPosition,
@@ -451,13 +462,24 @@ export default function SpotSheet({
       vertical gestures across all of it would fight scrolling for the same
       finger, and the loser would be whichever the user actually wanted.
     */
-    <Animated.View
+    /*
+      One element, both animated and the sheet.
+
+      Wrapping the keyboard avoider in a separate positioned view broke the
+      layout: `sheet` carries the absolute positioning and the 82% ceiling, and
+      moving those to an outer view left the inner one unsized, so the body
+      ScrollView took everything and pushed the Back / Next / Save row off the
+      bottom. Which is why an opened spot could not be closed — the Cancel that
+      closes it was below the screen.
+
+      Animating the avoider itself puts the positioning, the height limit and
+      the transform back on the same element, exactly as they were before the
+      drag was added.
+    */
+    <AnimatedKeyboardAvoidingView
       style={[styles.sheet, { transform: [{ translateY: dragY }] }]}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      <KeyboardAvoidingView
-        style={styles.sheetInner}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      >
       <View {...drag.panHandlers}>
         {/*
           The grab area is deliberately larger than the bar it draws.
@@ -1045,21 +1067,12 @@ export default function SpotSheet({
           <Text style={styles.saveLabel}>Save</Text>
         </Pressable>
       </View>
-      </KeyboardAvoidingView>
-    </Animated.View>
+    </AnimatedKeyboardAvoidingView>
   );
 }
 
 function makeStyles(color: Theme['color']) {
   return StyleSheet.create({
-    /*
-     * The inner container carries no position of its own.
-     *
-     * `sheet` is absolutely positioned and now also animated, so the keyboard
-     * avoider inside it just fills what it is given — two positioned ancestors
-     * would fight over the same bottom edge.
-     */
-    sheetInner: { flexShrink: 1 },
     sheet: {
       position: 'absolute',
       left: 0,
