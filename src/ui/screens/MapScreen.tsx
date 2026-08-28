@@ -265,8 +265,16 @@ export default function MapScreen({
    * a change made on the profile screen — no subscription needed.
    */
   const [sceneryEnabled, setSceneryEnabled] = useState(true);
+  /** Also a style input, and so also settled before the map is built. */
+  const [scenerySettled, setScenerySettled] = useState(false);
   useEffect(() => {
-    void (async () => setSceneryEnabled(await getMapSceneryEnabled()))();
+    void (async () => {
+      try {
+        setSceneryEnabled(await getMapSceneryEnabled());
+      } finally {
+        setScenerySettled(true);
+      }
+    })();
   }, []);
 
   /** Same reasoning as the scenery flag above: read on mount, no subscription. */
@@ -316,8 +324,35 @@ export default function MapScreen({
   );
 
   const [glyphsUrl, setGlyphsUrl] = useState<string | null>(null);
+  /**
+   * Whether the glyph question has been answered, either way.
+   *
+   * ── Why the style must be settled before the map exists ──────────────────
+   * `glyphsUrl` is a dependency of `mapStyle`, and it always changes once:
+   * null while the ranges are being copied, then a URL. That rebuilt the style
+   * a moment *after* the map had mounted, and a style swap makes MapLibre tear
+   * down and recreate every source underneath the React components that own
+   * them. Those components survive the swap and keep pushing props, so the
+   * next `setShape:` lands on a source that is no longer in the style —
+   * MapLibre throws from C++, nothing catches it, and the process aborts.
+   *
+   * That is the crash reported as "navigation crashes the app": arriving at
+   * the map from another screen mounts it fresh, so the swap and the first
+   * route and position updates all land in the same instant.
+   *
+   * Separate from the URL because null is a real answer — the copy can fail,
+   * and the style then keeps the remote URL. Waiting on `glyphsUrl !== null`
+   * would hang forever in exactly that case.
+   */
+  const [glyphsSettled, setGlyphsSettled] = useState(false);
   useEffect(() => {
-    void (async () => setGlyphsUrl(await prepareGlyphs()))();
+    void (async () => {
+      try {
+        setGlyphsUrl(await prepareGlyphs());
+      } finally {
+        setGlyphsSettled(true);
+      }
+    })();
   }, []);
   const insets = useSafeAreaInsets();
   const cameraRef = useRef<CameraRef>(null);
@@ -491,7 +526,14 @@ export default function MapScreen({
     );
   }
 
-  if (tilesUri === null || mapStyle === null) {
+  /*
+    Nothing is drawn until every input to the style is known.
+
+    The wait is a fraction of a second and it buys the one guarantee that
+    matters: the style is built once and never replaced while sources are
+    live. See the note on glyphsSettled.
+  */
+  if (tilesUri === null || mapStyle === null || !glyphsSettled || !scenerySettled) {
     return (
       <View style={styles.centre}>
         <ActivityIndicator color={color.accent} />
@@ -509,6 +551,16 @@ export default function MapScreen({
       */}
       {!terrain3d && (
       <Map
+        /*
+          Keyed on what legitimately changes the style.
+
+          Belt and braces for the same failure: if the style is ever replaced
+          under a live map again, this remounts the sources with it rather than
+          leaving them pointing at a style that has gone. Changing venue or
+          dimension already re-frames everything, so a remount costs nothing
+          anybody would notice.
+        */
+        key={`${venue}:${is3D ? '3d' : '2d'}`}
         style={styles.map}
         mapStyle={mapStyle}
         /*
