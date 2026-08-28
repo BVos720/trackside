@@ -438,6 +438,8 @@ export default function MapScreen({
           heading={heading}
           route={route}
           onOpenSpot={onSpotTap}
+          // The page cannot read the device's files, so the photos stay here.
+          mediaUris={mediaUris}
           /*
             Placing works in 3D too.
 

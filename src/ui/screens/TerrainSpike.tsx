@@ -51,7 +51,14 @@
 import { Asset } from 'expo-asset';
 import { File } from 'expo-file-system';
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Image,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 
 import { PDF_BRIDGE_SUPPORTED } from '../../storage-local/pdfBridge';
 import {
@@ -109,7 +116,9 @@ const FLAT_VENUES = new Set<VenueKey>(['zolder', 'zandvoort', 'suzuka', 'le-mans
 function buildStyleJson(venue: VenueKey): string {
   const shown = (FLAT_VENUES.has(venue) ? 'nordschleife' : venue) as VenueKey;
   return JSON.stringify(
-    buildMapStyle('bundled', shown, undefined, false, true, REMOTE_GLYPHS_URL, false),
+    // Scenery on: the trailing flag drops TREES_SOURCE from the style
+    // altogether, and with it the tree line that makes a circuit legible.
+    buildMapStyle('bundled', shown, undefined, false, true, REMOTE_GLYPHS_URL, true),
   );
 }
 
@@ -385,7 +394,20 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
               type: "geojson",
               data: window.__spots || emptySpots,
               cluster: true,
-              clusterRadius: 40,
+              /*
+                Tight enough that only touching pins stack.
+
+                At 40px, two waypoints a comfortable distance apart merged as
+                soon as you zoomed out, and a merge looks like a disappearance:
+                you had two pins, now there is one. Which two happened to be
+                within 40px of each other depended entirely on where you were
+                looking, so it read as pins vanishing at random.
+
+                A pin is 6px with a 2px stroke, so 18px is about the point where
+                two of them actually touch — which is what was asked for: a
+                stack when waypoints overlap, not when they are merely near.
+              */
+              clusterRadius: 18,
               // Carried onto the cluster so a stack can be listed without
               // a second lookup, and so leaves keep their identity.
               clusterProperties: {},
@@ -580,6 +602,55 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
             post({ tapMap: { lon: e.lngLat.lng, lat: e.lngLat.lat } });
           });
 
+          /*
+            Where each pin is on screen, for the native cards above them.
+
+            The card shows the reference photo, and that photo is a file on
+            the device which this page has no way to read. Sending them
+            across would mean base64 per spot — hundreds of kilobytes each,
+            undoing the whole reason the style is streamed.
+
+            So the page reports where the pins are and the shell draws the
+            cards over the top, reusing what the flat map already renders.
+            Capped, and skipped when nothing moved, because this runs on
+            every frame of a pan.
+          */
+          var lastMarks = "";
+          function postMarks() {
+            if (!map.getLayer("spot-pin")) return;
+            var feats = map.queryRenderedFeatures({ layers: ["spot-pin"] });
+            var seen = {};
+            var out = [];
+            for (var i = 0; i < feats.length && out.length < 12; i++) {
+              var f = feats[i];
+              var id = String(f.properties.id || "");
+              // Tiles overlap, so the same pin comes back more than once.
+              if (!id || seen[id]) continue;
+              seen[id] = 1;
+              var p = map.project(f.geometry.coordinates);
+              out.push({
+                id: id,
+                name: String(f.properties.name || ""),
+                key: String(f.properties.keyImageKey || ""),
+                dim: Number(f.properties.hidden || 0) === 1 ? 1 : 0,
+                x: Math.round(p.x),
+                y: Math.round(p.y)
+              });
+            }
+            var json = JSON.stringify(out);
+            if (json === lastMarks) return;
+            lastMarks = json;
+            post({ marks: out, zoom: map.getZoom() });
+          }
+
+          map.on("move", postMarks);
+          map.on("moveend", postMarks);
+          // Spots arriving after the first paint would otherwise show a pin
+          // with no card until something moved.
+          map.on("sourcedata", function (e) {
+            if (e.sourceId === "spots" && e.isSourceLoaded) postMarks();
+          });
+
           map.on("mouseenter", "spot-pin", function () { map.getCanvas().style.cursor = "pointer"; });
           map.on("mouseleave", "spot-pin", function () { map.getCanvas().style.cursor = ""; });
         });
@@ -624,6 +695,7 @@ export default function TerrainSpike({
   route,
   onOpenSpot,
   onMapTap,
+  mediaUris = {},
   onClose,
 }: {
   venue: VenueKey;
@@ -639,6 +711,8 @@ export default function TerrainSpike({
   onOpenSpot?: (id: string) => void;
   /** Tapping open ground, for placing a spot. Latitude first, as elsewhere. */
   onMapTap?: (latitude: number, longitude: number) => void;
+  /** Local file URIs by media key, for the reference photo on each card. */
+  mediaUris?: Record<string, string>;
   /**
    * Shown as a Back button when present.
    *
@@ -799,6 +873,10 @@ export default function TerrainSpike({
    */
   const [pageEpoch, setPageEpoch] = useState(0);
 
+  /** Pin positions in CSS pixels, which are device-independent pixels here. */
+  const [marks, setMarks] = useState<Mark[]>([]);
+  const [markZoom, setMarkZoom] = useState(0);
+
   useEffect(() => {
     if (spots === undefined) return;
     const json = JSON.stringify(spots)
@@ -943,7 +1021,14 @@ export default function TerrainSpike({
               tapSpot?: string;
               stack?: { id: string; name: string }[];
               tapMap?: { lon: number; lat: number };
+              marks?: Mark[];
+              zoom?: number;
             };
+            if (m.marks) {
+              setMarks(m.marks);
+              setMarkZoom(typeof m.zoom === 'number' ? m.zoom : 0);
+              return;
+            }
             if (typeof m.fps === 'number') {
               setFps(m.fps);
               return;
@@ -1012,6 +1097,50 @@ export default function TerrainSpike({
           note(`webview error — ${e.nativeEvent.description ?? 'unknown'}`)
         }
       />
+
+      {/*
+        The cards above the pins.
+
+        Positioned from coordinates the page projects, so they track the
+        terrain: a pin on a hillside sits at its own elevation, and the card
+        has to follow it rather than the flat ground beneath.
+
+        Zoom-gated at the same threshold the flat map uses, where cards start
+        overlapping into an unreadable pile.
+      */}
+      {markZoom >= CALLOUT_MIN_ZOOM &&
+        marks.map((mk) => {
+          const uri = mk.key ? mediaUris[mk.key] : undefined;
+          return (
+            <Pressable
+              key={mk.id}
+              onPress={() => onOpenSpot?.(mk.id)}
+              style={[
+                styles.callout,
+                { left: mk.x - CALLOUT_W / 2, top: mk.y - CALLOUT_H - 16 },
+                mk.dim === 1 && styles.calloutDim,
+              ]}
+            >
+              {uri ? (
+                <Image
+                  source={{ uri }}
+                  style={styles.calloutImage}
+                  // contain, not the default cover: a reference photo that
+                  // has been re-cropped to fit is no longer the framing the
+                  // waypoint is about.
+                  resizeMode="contain"
+                />
+              ) : (
+                <View style={[styles.calloutImage, styles.calloutEmpty]}>
+                  <Text style={styles.calloutEmptyText}>no photo</Text>
+                </View>
+              )}
+              <Text style={styles.calloutName} numberOfLines={1}>
+                {mk.name}
+              </Text>
+            </Pressable>
+          );
+        })}
 
       {stack !== null && (
         <View style={styles.stackPanel}>
@@ -1085,8 +1214,62 @@ export default function TerrainSpike({
 
 /* Fixed colours: this is a diagnostic, and it must render even if the theme is
    part of what is broken. Same reasoning as ErrorBoundary. */
+/** One pin, as the page sees it on screen. */
+type Mark = {
+  id: string;
+  name: string;
+  key: string;
+  /** 1 when the spot is hidden, matching the flat map's dimmed card. */
+  dim: number;
+  x: number;
+  y: number;
+};
+
+/*
+ * The card's size, in the code rather than only in the stylesheet.
+ *
+ * The overlay positions each card by its top-left corner, so it has to know how
+ * wide and tall the card is to centre it over the pin and sit it above.
+ */
+const CALLOUT_W = 124;
+const CALLOUT_H = 78;
+
+/** Matches the flat map: below this, cards overlap into an unreadable pile. */
+const CALLOUT_MIN_ZOOM = 13;
+
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#0B0D10' },
+
+  /*
+   * Map furniture, so fixed dark values rather than theme tokens — the same
+   * reasoning as the rest of this screen's chrome, which floats on an
+   * always-dark basemap and would go near-invisible in a light theme.
+   */
+  callout: {
+    position: 'absolute',
+    width: CALLOUT_W,
+    height: CALLOUT_H,
+    borderRadius: 8,
+    backgroundColor: 'rgba(11,13,16,0.96)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.14)',
+    overflow: 'hidden',
+  },
+  calloutDim: { opacity: 0.45 },
+  calloutImage: { width: '100%', height: 54 },
+  calloutEmpty: {
+    backgroundColor: '#141922',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  calloutEmptyText: { color: '#6E7C8A', fontSize: 10 },
+  calloutName: {
+    color: '#F2F5F8',
+    fontSize: 11,
+    fontWeight: '700',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
   web: { flex: 1, backgroundColor: '#0B0D10' },
   centre: { flex: 1, backgroundColor: '#0B0D10', padding: 24, justifyContent: 'center' },
   /*

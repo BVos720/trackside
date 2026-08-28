@@ -1002,8 +1002,21 @@ export function buildMapStyle(
      * and this file should not pretend otherwise.
      */
     layers: [
-      ...keep,
+      /*
+        Hillshade first, so the map's own colours survive it.
+
+        It was drawn after the basemap, which meant every landuse fill — the
+        woodland green, the field tones, the water — was painted over by a grey
+        shading layer. Flat, that was merely dull. With a terrain mesh under it
+        the whole landscape went the colour of the shading, and the map read as
+        a grey relief model rather than a map.
+
+        Underneath, it does what it should: the ground is shaded and the map is
+        drawn on the shading. In 3D it is doing less work anyway — the mesh
+        carries the shape, so the shading only has to hint at it.
+      */
       hillshade,
+      ...keep,
       buildings,
       ...trackLayers,
       // On top of the asphalt, under the trees — a tree at the edge of a corner
