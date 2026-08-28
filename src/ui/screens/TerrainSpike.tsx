@@ -1029,51 +1029,56 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
             map.addSource("spots", {
               type: "geojson",
               data: window.__spots || emptySpots,
-              cluster: true,
               /*
-                A quarter of a card, expressed as a distance.
+                Not clustered any more.
 
-                Cards are CALLOUT_W wide and centred over their pin, so two
-                of them overlap by a quarter of their width once their pins
-                are closer than three quarters of it. That is the rule —
-                stack before a card is a quarter buried — and 93 is simply
-                what it works out to.
+                Clustering hid the waypoints it grouped, replacing several
+                pins with one — so a stack told you *that* there were three
+                spots on that corner while taking away *where* the three
+                were. At a circuit that is the wrong trade: they may be a few
+                metres apart and still be three genuinely different shots.
 
-                Sized to the cards rather than the pins because the cards
-                are what collide: at 18px, two spots un-stacked while their
-                labels still sat on top of each other, which is the pile the
-                stack exists to prevent.
+                Every pin now stays where it belongs, and the grouping is
+                drawn instead: a hub at the middle of the group with a spoke
+                to each member, and the card above the hub. Computed in
+                regroup() below, because it depends on screen distance and
+                so has to be redone whenever the camera moves.
               */
-              clusterRadius: ${stackRadius},
-              // Carried onto the cluster so a stack can be listed without
-              // a second lookup, and so leaves keep their identity.
-              clusterProperties: {},
-              // Past this they are far enough apart to tap individually.
-              // Stacks survive to a genuinely close zoom; past this you are
-              // near enough that two spots are metres apart on the ground.
-              clusterMaxZoom: 19
             });
-            // Clusters first, so a stack reads as one object.
+
+            // The spokes, under the pins so a line never crosses a target.
+            map.addSource("stack-links", { type: "geojson", data: emptySpots });
             map.addLayer({
-              id: "spot-cluster",
-              type: "circle",
-              source: "spots",
-              filter: ["has", "point_count"],
+              id: "stack-link",
+              type: "line",
+              source: "stack-links",
               paint: {
-                "circle-radius": ["step", ["get", "point_count"], 14, 5, 18, 10, 22],
+                "line-color": "#2E7DF6",
+                "line-width": 1.4,
+                "line-opacity": 0.55
+              }
+            });
+
+            // The hub each spoke runs to.
+            map.addSource("stack-nodes", { type: "geojson", data: emptySpots });
+            map.addLayer({
+              id: "stack-node",
+              type: "circle",
+              source: "stack-nodes",
+              paint: {
+                "circle-radius": ["step", ["get", "count"], 13, 5, 16, 10, 20],
                 "circle-color": "#2E7DF6",
-                "circle-opacity": 0.85,
+                "circle-opacity": 0.9,
                 "circle-stroke-color": "#0B0D10",
                 "circle-stroke-width": 2
               }
             });
             map.addLayer({
-              id: "spot-cluster-count",
+              id: "stack-node-count",
               type: "symbol",
-              source: "spots",
-              filter: ["has", "point_count"],
+              source: "stack-nodes",
               layout: {
-                "text-field": ["get", "point_count_abbreviated"],
+                "text-field": ["to-string", ["get", "count"]],
                 "text-font": ["Noto Sans Medium"],
                 "text-size": 12,
                 "text-allow-overlap": true
@@ -1085,14 +1090,12 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
               id: "spot-halo",
               type: "circle",
               source: "spots",
-              filter: ["!", ["has", "point_count"]],
               paint: { "circle-radius": 12, "circle-color": "#2E7DF6", "circle-opacity": 0.22 }
             });
             map.addLayer({
               id: "spot-pin",
               type: "circle",
               source: "spots",
-              filter: ["!", ["has", "point_count"]],
               paint: {
                 "circle-radius": 6,
                 "circle-color": "#2E7DF6",
@@ -1185,7 +1188,7 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
             to go to the zoom where it breaks apart — which pmtiles can
             answer directly, and which is what the count was inviting.
           */
-          map.on("click", "spot-cluster", function (e) {
+          map.on("click", "stack-node", function (e) {
             var f = e.features && e.features[0];
             if (!f) return;
 
@@ -1198,28 +1201,16 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
               three spots on one corner may sit within a few metres — the
               zoom that separates them is closer than is useful.
 
-              getClusterLeaves returns the actual features, so the list is
-              the spots themselves rather than a count.
+              The members are already known, because this page grouped them
+              a frame ago. No second lookup, and nothing asynchronous.
             */
-            map.getSource("spots").getClusterLeaves(
-              f.properties.cluster_id,
-              // Enough for any real stack; beyond that the list stops being
-              // readable and zooming genuinely is the better answer.
-              25,
-              0
-            ).then(function (leaves) {
-              post({
-                stack: leaves.map(function (l) {
-                  return {
-                    id: String(l.properties.id),
-                    name: String(l.properties.name || "Unnamed spot")
-                  };
-                }),
-                // The centroid the cluster is drawn at, so the native list
-                // can be placed against the thing it describes.
-                at: f.geometry.coordinates
-              });
-            }).catch(function (err) { fail("cluster-leaves", err); });
+            var g = STACK_GROUPS[f.properties.idx];
+            if (!g) return;
+            post({
+              stack: g.map(function (m) {
+                return { id: m.id, name: m.name };
+              })
+            });
           });
 
           map.on("click", "spot-pin", function (e) {
@@ -1238,7 +1229,7 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
           map.on("click", function (e) {
             // Only the layers that exist: querying a missing one throws, and
             // an exception here would take the whole tap handler with it.
-            var probe = ["spot-pin", "spot-cluster"].filter(function (id) {
+            var probe = ["spot-pin", "stack-node"].filter(function (id) {
               return !!map.getLayer(id);
             });
             var hits = probe.length ? map.queryRenderedFeatures(e.point, { layers: probe }) : [];
@@ -1260,27 +1251,145 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
             every frame of a pan.
           */
           var lastMarks = "";
+          /*
+            Which waypoints are stacked, recomputed as the camera moves.
+
+            Screen distance, not ground distance: two spots a hundred metres
+            apart overlap at low zoom and separate at high, so the question
+            "do these collide" only has an answer once projected. That is
+            also why this cannot live on the native side — it is the page
+            that knows where things landed.
+
+            Greedy and single-pass. A proper clustering would be tidier about
+            chains of near-neighbours, but for the handful of waypoints on a
+            corner the difference is invisible and the cost is not.
+          */
+          var STACK_GROUPS = [];
+
           function postMarks() {
-            if (!map.getLayer("spot-pin")) return;
-            var feats = map.queryRenderedFeatures({ layers: ["spot-pin"] });
-            var seen = {};
-            var out = [];
-            for (var i = 0; i < feats.length && out.length < 12; i++) {
-              var f = feats[i];
-              var id = String(f.properties.id || "");
-              // Tiles overlap, so the same pin comes back more than once.
-              if (!id || seen[id]) continue;
-              seen[id] = 1;
-              var p = map.project(f.geometry.coordinates);
-              out.push({
-                id: id,
-                name: String(f.properties.name || ""),
-                key: String(f.properties.keyImageKey || ""),
-                dim: Number(f.properties.hidden || 0) === 1 ? 1 : 0,
-                x: Math.round(p.x),
-                y: Math.round(p.y)
+            if (!map.getSource("stack-nodes")) return;
+
+            var feats = (window.__spots || emptySpots).features || [];
+            var pts = [];
+            for (var i = 0; i < feats.length; i++) {
+              var ft = feats[i];
+              var c = ft.geometry && ft.geometry.coordinates;
+              if (!c) continue;
+              var pr = map.project(c);
+              pts.push({
+                id: String(ft.properties.id || ""),
+                name: String(ft.properties.name || ""),
+                key: String(ft.properties.keyImageKey || ""),
+                dim: Number(ft.properties.hidden || 0) === 1 ? 1 : 0,
+                lon: c[0],
+                lat: c[1],
+                x: pr.x,
+                y: pr.y,
+                taken: false
               });
             }
+
+            var R = ${stackRadius};
+            var groups = [];
+            for (var a = 0; a < pts.length; a++) {
+              if (pts[a].taken) continue;
+              pts[a].taken = true;
+              var g = [pts[a]];
+              for (var b = a + 1; b < pts.length; b++) {
+                if (pts[b].taken) continue;
+                var dx = pts[b].x - pts[a].x;
+                var dy = pts[b].y - pts[a].y;
+                if (dx * dx + dy * dy <= R * R) {
+                  pts[b].taken = true;
+                  g.push(pts[b]);
+                }
+              }
+              groups.push(g);
+            }
+
+            STACK_GROUPS = [];
+            var links = [];
+            var nodes = [];
+            var out = [];
+
+            for (var k = 0; k < groups.length; k++) {
+              var grp = groups[k];
+
+              if (grp.length === 1) {
+                var only = grp[0];
+                if (out.length < 12) {
+                  out.push({
+                    kind: "spot",
+                    id: only.id,
+                    name: only.name,
+                    key: only.key,
+                    dim: only.dim,
+                    x: Math.round(only.x),
+                    y: Math.round(only.y)
+                  });
+                }
+                continue;
+              }
+
+              // The hub sits at the average of the members, so it reads as
+              // belonging to all of them rather than to whichever happened
+              // to seed the group.
+              var lon = 0;
+              var lat = 0;
+              for (var m = 0; m < grp.length; m++) {
+                lon += grp[m].lon;
+                lat += grp[m].lat;
+              }
+              lon /= grp.length;
+              lat /= grp.length;
+
+              var idx = STACK_GROUPS.length;
+              STACK_GROUPS.push(grp);
+
+              nodes.push({
+                type: "Feature",
+                properties: { idx: idx, count: grp.length },
+                geometry: { type: "Point", coordinates: [lon, lat] }
+              });
+
+              for (var n = 0; n < grp.length; n++) {
+                links.push({
+                  type: "Feature",
+                  properties: {},
+                  geometry: {
+                    type: "LineString",
+                    coordinates: [[grp[n].lon, grp[n].lat], [lon, lat]]
+                  }
+                });
+              }
+
+              if (out.length < 12) {
+                var hub = map.project([lon, lat]);
+                out.push({
+                  kind: "stack",
+                  id: "stack-" + idx,
+                  name: grp.length + " waypoints",
+                  key: "",
+                  dim: 0,
+                  count: grp.length,
+                  members: grp.map(function (mm) {
+                    return { id: mm.id, name: mm.name };
+                  }),
+                  x: Math.round(hub.x),
+                  y: Math.round(hub.y)
+                });
+              }
+            }
+
+            map.getSource("stack-links").setData({
+              type: "FeatureCollection",
+              features: links
+            });
+            map.getSource("stack-nodes").setData({
+              type: "FeatureCollection",
+              features: nodes
+            });
+
             var json = JSON.stringify(out);
             if (json === lastMarks) return;
             lastMarks = json;
@@ -1301,6 +1410,10 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
           map.on("sourcedata", function (e) {
             if (e.sourceId === "spots" && e.isSourceLoaded) postMarks();
           });
+          // Grouping is a function of the projection, so a pitch or a rotation
+          // changes it as surely as a pan does.
+          map.on("rotate", postMarks);
+          map.on("pitch", postMarks);
 
           map.on("mouseenter", "spot-pin", function () { map.getCanvas().style.cursor = "pointer"; });
           map.on("mouseleave", "spot-pin", function () { map.getCanvas().style.cursor = ""; });
@@ -1825,14 +1938,27 @@ export default function TerrainSpike({
           return (
             <Pressable
               key={mk.id}
-              onPress={() => onOpenSpot?.(mk.id)}
+              onPress={() => {
+                // A hub is not a waypoint. It answers "what is under here",
+                // which is the list, not one spot's sheet.
+                if (mk.kind === "stack") {
+                  setStack(mk.members ?? []);
+                  highlight(null);
+                  return;
+                }
+                onOpenSpot?.(mk.id);
+              }}
               style={[
                 styles.callout,
                 { left: mk.x - CALLOUT_W / 2, top: mk.y - CALLOUT_H - 16 },
                 mk.dim === 1 && styles.calloutDim,
               ]}
             >
-              {uri ? (
+              {mk.kind === "stack" ? (
+                <View style={[styles.calloutImage, styles.calloutStack]}>
+                  <Text style={styles.calloutStackCount}>{mk.count ?? 0}</Text>
+                </View>
+              ) : uri ? (
                 <Image
                   source={{ uri }}
                   style={styles.calloutImage}
@@ -1940,6 +2066,15 @@ type Mark = {
   key: string;
   /** 1 when the spot is hidden, matching the flat map's dimmed card. */
   dim: number;
+  /**
+   * "stack" is the hub standing in for a group, not a waypoint of its own.
+   *
+   * Read defensively rather than switched on, so a mark from before this
+   * existed still renders as the waypoint it is.
+   */
+  kind?: string;
+  count?: number;
+  members?: { id: string; name: string }[];
   x: number;
   y: number;
 };
@@ -1982,6 +2117,15 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   calloutEmptyText: { color: '#6E7C8A', fontSize: 10 },
+  /*
+   * A hub shows how many are under it rather than a photo.
+   *
+   * There is no one photo that would be the right one — picking a member's
+   * would claim it represents the group, and the whole reason the hub exists
+   * is that the members are different shots of the same corner.
+   */
+  calloutStack: { backgroundColor: '#16233A' },
+  calloutStackCount: { color: '#7FB0FF', fontSize: 26, fontWeight: '700' },
   calloutName: {
     color: '#F2F5F8',
     fontSize: 11,
