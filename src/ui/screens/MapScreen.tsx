@@ -440,6 +440,9 @@ export default function MapScreen({
           onOpenSpot={onSpotTap}
           // The page cannot read the device's files, so the photos stay here.
           mediaUris={mediaUris}
+          // The same clock the dial and the sky strip use, so scrubbing the
+          // time re-lights the terrain instead of only moving a dial.
+          sunAt={clock.now}
           /*
             Placing works in 3D too.
 

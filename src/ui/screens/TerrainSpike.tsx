@@ -68,6 +68,7 @@ import {
   buildMapStyle,
   type VenueKey,
 } from '../map/style';
+import { moonState, solarPosition } from '../../core/logic/sun';
 import { SCENERY_DATA_URIS } from '../map/scenerySprites';
 import { TILE_ASSETS } from './MapScreen';
 
@@ -291,6 +292,375 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
       };
     });
 
+    /*
+      The sky, and the direction the light comes from.
+
+      Both are driven by real solar position for this circuit and this
+      instant — the same solarPosition() the sun dial uses, so the terrain
+      shading and the dial can never disagree. Not decoration: which side of
+      a hill is lit at 17:40 is the question the whole app exists to answer,
+      and a map lit from a fixed arbitrary angle answers it wrongly.
+
+      The palette is interpolated over altitude rather than switched at
+      sunrise, because the interesting hour is the one where it is changing.
+    */
+    var SUN_STOPS = [
+      { alt: -18, sky: [5, 7, 10], horizon: [11, 16, 22], fog: [11, 13, 16] },
+      { alt: -6, sky: [16, 26, 42], horizon: [42, 36, 64], fog: [20, 22, 28] },
+      { alt: 0, sky: [30, 48, 80], horizon: [224, 138, 74], fog: [58, 46, 42] },
+      { alt: 8, sky: [58, 111, 168], horizon: [240, 176, 112], fog: [110, 124, 138] },
+      { alt: 35, sky: [92, 147, 204], horizon: [168, 200, 232], fog: [159, 178, 196] }
+    ];
+
+    window.__sun = { azimuth: 180, altitude: 25 };
+    window.__moon = null;
+
+    window.__setSun = function (json) {
+      try {
+        var payload = JSON.parse(json);
+        window.__sun = payload.sun || payload;
+        window.__moon = payload.moon || null;
+        applySun();
+        drawSky();
+      } catch (e) {}
+    };
+
+    /*
+      The land beyond the archive.
+
+      The DEM is global, so there is real terrain in every direction — but
+      the vector archive covers a few kilometres, so out there the mesh has
+      landform and nothing else. That is exactly what is wanted: no roads, no
+      names, just the ridgeline the sun is going to set behind.
+
+      It only needed a colour. Left as the flavour background it read as a
+      void with the circuit floating in it; given a land tone and lit by the
+      same hillshade, it reads as the hills that are actually there.
+
+      Dimmed with the sun so it does not glow at midnight.
+    */
+    /*
+      The corridor mask, faded by viewing angle.
+
+      Overhead it earns its place: the corridor is the subject and the
+      countryside around it is clutter. Tilted it does the opposite — it
+      paints the whole landscape black to the horizon, hiding the ridge the
+      sun goes down behind behind the very layer meant to help you focus.
+
+      Driven from here rather than the style because maplibre-gl has no
+      'pitch' expression: passing one rejects the entire style document, and
+      the map comes up blank.
+    */
+    function fadeMask() {
+      var map = window.__map;
+      if (!map || !map.getLayer('corridor-mask')) return;
+      var p = map.getPitch();
+      var o = p <= 35 ? 1 : p >= 55 ? 0 : 1 - (p - 35) / 20;
+      map.setPaintProperty('corridor-mask', 'fill-opacity', o);
+    }
+
+    function daylight() {
+      var alt = window.__sun ? window.__sun.altitude : 25;
+      // Zero at astronomical dusk, one once the sun is properly up, and
+      // continuous in between — the transition *is* the interesting part,
+      // so nothing here switches.
+      return Math.max(0, Math.min(1, (alt + 12) / 30));
+    }
+
+    function mixHex(night, day, t) {
+      return "rgb(" +
+        Math.round(night[0] + (day[0] - night[0]) * t) + "," +
+        Math.round(night[1] + (day[1] - night[1]) * t) + "," +
+        Math.round(night[2] + (day[2] - night[2]) * t) + ")";
+    }
+
+    /*
+      The ground, from midnight to midday.
+
+      Every tone is interpolated on the same daylight factor as the sky, so
+      dragging the time slider walks the whole map through dusk instead of
+      snapping between two palettes. Grass does not stay lit at 2am while
+      the sky above it is black.
+
+      "background" is the land beyond the archive: the DEM is global, so
+      there is real terrain out there with no roads and no names on it — the
+      ridgeline the sun sets behind. It only ever needed a colour.
+    */
+    var GROUND_TONES = {
+      background: [[12, 15, 14], [38, 48, 42]],
+      earth: [[11, 14, 12], [38, 48, 42]],
+      landcover: [[13, 17, 14], [46, 61, 48]],
+      landuse_park: [[10, 18, 13], [36, 64, 47]],
+      landuse_urban_green: [[10, 18, 13], [36, 64, 47]],
+      landuse_zoo: [[12, 17, 13], [42, 58, 44]],
+      water: [[9, 16, 22], [29, 58, 78]],
+      water_river: [[9, 16, 22], [29, 58, 78]],
+      water_stream: [[9, 16, 22], [29, 58, 78]]
+    };
+
+    function applyGround() {
+      var map = window.__map;
+      if (!map) return;
+      var t = daylight();
+      Object.keys(GROUND_TONES).forEach(function (id) {
+        var layer = map.getLayer(id);
+        if (!layer) return;
+        var pair = GROUND_TONES[id];
+        var prop =
+          layer.type === "line"
+            ? "line-color"
+            : layer.type === "background"
+              ? "background-color"
+              : "fill-color";
+        map.setPaintProperty(id, prop, mixHex(pair[0], pair[1], t));
+      });
+    }
+
+    /*
+      Stars and the moon, on a canvas over the map.
+
+      Neither is a map layer, because neither is on the ground — they belong
+      to the sky the camera is looking at, so they are projected from the
+      camera the same way you would project anything at infinity: relative
+      bearing across the horizontal field of view, elevation across the
+      vertical one. Turn the map and they swing the other way, which is the
+      whole cue that sells them as sky rather than stickers.
+
+      The stars are a fixed random sky, generated once. Their positions are
+      not a real catalogue and this does not pretend otherwise — but they
+      hold still relative to the compass, which is the part the eye checks.
+
+      The moon is real: position and illuminated fraction come from the same
+      moonState() the planner uses, so a crescent on screen is the crescent
+      that will be over the circuit.
+    */
+    var STARS = (function () {
+      var out = [];
+      var seed = 20260828;
+      function rnd() {
+        seed = (seed * 1103515245 + 12345) % 2147483648;
+        return seed / 2147483648;
+      }
+      // The visible swath of azimuth is narrow on a phone held upright — a
+      // sixteen-degree window out of three hundred and sixty — so a few hundred
+      // stars would put barely ten on screen. Culling is two multiplies each.
+      for (var i = 0; i < 900; i++) {
+        out.push({
+          az: rnd() * 360,
+          // Biased upward: a uniform spread bunches everything at the
+          // horizon once projected.
+          alt: Math.pow(rnd(), 0.7) * 88,
+          mag: rnd()
+        });
+      }
+      return out;
+    })();
+
+    var skyCanvas = null;
+
+    /*
+      Where a thing in the sky lands on screen.
+
+      ── Bearing is true, height is compressed, and that is deliberate ────
+      A camera pitched at 76 degrees with a 37-degree lens sees elevations
+      from about -32 to +4. Project honestly and the entire sky above four
+      degrees is off the top of the screen: no moon, and a dozen stars
+      clinging to the horizon. Correct, and of no use to anybody.
+
+      So azimuth is exact — turn the map and everything swings the right way
+      by the right amount, which is the cue the eye actually checks — while
+      altitude is mapped across the strip of sky between the horizon and the
+      top of the view. The moon appears in the right direction at a
+      plausible height, rather than in the right direction off-screen.
+
+      The dial remains the instrument for reading exact elevation. This is
+      the view out of the window.
+    */
+    function project(az, alt) {
+      var map = window.__map;
+      var c = map.getCanvas();
+      var w = c.clientWidth;
+      var h = c.clientHeight;
+
+      var fovV = map.transform.fovInRadians
+        ? map.transform.fovInRadians
+        : 0.6435011087932844;
+      var fovH = 2 * Math.atan(Math.tan(fovV / 2) * (w / h));
+
+      var d = ((az - map.getBearing()) % 360 + 540) % 360 - 180;
+      var dr = d * Math.PI / 180;
+      if (Math.abs(dr) > fovH / 2) return null;
+
+      // Pitch is measured from straight down, so the view centre sits this
+      // far above the horizon — negative while looking downward.
+      var centreElev = (map.getPitch() - 90) * Math.PI / 180;
+      var horizonY = h * (0.5 + centreElev / fovV);
+      // Too flat to show any sky at all.
+      if (horizonY < 8) return null;
+
+      var a = Math.max(0, Math.min(90, alt));
+      return {
+        x: w * (0.5 + dr / fovH),
+        y: horizonY * (1 - a / 90)
+      };
+    }
+
+    function drawSky() {
+      var map = window.__map;
+      if (!map) return;
+
+      if (!skyCanvas) {
+        skyCanvas = document.createElement("canvas");
+        skyCanvas.id = "skyCanvas";
+        skyCanvas.style.cssText =
+          "position:absolute;inset:0;pointer-events:none;z-index:2";
+        map.getContainer().appendChild(skyCanvas);
+      }
+
+      var c = map.getCanvas();
+      var w = c.clientWidth;
+      var h = c.clientHeight;
+      var dpr = window.devicePixelRatio || 1;
+      if (skyCanvas.width !== Math.round(w * dpr)) {
+        skyCanvas.width = Math.round(w * dpr);
+        skyCanvas.height = Math.round(h * dpr);
+        skyCanvas.style.width = w + "px";
+        skyCanvas.style.height = h + "px";
+      }
+
+      var g = skyCanvas.getContext("2d");
+      g.setTransform(dpr, 0, 0, dpr, 0, 0);
+      g.clearRect(0, 0, w, h);
+
+      var alt = window.__sun ? window.__sun.altitude : 25;
+      // Nothing at all while the sun is up, so daytime costs one clear().
+      var night = Math.max(0, Math.min(1, (-alt - 2) / 10));
+      if (night <= 0) return;
+
+      for (var i = 0; i < STARS.length; i++) {
+        var st = STARS[i];
+        var p = project(st.az, st.alt);
+        if (!p || p.y < 0 || p.y > h) continue;
+        var r = 0.6 + st.mag * 1.1;
+        g.globalAlpha = night * (0.35 + st.mag * 0.65);
+        g.fillStyle = "#EAF0FF";
+        g.beginPath();
+        g.arc(p.x, p.y, r, 0, Math.PI * 2);
+        g.fill();
+      }
+
+      var moon = window.__moon;
+      if (moon && moon.altitude > -2) {
+        var mp = project(moon.azimuth, moon.altitude);
+        if (mp) drawMoon(g, mp.x, mp.y, 16, moon, night);
+      }
+      g.globalAlpha = 1;
+    }
+
+    function drawMoon(g, cx, cy, r, moon, night) {
+      var lit = Math.max(0, Math.min(1, moon.illumination));
+      // suncalc phase: 0 new, 0.25 first quarter, 0.5 full, 0.75 last.
+      var waxing = moon.phase < 0.5;
+
+      g.save();
+      g.globalAlpha = night;
+
+      // A little haze around it, which is most of what makes it read as
+      // light rather than a pale sticker.
+      var glow = g.createRadialGradient(cx, cy, r * 0.6, cx, cy, r * 3.4);
+      glow.addColorStop(0, "rgba(226,232,245,0.30)");
+      glow.addColorStop(1, "rgba(226,232,245,0)");
+      g.fillStyle = glow;
+      g.beginPath();
+      g.arc(cx, cy, r * 3.4, 0, Math.PI * 2);
+      g.fill();
+
+      // The unlit disc stays faintly visible — earthshine, and it stops a
+      // thin crescent looking like a stray highlight.
+      g.fillStyle = "rgba(150,160,180,0.16)";
+      g.beginPath();
+      g.arc(cx, cy, r, 0, Math.PI * 2);
+      g.fill();
+
+      /*
+        The lit part: the outer limb on one side, closed by the terminator.
+
+        The terminator is a half-ellipse whose width is r*(1-2*lit): positive
+        for a crescent, where it curves back over the disc, and negative for
+        a gibbous, where it bulges away. Waning is the same shape mirrored,
+        so the canvas is flipped rather than the maths duplicated.
+      */
+      g.translate(cx, cy);
+      if (!waxing) g.scale(-1, 1);
+
+      var t = r * (1 - 2 * lit);
+      g.fillStyle = "#F2F4FA";
+      g.beginPath();
+      g.arc(0, 0, r, -Math.PI / 2, Math.PI / 2, false);
+      g.ellipse(0, 0, Math.abs(t), r, 0, Math.PI / 2, -Math.PI / 2, t > 0);
+      g.closePath();
+      g.fill();
+
+      g.restore();
+    }
+
+    function applySun() {
+      var map = window.__map;
+      if (!map || !window.__sun) return;
+
+      var alt = window.__sun.altitude;
+      var s = SUN_STOPS;
+      var lo = s[0];
+      var hi = s[s.length - 1];
+      var t = 0;
+      if (alt <= s[0].alt) { lo = hi = s[0]; }
+      else if (alt >= s[s.length - 1].alt) { lo = hi = s[s.length - 1]; }
+      else {
+        for (var i = 1; i < s.length; i++) {
+          if (alt <= s[i].alt) {
+            lo = s[i - 1];
+            hi = s[i];
+            t = (alt - lo.alt) / (hi.alt - lo.alt);
+            break;
+          }
+        }
+      }
+
+      function mix(key) {
+        var a = lo[key], b = hi[key];
+        return "rgb(" +
+          Math.round(a[0] + (b[0] - a[0]) * t) + "," +
+          Math.round(a[1] + (b[1] - a[1]) * t) + "," +
+          Math.round(a[2] + (b[2] - a[2]) * t) + ")";
+      }
+
+      try {
+        map.setSky({
+          "sky-color": mix("sky"),
+          "horizon-color": mix("horizon"),
+          "fog-color": mix("fog"),
+          // Enough haze to read distance, not so much that the far side of
+          // the circuit disappears into it.
+          "sky-horizon-blend": 0.6,
+          "atmosphere-blend": 0.8
+        });
+
+        applyGround();
+
+        // Geographic, because hillshade-illumination-anchor is "map":
+        // the shading turns with the sun, not with the camera.
+        if (map.getLayer("terrain-hillshade")) {
+          map.setPaintProperty(
+            "terrain-hillshade",
+            "hillshade-illumination-direction",
+            Math.round(window.__sun.azimuth) % 360
+          );
+        }
+      } catch (e) {
+        post({ stage: "sun-failed", error: String(e) });
+      }
+    }
+
     var styleParts = [];
     var styleReady = new Promise(function (resolve) {
       window.__stylePart = function (part) { styleParts.push(part); };
@@ -350,6 +720,19 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
           center: [${lon}, ${lat}],
           zoom: ${zoom},
           pitch: 70,
+          /*
+            High enough to see the skyline.
+
+            The default cap is 60, which silently clamped the 70 above and kept
+            the horizon just off the top of the screen — so there was no sky to
+            colour and no ridgeline to read. Which hill the sun goes down behind
+            is the question this view answers, and you cannot answer it looking
+            down at the ground.
+
+            maxBounds still pins the camera over the circuit, so the far terrain
+            is something you look at, never somewhere you can wander off to.
+          */
+          maxPitch: 82,
           bearing: 20,
           attributionControl: false,
           /*
@@ -427,26 +810,11 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
             view asks.
           */
           try {
-            var GROUND = {
-              earth: "#26302A",
-              landcover: "#2E3D30",
-              landuse_park: "#24402F",
-              landuse_urban_green: "#24402F",
-              landuse_zoo: "#2A3A2C",
-              water: "#1D3A4E",
-              water_river: "#1D3A4E",
-              water_stream: "#1D3A4E"
-            };
-            Object.keys(GROUND).forEach(function (id) {
-              var layer = map.getLayer(id);
-              if (!layer) return;
-              map.setPaintProperty(
-                id,
-                layer.type === "line" ? "line-color" : "fill-color",
-                GROUND[id]
-              );
-            });
+            applyGround();
+            fadeMask();
             post({ stage: "ground-coloured" });
+            applySun();
+            drawSky();
           } catch (e) {
             post({ stage: "ground-colour-failed", error: String(e) });
           }
@@ -744,6 +1112,13 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
 
           map.on("move", postMarks);
           map.on("moveend", postMarks);
+          // The sky is drawn from the camera, so it has to be redrawn whenever
+          // the camera changes — turning is what makes it read as sky.
+          map.on("move", drawSky);
+          map.on("rotate", drawSky);
+          map.on("pitch", drawSky);
+          map.on("pitch", fadeMask);
+          window.addEventListener("resize", drawSky);
           // Spots arriving after the first paint would otherwise show a pin
           // with no card until something moved.
           map.on("sourcedata", function (e) {
@@ -795,6 +1170,7 @@ export default function TerrainSpike({
   onOpenSpot,
   onMapTap,
   mediaUris = {},
+  sunAt,
   onClose,
 }: {
   venue: VenueKey;
@@ -812,6 +1188,13 @@ export default function TerrainSpike({
   onMapTap?: (latitude: number, longitude: number) => void;
   /** Local file URIs by media key, for the reference photo on each card. */
   mediaUris?: Record<string, string>;
+  /**
+   * The instant to light the map for — the shared map clock.
+   *
+   * Defaults to now so the component still works standalone, but the map
+   * screen passes `clock.now`, which is what ties this to the time slider.
+   */
+  sunAt?: Date;
   /**
    * Shown as a Back button when present.
    *
@@ -971,6 +1354,47 @@ export default function TerrainSpike({
    * ordering assumption entirely rather than papering over it.
    */
   const [pageEpoch, setPageEpoch] = useState(0);
+
+  /**
+   * Where the sun is, for the time the map is showing.
+   *
+   * Driven by `sunAt` — the shared map clock — rather than by a timer of its
+   * own. That is what connects the sky and the terrain shading to the slider:
+   * scrub to 19:30 and the hills light from the west, because useMapClock
+   * stops ticking the moment you scrub and `now` becomes the chosen time.
+   *
+   * A private setInterval here would have re-lit the map from the real
+   * present a minute later and silently undone the scrub — the second
+   * independent clock useMapClock's own notes warn about.
+   *
+   * The astronomy stays on this side, in the module the dial already uses and
+   * that has tests: the page is told an azimuth and an altitude and does
+   * nothing but colour with them.
+   */
+  useEffect(() => {
+    const [slon, slat] = VENUE_VIEW[venue].centre;
+    // Fallback computed inside the effect, not as a destructuring default:
+    // `new Date()` in the parameter list would be a fresh object on every
+    // render, so the dependency would always differ and this would re-inject
+    // forever.
+    const when = sunAt ?? new Date();
+    const site = { latitude: slat, longitude: slon };
+    const moon = moonState(when, site);
+    const payload = {
+      sun: solarPosition(when, site),
+      // Only what the page draws with. rise/set are Dates and belong to the
+      // planner, not to a canvas.
+      moon: {
+        azimuth: moon.azimuth,
+        altitude: moon.altitude,
+        phase: moon.phase,
+        illumination: moon.illumination,
+      },
+    };
+    webRef.current?.injectJavaScript(
+      `window.__setSun && window.__setSun('${JSON.stringify(payload)}'); true;`,
+    );
+  }, [venue, sunAt, pageEpoch]);
 
   /** Pin positions in CSS pixels, which are device-independent pixels here. */
   const [marks, setMarks] = useState<Mark[]>([]);

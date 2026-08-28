@@ -269,6 +269,15 @@ function normaliseFontStacks(
   }
 }
 
+/**
+ * How far past the venue the 3D view keeps elevation data, in degrees.
+ *
+ * Roughly 28km, which at these latitudes is enough to put a real skyline
+ * behind the circuit rather than a cliff edge into nothing. Only applied when
+ * terrain is on — see the note on the DEM source's bounds.
+ */
+export const HORIZON_MARGIN = 0.25;
+
 export const REMOTE_GLYPHS_URL =
   'https://protomaps.github.io/basemaps-assets/fonts/{fontstack}/{range}.pbf';
 
@@ -883,6 +892,22 @@ export function buildMapStyle(
    * than slicing it, because MapLibre renders a continuous DEM surface and
    * offers no way to clip the terrain mesh to a polygon.
    */
+  /*
+    The mask that hides everything outside the circuit corridor.
+
+    Flat and overhead it earns its place: the corridor is the subject, and
+    the surrounding countryside is clutter around it.
+
+    Tilted, it is the opposite. It paints the entire landscape black right up
+    to the horizon, so the ridge the sun disappears behind is hidden by the
+    very layer meant to help you concentrate. The terrain is there and lit —
+    it was simply being covered over.
+
+    So it fades out with pitch rather than switching off: overhead it is
+    solid as before, and by the time the camera is low enough to see a
+    skyline it is gone. Pitch, not a mode flag, because it is the viewing
+    angle that decides whether the mask helps or hurts.
+  */
   const corridorMask = {
     id: 'corridor-mask',
     type: 'fill',
@@ -891,6 +916,8 @@ export function buildMapStyle(
       // Matches color.background in ../theme.ts so the masked world reads as
       // the app's own ground rather than as a grey rendering failure.
       'fill-color': '#0B0D10',
+      // Held at 1 here. maplibre-gl has no 'pitch' expression, so the 3D
+      // page fades this itself on the map's pitch event — see fadeMask().
       'fill-opacity': 1,
     },
   };
@@ -991,12 +1018,38 @@ export function buildMapStyle(
          * note where the `terrain` key used to be — and this bounds the
          * hillshading alone.
          */
-        bounds: [
-          VENUE_VIEW[venue].bounds[0][0],
-          VENUE_VIEW[venue].bounds[0][1],
-          VENUE_VIEW[venue].bounds[1][0],
-          VENUE_VIEW[venue].bounds[1][1],
-        ],
+        bounds: (() => {
+          /*
+            Wider in 3D, because the skyline is the point.
+
+            Flat, the tight venue bounds are right: relief past the corridor
+            mask is noise, and the note above explains why it was clipped.
+
+            Tilted, that same clip is the bug. There is no mesh outside the
+            extract, so the hills the sun actually sets behind are not dimly
+            lit or badly coloured — they do not exist, and the view ends in a
+            black void a few kilometres out. "Which ridge does the sun go down
+            behind" is the question this view is for, and the answer is usually
+            outside a 10km box.
+
+            HORIZON_MARGIN is about 28km, far enough to carry a real skyline.
+            It costs only the low-zoom DEM tiles that distant terrain draws
+            from — a handful, since anything far away is rendered coarse.
+
+            Offline this degrades to exactly the old behaviour: terrainCache
+            downloads the venue box, so the far tiles simply miss and the
+            horizon goes back to being empty. Worth having when there is
+            signal; never a reason the map fails without it.
+          */
+          const box = VENUE_VIEW[venue].bounds;
+          const m = terrain3d ? HORIZON_MARGIN : 0;
+          return [
+            box[0][0] - m,
+            box[0][1] - m,
+            box[1][0] + m,
+            box[1][1] + m,
+          ];
+        })(),
       },
     },
     /**
