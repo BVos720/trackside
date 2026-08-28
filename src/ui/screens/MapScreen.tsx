@@ -423,39 +423,10 @@ export default function MapScreen({
 
   return (
     <View style={styles.root}>
-      {terrain3d ? (
-        /*
-          The terrain map, in the map's place.
-
-          Same venue, same spots, same bundled archive, so the two views
-          cannot show different data. Everything below this block is
-          untouched and keeps working over it.
-        */
-        <TerrainSpike
-          venue={venue}
-          spots={shape}
-          here={here}
-          heading={heading}
-          route={route}
-          onOpenSpot={onSpotTap}
-          // The page cannot read the device's files, so the photos stay here.
-          mediaUris={mediaUris}
-          // The same clock the dial and the sky strip use, so scrubbing the
-          // time re-lights the terrain instead of only moving a dial.
-          sunAt={clock.now}
-          /*
-            Placing works in 3D too.
-
-            Gated on `placing` here rather than in the page, so the rule about
-            when a tap means "put a spot there" lives in one place and cannot
-            drift between the two maps.
-          */
-          onMapTap={(latitude, longitude) => {
-            if (!placing) return;
-            onMapTap?.({ longitude, latitude });
-          }}
-        />
-      ) : (
+      {/*
+        The flat map, mounted only while it is the one in use.
+      */}
+      {!terrain3d && (
       <Map
         style={styles.map}
         mapStyle={mapStyle}
@@ -897,6 +868,59 @@ export default function MapScreen({
       </Map>
       )}
 
+      {/*
+        The terrain map, mounted from the start and simply hidden.
+
+        ── Why it is not created on demand ─────────────────────────────
+        It has a great deal to do before it can draw anything: load
+        maplibre and pmtiles, take the whole basemap archive across the
+        bridge, parse a 1.8MB style, build a mesh. Created when the button
+        is pressed, all of that happens while you are looking at a blank
+        rectangle wondering whether it worked.
+
+        Mounted up front it does that work once, early, while you are still
+        reading the flat map — and pressing 3D becomes a visibility change.
+        That is the alternative to a loading screen: not a faster load, but
+        one that has already happened by the time it is wanted.
+
+        It stays mounted rather than unmounting on the way back, because
+        tearing it down would mean paying the whole cost again the next
+        time. A settled MapLibre map renders only when something changes,
+        so an idle hidden one is close to free.
+
+        pointerEvents is what keeps it honest while hidden: without it an
+        invisible full-screen layer would swallow every tap meant for the
+        flat map underneath.
+      */}
+      <View
+        style={[styles.terrainLayer, !terrain3d && styles.terrainWarming]}
+        pointerEvents={terrain3d ? "auto" : "none"}
+      >
+          <TerrainSpike
+            venue={venue}
+            spots={shape}
+            here={here}
+            heading={heading}
+            route={route}
+            onOpenSpot={onSpotTap}
+            // The page cannot read the device's files, so the photos stay here.
+            mediaUris={mediaUris}
+            // The same clock the dial and the sky strip use, so scrubbing the
+            // time re-lights the terrain instead of only moving a dial.
+            sunAt={clock.now}
+            /*
+              Placing works in 3D too.
+
+              Gated on `placing` here rather than in the page, so the rule about
+              when a tap means "put a spot there" lives in one place and cannot
+              drift between the two maps.
+            */
+            onMapTap={(latitude, longitude) => {
+              if (!placing) return;
+              onMapTap?.({ longitude, latitude });
+            }}
+          />
+      </View>
       {stack !== null && (
         <View style={[styles.stackPanel, { top: insets.top + MENU_CLEARANCE + controlsTop }]}>
           <View style={styles.stackHead}>
@@ -1146,6 +1170,24 @@ function makeStyles(color: Theme['color']) {
 
     root: { flex: 1, backgroundColor: color.background },
     map: { flex: 1 },
+
+    /*
+     * The terrain map's layer.
+     *
+     * Absolute so it can sit over the flat map without either of them having
+     * to know the other exists, and so hiding it changes nothing about the
+     * layout of the controls stacked above.
+     */
+    terrainLayer: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
+    /*
+     * Hidden, not unmounted — see the note at the mount site.
+     *
+     * Zero opacity rather than display:none: a WebView that has been given no
+     * size never lays out its page, so the map inside would size itself to
+     * nothing and have to rebuild when shown, which is the delay this exists
+     * to remove.
+     */
+    terrainWarming: { opacity: 0 },
 
     centre: {
       flex: 1,
