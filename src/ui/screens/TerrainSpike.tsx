@@ -185,6 +185,39 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
       and neither should rebuild the style. Held on window so a value that
       arrives before the map exists is picked up when the layers are made.
     */
+    /*
+      One spot picked out of a stack.
+
+      Everything else dims rather than disappearing. A spot that vanished
+      would be a claim it is not there; dimming says "these too, just not
+      the one you asked about", which is what the map actually knows.
+
+      Paint expressions rather than a filter, for the same reason.
+    */
+    window.__highlight = null;
+    window.__setHighlight = function (id) {
+      window.__highlight = id || null;
+      if (!window.__map || !window.__map.getLayer("spot-pin")) return;
+      var m = window.__map;
+      var lit = window.__highlight;
+
+      var dim = lit === null
+        ? 1
+        : ["case", ["==", ["get", "id"], lit], 1, 0.25];
+      var ring = lit === null
+        ? "#0B0D10"
+        : ["case", ["==", ["get", "id"], lit], "#F2F5F8", "#0B0D10"];
+      var size = lit === null
+        ? 6
+        : ["case", ["==", ["get", "id"], lit], 9, 5];
+
+      m.setPaintProperty("spot-pin", "circle-opacity", dim);
+      m.setPaintProperty("spot-pin", "circle-stroke-color", ring);
+      m.setPaintProperty("spot-pin", "circle-radius", size);
+      m.setPaintProperty("spot-halo", "circle-opacity",
+        lit === null ? 0.22 : ["case", ["==", ["get", "id"], lit], 0.35, 0.06]);
+    };
+
     window.__here = emptySpots;
     window.__route = emptySpots;
     window.__setNav = function (json) {
@@ -353,6 +386,9 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
               data: window.__spots || emptySpots,
               cluster: true,
               clusterRadius: 40,
+              // Carried onto the cluster so a stack can be listed without
+              // a second lookup, and so leaves keep their identity.
+              clusterProperties: {},
               // Past this they are far enough apart to tap individually.
               clusterMaxZoom: 17
             });
@@ -489,11 +525,38 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
           map.on("click", "spot-cluster", function (e) {
             var f = e.features && e.features[0];
             if (!f) return;
-            map.getSource("spots").getClusterExpansionZoom(
-              f.properties.cluster_id
-            ).then(function (z) {
-              map.easeTo({ center: f.geometry.coordinates, zoom: z, duration: 400 });
-            }).catch(function () {});
+
+            /*
+              Ask what is in the stack rather than zooming into it.
+
+              Zooming was the obvious response and the wrong one: it moves
+              the camera away from what you were looking at to answer a
+              question you could be told the answer to. And at a circuit,
+              three spots on one corner may sit within a few metres — the
+              zoom that separates them is closer than is useful.
+
+              getClusterLeaves returns the actual features, so the list is
+              the spots themselves rather than a count.
+            */
+            map.getSource("spots").getClusterLeaves(
+              f.properties.cluster_id,
+              // Enough for any real stack; beyond that the list stops being
+              // readable and zooming genuinely is the better answer.
+              25,
+              0
+            ).then(function (leaves) {
+              post({
+                stack: leaves.map(function (l) {
+                  return {
+                    id: String(l.properties.id),
+                    name: String(l.properties.name || "Unnamed spot")
+                  };
+                }),
+                // The centroid the cluster is drawn at, so the native list
+                // can be placed against the thing it describes.
+                at: f.geometry.coordinates
+              });
+            }).catch(function (err) { fail("cluster-leaves", err); });
           });
 
           map.on("click", "spot-pin", function (e) {
@@ -579,6 +642,37 @@ export default function TerrainSpike({
    * where — then it gets out of the way.
    */
   const [ready, setReady] = useState(false);
+
+  /**
+   * The spots inside a tapped stack, and which of them is lit.
+   *
+   * ── Why a list rather than zooming in ─────────────────────────────────
+   * Zooming was the first answer and the wrong one: it moves the camera
+   * away from what you were looking at, to tell you something you could
+   * simply be told. Three spots on one corner can sit within a few metres,
+   * and the zoom that separates them is closer than is useful.
+   *
+   * ── Why picking one only highlights it ────────────────────────────────
+   * Tapping a name lights that spot on the map and dims the rest; opening
+   * it is a second, deliberate tap on the pin itself. The list answers
+   * "which of these is which", which is a different question from "show me
+   * this one", and answering both at once would mean you could not look
+   * without committing.
+   */
+  const [stack, setStack] = useState<{ id: string; name: string }[] | null>(null);
+  const [lit, setLit] = useState<string | null>(null);
+
+  const highlight = (id: string | null) => {
+    setLit(id);
+    webRef.current?.injectJavaScript(
+      `window.__setHighlight && window.__setHighlight(${id === null ? 'null' : JSON.stringify(id)}); true;`,
+    );
+  };
+
+  const clearStack = () => {
+    setStack(null);
+    highlight(null);
+  };
 
   /**
    * Where the bundled archive lives on disk, once unpacked.
@@ -813,6 +907,7 @@ export default function TerrainSpike({
               metres?: number | null;
               pitch?: number;
               tapSpot?: string;
+              stack?: { id: string; name: string }[];
             };
             if (typeof m.fps === 'number') {
               setFps(m.fps);
@@ -836,7 +931,16 @@ export default function TerrainSpike({
             // The page could not read the file itself. Send it across.
             // A pin was tapped. The sheet belongs to the native side, so
             // this is handed straight back out rather than handled here.
+            // A stack was tapped: list what is in it.
+            if (Array.isArray(m.stack)) {
+              setStack(m.stack);
+              highlight(null);
+              return;
+            }
+
             if (typeof m.tapSpot === 'string') {
+              // Opening one ends the question the list was asking.
+              clearStack();
               onOpenSpot?.(m.tapSpot);
               return;
             }
@@ -852,6 +956,45 @@ export default function TerrainSpike({
           note(`webview error — ${e.nativeEvent.description ?? 'unknown'}`)
         }
       />
+
+      {stack !== null && (
+        <View style={styles.stackPanel}>
+          <View style={styles.stackHead}>
+            <Text style={styles.stackTitle}>
+              {stack.length} SPOTS HERE
+            </Text>
+            <Pressable onPress={clearStack} hitSlop={10}>
+              <Text style={styles.stackClose}>Done</Text>
+            </Pressable>
+          </View>
+
+          <Text style={styles.stackHint}>
+            Tap a name to pick it out, then tap it on the map to open it.
+          </Text>
+
+          {stack.map((s) => {
+            const on = s.id === lit;
+            return (
+              <Pressable
+                key={s.id}
+                onPress={() => highlight(on ? null : s.id)}
+                style={({ pressed }) => [
+                  styles.stackRow,
+                  on && styles.stackRowOn,
+                  pressed && styles.pressed,
+                ]}
+              >
+                <Text
+                  style={[styles.stackName, on && styles.stackNameOn]}
+                  numberOfLines={1}
+                >
+                  {s.name}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      )}
 
       <View style={styles.overlay} pointerEvents="box-none">
         {!ready && (
@@ -897,6 +1040,40 @@ const styles = StyleSheet.create({
    * of the bottom bar the shell already puts there — the sky strip and the
    * Spots / + Spot row own that space.
    */
+  /*
+   * The stack list sits top-left, clear of the map's own chrome.
+   *
+   * On-map furniture, so fixed dark values rather than theme tokens — the same
+   * reasoning as the menu trigger and the sun dial, which float on an
+   * always-dark basemap.
+   */
+  stackPanel: {
+    position: 'absolute',
+    left: 12,
+    right: 12,
+    top: 120,
+    padding: 10,
+    borderRadius: 10,
+    backgroundColor: 'rgba(11,13,16,0.94)',
+    borderWidth: 1,
+    borderColor: '#2A313B',
+  },
+  pressed: { opacity: 0.7 },
+  stackHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  stackTitle: { color: '#6C9AE0', fontSize: 11, fontWeight: '700', letterSpacing: 1.2 },
+  stackClose: { color: '#F2F5F8', fontSize: 13, fontWeight: '700' },
+  stackHint: { color: '#9AA5B1', fontSize: 11, lineHeight: 15, marginTop: 4 },
+  stackRow: {
+    marginTop: 6,
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#2A313B',
+  },
+  stackRowOn: { borderColor: '#2E7DF6', backgroundColor: 'rgba(46,125,246,0.12)' },
+  stackName: { color: '#9AA5B1', fontSize: 14 },
+  stackNameOn: { color: '#F2F5F8', fontWeight: '700' },
   overlay: { position: 'absolute', left: 0, right: 0, bottom: 96, padding: 12 },
   panel: {
     backgroundColor: 'rgba(11,13,16,0.92)',
