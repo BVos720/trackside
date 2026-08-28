@@ -246,33 +246,33 @@ hand that back for a serialised pass.
 
 ### BUGS
 
-#### B1. 2D/3D transition flashes black
+#### B1. Map goes black at a flat angle in 3D — FIXED 29 Aug (d2a2975)
 
 When switching from 2D to 3D mode (or vice versa), the map briefly goes fully black. Probably a layer visibility or rendering order issue in the transition.
 
 - [ ] Reproduce and capture the timing of the flash.
 - [ ] Check if it is a terrain render blocking the flat map, or the flat map blocking the terrain render.
 
-#### B2. Navigation crashes the app
+#### B2. Navigation crashes the app — MITIGATED 29 Aug (9e10320), NOT confirmed
 
 Something about navigation functionality causes a complete app crash.
 
 - [ ] Narrow down: which navigation? Back button? Route navigation? Event start navigation?
 
-#### B3. Starting an event crashes the app
+#### B3. Starting an event crashes the app — same cause as B2, same mitigation
 
 Clicking "start event" crashes the whole application.
 
 - [ ] Reproduce and capture the error.
 - [ ] Check event lifecycle and state mutations for null/undefined.
 
-#### B4. Place names render out of bounds
+#### B4. Place names render out of bounds — FIXED 29 Aug (b86e08e)
 
 Labels for place names (towns, etc.) appear outside the circuit area on the map.
 
 - [ ] Likely a label-placement expression issue; revisit max-width and text-allow-overlap.
 
-#### B5. Suzuka 3D rendering glitch
+#### B5. Suzuka 3D rendering glitch — DIAGNOSED 29 Aug, see D8 in TASKS-map-sky.md
 
 Minor priority. The 3D view of Suzuka has a visual glitch.
 
@@ -363,3 +363,19 @@ Replace the sun dial with:
 - [ ] Move or adapt the sun dial's compass into a minimal compass-only control.
 - [ ] Confirm the sun is visually prominent (may already be in the scene as the sky backlight).
 
+
+### What a device log would settle
+
+B2 and B3 are mitigated on a hypothesis, not diagnosed. The app wraps
+everything in an ErrorBoundary, so a JavaScript render error would show an
+error screen rather than killing the process — the reported behaviour points
+at a native crash, which no JS boundary catches and which source alone cannot
+confirm. To settle it, capture the log while reproducing:
+
+```
+npx react-native log-ios          # or: npx react-native log-android
+```
+
+On iOS the fuller trace is in Console.app, or Xcode > Window > Devices and
+Simulators > View Device Logs, filtered to the app. What matters is the few
+lines immediately before the process dies.
