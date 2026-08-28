@@ -576,9 +576,37 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
       if (cover <= 0) return;
 
       var t = daylight();
-      // Bright and grey by day, barely-there shapes at night. Clouds are
-      // lit by the same sun as the ground.
       var body = mixHex([26, 30, 38], [206, 214, 226], t);
+
+      /*
+        Overcast is a ceiling, not a crowd.
+
+        Revealing more and more separate blobs made 90% cover look like a busy
+        sky rather than a closed one — but real overcast is a single sheet with
+        the odd thin patch, and the difference is not decoration: "will there
+        be any direct light at all" is the question, and a gappy sky says yes
+        when the answer is no.
+
+        So above about 55% a sheet fades in across the strip of sky, and the
+        blobs keep going underneath it to stop it reading as a flat wash.
+        Below that they are genuinely separate clouds and are drawn as such.
+      */
+      var sheet = Math.max(0, Math.min(1, (cover - 55) / 40));
+      if (sheet > 0) {
+        var horizon = project(0, 0);
+        var top = project(0, 90);
+        if (horizon && top) {
+          var band = g.createLinearGradient(0, top.y, 0, horizon.y);
+          // Thickest aloft and thinning towards the horizon, which is the way
+          // a ceiling actually looks from underneath it.
+          band.addColorStop(0, body.replace("rgb(", "rgba(").replace(")", "," + (0.62 * sheet).toFixed(3) + ")"));
+          band.addColorStop(1, body.replace("rgb(", "rgba(").replace(")", "," + (0.18 * sheet).toFixed(3) + ")"));
+          g.fillStyle = band;
+          g.fillRect(0, Math.min(top.y, horizon.y), vw, Math.abs(horizon.y - top.y));
+        }
+      }
+      // Bright and grey by day, barely-there shapes at night: clouds are lit
+      // by the same sun as the ground.
       var n = Math.round((cover / 100) * CLOUDS.length);
 
       for (var i = 0; i < n; i++) {

@@ -75,7 +75,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { deriveAccent } from '../../core/logic/accentColor';
 import { bodies, lenses, GearKind, type GearItem } from '../../core/domain/gear';
 import type { UserGearItemId } from '../../core/domain/ids';
-import { getMapSceneryEnabled, setMapSceneryEnabled } from '../../storage-local/preferences';
+import {
+  getMapRainEnabled,
+  getMapSceneryEnabled,
+  setMapRainEnabled,
+  setMapSceneryEnabled,
+} from '../../storage-local/preferences';
 import { BUILD_LABEL } from '../../buildInfo';
 import { resetApp } from '../../storage-local/resetApp';
 import Collapsible from '../Collapsible';
@@ -167,16 +172,29 @@ export default function ProfileScreen({
   // mount rather than assumed, so a cold restart shows the real persisted
   // state from the first render, not a default that then flips.
   const [sceneryEnabled, setSceneryEnabled] = useState<boolean | null>(null);
+  const [rainEnabled, setRainEnabled] = useState<boolean | null>(null);
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       const enabled = await getMapSceneryEnabled();
-      if (!cancelled) setSceneryEnabled(enabled);
+      const rain = await getMapRainEnabled();
+      if (!cancelled) {
+        setSceneryEnabled(enabled);
+        setRainEnabled(rain);
+      }
     })();
     return () => {
       cancelled = true;
     };
   }, []);
+
+  const toggleRain = () => {
+    setRainEnabled((current) => {
+      const next = !(current ?? true);
+      void setMapRainEnabled(next);
+      return next;
+    });
+  };
 
   const toggleScenery = () => {
     setSceneryEnabled((current) => {
@@ -324,6 +342,32 @@ export default function ProfileScreen({
           <Switch
             value={sceneryEnabled ?? true}
             onValueChange={toggleScenery}
+            trackColor={{ false: color.surfaceRaised, true: color.accent }}
+            thumbColor={color.text}
+            pointerEvents="none"
+          />
+        </Pressable>
+
+        <Text style={styles.help}>
+          Rain falls on the 3D map when the forecast has it raining at the
+          circuit. It animates the whole time it runs, so turn it off if the
+          map feels slow or the movement gets in the way — the forecast itself
+          is unaffected.
+        </Text>
+        <Pressable
+          onPress={toggleRain}
+          disabled={rainEnabled === null}
+          style={({ pressed }) => [styles.toggleRow, pressed && styles.pressed]}
+        >
+          <View style={styles.toggleText}>
+            <Text style={styles.toggleLabel}>Rain on the 3D map</Text>
+            <Text style={styles.toggleSubtitle}>
+              Falling rain when the forecast has it
+            </Text>
+          </View>
+          <Switch
+            value={rainEnabled ?? true}
+            onValueChange={toggleRain}
             trackColor={{ false: color.surfaceRaised, true: color.accent }}
             thumbColor={color.text}
             pointerEvents="none"

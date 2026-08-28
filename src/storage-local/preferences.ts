@@ -18,6 +18,7 @@ const ACTIVE_VENUE = 'trackside.ui.venue.v1';
 const SPOT_USE = 'trackside.ui.spotUse.v1';
 const PROFILE_NAME = 'trackside.ui.profileName.v1';
 const MAP_SCENERY = 'trackside.ui.mapScenery.v1';
+const MAP_RAIN = 'trackside.ui.mapRain.v1';
 const THEME_PREFERENCE = 'trackside.ui.themePreference.v1';
 const THEME_ACCENT_HUE = 'trackside.ui.themeAccentHue.v1';
 const SAFETY_ACKNOWLEDGED = 'trackside.ui.safetyAcknowledged.v1';
@@ -114,6 +115,27 @@ export async function getMapSceneryEnabled(): Promise<boolean> {
 
 export async function setMapSceneryEnabled(enabled: boolean): Promise<void> {
   await kv.set(MAP_SCENERY, enabled ? '1' : '0');
+}
+
+/**
+ * Whether the 3D map draws falling rain — TASKS-map-sky.md D2.
+ *
+ * The rain is real in the sense that matters — it appears when the forecast
+ * says it is raining at that circuit in that hour — but it is still animation
+ * over the top of a map somebody is trying to read, and it costs frames the
+ * whole time it is running. Both are reasons a person might want it off
+ * without wanting the forecast off.
+ *
+ * Unset reads as enabled, matching every other default here: nobody who never
+ * visits the setting sees a change.
+ */
+export async function getMapRainEnabled(): Promise<boolean> {
+  const raw = await kv.get(MAP_RAIN);
+  return raw !== '0';
+}
+
+export async function setMapRainEnabled(enabled: boolean): Promise<void> {
+  await kv.set(MAP_RAIN, enabled ? '1' : '0');
 }
 
 /**

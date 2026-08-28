@@ -557,3 +557,63 @@ the shader and making it cheap enough.
 - Cloud and rain from the venue forecast.
 - Terrain to the horizon with no roads or names on it, camera still locked.
 - Hillshade restored over the ground, translucent, so hills have depth again.
+
+### D7. The tree line stops at the corridor, and now you can see it
+
+Reported as "trees are hidden in terrain a little bit far away and downhill".
+Diagnosed 28 August; it is not a rendering fault and not terrain occlusion —
+that was checked by toggling `setTerrain(null)` with the camera still, which
+rendered exactly the same 245 tree symbols.
+
+`extract-scenery.mjs` clips the scatter **to the circuit corridor** (its line
+16). So the trees genuinely stop about 300m from the track: bbox
+`6.916,50.321 → 7.010,50.383` against a venue box of `6.88,50.30 → 7.04,50.41`
+and a DEM that now reaches ~28km. The edge was invisible for as long as the
+corridor mask painted everything beyond it black. Removing that mask in 3D —
+which is what made the surrounding hills visible at all — exposed the tree line
+as a hard border.
+
+Three ways out, and the choice is a real trade:
+
+- **Widen the scenery clip.** Honest and simple, but the scatter is already
+  ~10k features per venue and the style's own notes flag 13k as the point
+  where it costs frames. The venue box is around three times the corridor's
+  area.
+- **Fade the trees out with distance** so there is no line to see. Needs a
+  distance-aware expression; confirm MapLibre 5.6 has one before planning
+  around it, because Mapbox's `distance-from-center` may not exist here.
+- **Leave it.** The bare far landscape is what was asked for — no roads, no
+  names, just landform. An abrupt tree line is the one part that reads as a
+  mistake rather than as distance.
+
+- [ ] Decide which, then do it. Do not widen the clip without measuring frames
+      on a phone first.
+
+#### Correction to D1, 28 August — the slab trick does not work
+
+The note above proposed a level `fill-extrusion` slab as a way to get valley
+mist without a shader. That was wrong, and checked afterwards rather than
+before: maplibre-gl 5.6 exposes only `fill-extrusion-base`, `-height`,
+`-color`, `-opacity`, `-pattern`, `-translate`, `-translate-anchor` and
+`-vertical-gradient`. There is no `base-alignment` or `height-alignment`, so
+base and height are measured **from the terrain surface**. An extrusion
+therefore hugs the ground and rises and falls with it — the one thing a mist
+ceiling must not do.
+
+D1 is consequently not the cheap item it was billed as. Three real options:
+
+- **A custom WebGL layer** drawing one translucent quad at a fixed elevation,
+  depth-tested against the terrain. Small in principle — a quad and a shader —
+  but custom layers and terrain interact awkwardly and that needs proving
+  before it is planned around. Same class of work as D5.
+- **A scatter of soft translucent billboards** placed only below a chosen
+  elevation, reusing exactly the machinery the trees already use. They would
+  pool in the hollows and be absent on the tops, and being symbols they stand
+  up rather than lying flat. Cheapest of the three and the most likely to look
+  right; the risk is particle count on a phone.
+- **Precomputed "below N metres" polygons** drawn as draped translucent fills.
+  Works today with no new machinery, but a draped fill lies flat on the ground:
+  from a low camera it reads as white paint in the valleys, not as fog.
+
+- [ ] Try the billboard scatter first. It is the only one of the three that is
+      both cheap and volumetric-looking.

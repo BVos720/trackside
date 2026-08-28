@@ -30,7 +30,10 @@ import { Asset } from 'expo-asset';
 import { prepareGlyphs } from '../../storage-local/glyphs';
 import { localTerrainTemplate } from '../../storage-local/terrainCache';
 import TerrainSpike from './TerrainSpike';
-import { getMapSceneryEnabled } from '../../storage-local/preferences';
+import {
+  getMapRainEnabled,
+  getMapSceneryEnabled,
+} from '../../storage-local/preferences';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   Camera,
@@ -263,6 +266,12 @@ export default function MapScreen({
   const [sceneryEnabled, setSceneryEnabled] = useState(true);
   useEffect(() => {
     void (async () => setSceneryEnabled(await getMapSceneryEnabled()))();
+  }, []);
+
+  /** Same reasoning as the scenery flag above: read on mount, no subscription. */
+  const [rainEnabled, setRainEnabled] = useState(true);
+  useEffect(() => {
+    void (async () => setRainEnabled(await getMapRainEnabled()))();
   }, []);
   /**
    * Local glyph template, once the ranges are on disk.
@@ -923,7 +932,17 @@ export default function MapScreen({
             // time re-lights the terrain instead of only moving a dial.
             sunAt={clock.now}
           // Real cover and rainfall for this circuit and this hour.
-          weather={conditions}
+          /*
+            Rain zeroed rather than the forecast withheld.
+
+            Cover still comes through when rain is off — the setting is about
+            falling rain on the screen, not about pretending the sky is clear.
+            Zeroing is also what stops the page's animation loop, since that
+            runs only while there is cloud or rain to move.
+          */
+          weather={
+            rainEnabled ? conditions : { cover: conditions.cover, rain: 0 }
+          }
             /*
               Placing works in 3D too.
 
