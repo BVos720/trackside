@@ -86,7 +86,6 @@ import {
 } from '../../core/logic/lightStrip';
 import { lightQuality, solarPosition } from '../../core/logic/sun';
 import {
-  lightQualityColor,
   radius,
   space,
   type,
@@ -94,6 +93,7 @@ import {
   weight,
   type Theme,
 } from '../theme';
+import { rgbString, sampleDayRamp } from '../../core/logic/lightRamp';
 import type { MapClock } from '../state/useMapClock';
 
 /** Full interactive height, while a thumb is down. Matches the old always-on height. */
@@ -304,6 +304,27 @@ export default function SkyControl({
   // itself, which changes every live tick — the sample set only needs
   // rebuilding when the day actually changes. See the file header.
   const dayKey = clock.now.toDateString();
+  /*
+    The day as a gradient rather than 24 steps.
+
+    The four flat colours were honest about the *category* of light and
+    dishonest about how it arrives: sunrise is not a boundary between two
+    hours, it is a twenty-minute slide, and where in that slide a session
+    falls is the thing the strip is being read for.
+
+    96 steps is 15 minutes each — fine enough that the seams disappear at this
+    width, coarse enough that redrawing it on every frame of a drag stays
+    cheap. Same anchor colours as before, so this reads as the same instrument
+    with the steps taken out rather than a new palette.
+  */
+  const ramp = useMemo(
+    () => sampleDayRamp(clock.now, position, 96),
+    // Keyed like `samples` below: on the day and the place, not on objects
+    // that are fresh on every render or a clock that ticks every second.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [dayKey, position.latitude, position.longitude],
+  );
+
   const samples = useMemo(
     () => sampleDayLight(clock.now, position),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- deliberately
@@ -374,9 +395,9 @@ export default function SkyControl({
         hitSlop={STRIP_HIT_SLOP}
         {...panResponder.panHandlers}
       >
-        {samples.map((s) => (
+        {ramp.map((step, i) => (
           <View
-            key={s.hour}
+            key={i}
             // Purely visual — must not be a touch target. Without this,
             // Android hit-tests to whichever hour cell is under the finger
             // and reports `locationX` relative to *that* narrow cell (about
@@ -386,7 +407,7 @@ export default function SkyControl({
             // the strip's own `panResponder.panHandlers` must stay the sole
             // hit-test target.
             pointerEvents="none"
-            style={[styles.hourCell, { backgroundColor: lightQualityColor[s.quality] }]}
+            style={[styles.hourCell, { backgroundColor: rgbString(step.color) }]}
           />
         ))}
         {stripWidth > 0 && (
