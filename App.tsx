@@ -8,6 +8,7 @@ import {
 
 import MapScreen from './src/ui/screens/MapScreen';
 import SpotSheet from './src/ui/screens/SpotSheet';
+import { waypointOf } from './src/core/logic/spotGroups';
 import SpotOverview from './src/ui/screens/SpotOverview';
 import SpotListScreen from './src/ui/screens/SpotListScreen';
 import TimetableScreen from './src/ui/screens/TimetableScreen';
@@ -329,6 +330,8 @@ function AppShell() {
     remove,
     moveSpot,
     setHidden,
+    rateSpot,
+    addWay,
     addPhoto,
     setKeyImage,
     removePhoto,
@@ -814,6 +817,18 @@ function AppShell() {
     () => spots.find((s) => s.id === activeId) ?? null,
     [spots, activeId],
   );
+  /**
+   * Every way of shooting the place the open spot is at.
+   *
+   * Derived rather than held in state: the sheet already knows which spot is
+   * open, and storing "which way" separately would give two sources of truth
+   * that drift the moment a way is added or deleted.
+   */
+  const activeWaypoint = useMemo(
+    () => (activeId ? waypointOf(spots, activeId) : null),
+    [spots, activeId],
+  );
+
   const activeMedia = activeId ? (media[activeId] ?? []) : [];
   const sheetOpen = sheet.kind !== 'none';
 
@@ -1225,6 +1240,28 @@ function AppShell() {
             {sheet.kind === 'overview' && activeSpot && (
               <SpotOverview
                 spot={activeSpot}
+                members={activeWaypoint?.members ?? [activeSpot]}
+                /*
+                  Stepping changes which spot is open, which is all a "way" is.
+                  Wrapping at both ends because a carousel that stops dead at
+                  the last frame invites a second tap that does nothing.
+                */
+                onStepWay={(delta) => {
+                  const ways = activeWaypoint?.members ?? [activeSpot];
+                  if (ways.length < 2) return;
+                  const i = ways.findIndex((w) => w.id === activeSpot.id);
+                  const next = ways[(i + delta + ways.length) % ways.length]!;
+                  setSheet({ kind: 'overview', id: next.id });
+                }}
+                onAddWay={() => {
+                  void (async () => {
+                    const way = await addWay(activeSpot.id);
+                    // Straight to the new one: adding a way and leaving the
+                    // old one on screen looks like nothing happened.
+                    if (way) setSheet({ kind: 'overview', id: way.id });
+                  })();
+                }}
+                onRate={(value) => void rateSpot(activeSpot.id, value)}
                 media={activeMedia}
                 mediaUris={mediaUris}
                 onEdit={() => setSheet({ kind: 'edit', id: activeSpot.id })}

@@ -30,6 +30,7 @@ const ACCESS_LABEL: Record<AccessClassification, string> = {
 
 export default function SpotOverview({
   spot,
+  members,
   media,
   mediaUris,
   onEdit,
@@ -37,8 +38,20 @@ export default function SpotOverview({
   onDelete,
   onClose,
   onSetKey,
+  onStepWay,
+  onAddWay,
+  onRate,
 }: {
+  /** The way of shooting currently on screen — always one of `members`. */
   spot: Spot;
+  /**
+   * Every way of shooting this waypoint, oldest first.
+   *
+   * A waypoint of one is the ordinary case and is a list of length one, not a
+   * special mode: the counter and arrows simply hide themselves. See
+   * `core/logic/spotGroups.ts`.
+   */
+  members: readonly Spot[];
   media: Media[];
   mediaUris: Record<string, string>;
   onEdit: () => void;
@@ -46,6 +59,12 @@ export default function SpotOverview({
   onDelete: () => void;
   onClose: () => void;
   onSetKey: (mediaId: string) => void;
+  /** Step to the previous (-1) or next (+1) way, wrapping at both ends. */
+  onStepWay: (delta: number) => void;
+  /** Record another way of shooting this same place. */
+  onAddWay: () => void;
+  /** 1–5, or null to clear it back to unrated. */
+  onRate: (value: number | null) => void;
 }) {
   const { color } = useTheme();
   const styles = useMemo(() => makeStyles(color), [color]);
@@ -147,11 +166,82 @@ export default function SpotOverview({
           </View>
         )}
 
+        {/*
+          Which way of shooting this is, and how to get to the others.
+
+          Only drawn when there is more than one. A waypoint with a single way
+          is the common case, and a counter reading "1 of 1" next to two dead
+          arrows is noise that makes the simple case look complicated.
+        */}
+        {members.length > 1 ? (
+          <View style={styles.wayBar}>
+            <Pressable
+              onPress={() => onStepWay(-1)}
+              hitSlop={10}
+              style={({ pressed }) => [styles.wayArrow, pressed && styles.pressed]}
+            >
+              <Text style={styles.wayArrowText}>‹</Text>
+            </Pressable>
+            <Text style={styles.wayCount}>
+              Way {members.findIndex((m) => m.id === spot.id) + 1} of{' '}
+              {members.length}
+            </Text>
+            <Pressable
+              onPress={() => onStepWay(1)}
+              hitSlop={10}
+              style={({ pressed }) => [styles.wayArrow, pressed && styles.pressed]}
+            >
+              <Text style={styles.wayArrowText}>›</Text>
+            </Pressable>
+          </View>
+        ) : null}
+
         <Text style={styles.name}>{spot.name}</Text>
         <Text style={styles.coords}>
           {spot.position.latitude.toFixed(5)},{' '}
           {spot.position.longitude.toFixed(5)}
         </Text>
+
+        {/*
+          How this way turned out.
+
+          Tapping the star you are already on clears it back to unrated, which
+          is a real state and not the same as one star — see `Spot.rating`.
+          Without a way back, a mis-tap would leave a permanent opinion.
+        */}
+        <View style={styles.stars}>
+          {[1, 2, 3, 4, 5].map((n) => {
+            const on = spot.rating !== null && n <= spot.rating;
+            return (
+              <Pressable
+                key={n}
+                onPress={() => onRate(spot.rating === n ? null : n)}
+                hitSlop={6}
+                style={({ pressed }) => [styles.star, pressed && styles.pressed]}
+              >
+                <Text style={on ? styles.starOn : styles.starOff}>★</Text>
+              </Pressable>
+            );
+          })}
+          <Text style={styles.starHint}>
+            {spot.rating === null ? 'Not rated' : `${spot.rating} of 5`}
+          </Text>
+        </View>
+
+        {/*
+          Another way of shooting this same place.
+
+          Deliberately here rather than beside Edit: adding a way is about the
+          waypoint, and Edit, Move and Delete all act on the one way you are
+          looking at. Putting them together would make it far too easy to reach
+          for Delete meaning "remove this way" and take the place with it.
+        */}
+        <Pressable
+          onPress={onAddWay}
+          style={({ pressed }) => [styles.addWay, pressed && styles.pressed]}
+        >
+          <Text style={styles.addWayText}>+  Another way of shooting this</Text>
+        </Pressable>
 
         <View style={styles.factRow}>
           <Fact
@@ -342,7 +432,46 @@ function makeStyles(color: Theme['color']) {
       marginTop: space.xs,
     },
 
-    name: {
+    wayBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: space.md,
+    marginBottom: space.xs,
+  },
+  wayArrow: {
+    paddingHorizontal: space.sm,
+    paddingVertical: 2,
+    borderRadius: radius.sm,
+    backgroundColor: color.surfaceRaised,
+  },
+  wayArrowText: { color: color.text, fontSize: 20, fontWeight: weight.bold },
+  wayCount: {
+    color: color.textMuted,
+    fontSize: type.label,
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+  },
+
+  stars: { flexDirection: 'row', alignItems: 'center', gap: 2, marginTop: space.xs },
+  star: { paddingHorizontal: 1 },
+  starOn: { color: color.accent, fontSize: 20 },
+  starOff: { color: color.border, fontSize: 20 },
+  starHint: { color: color.textMuted, fontSize: type.label, marginLeft: space.sm },
+
+  addWay: {
+    marginTop: space.md,
+    paddingVertical: space.sm,
+    paddingHorizontal: space.md,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: color.border,
+    backgroundColor: color.surfaceRaised,
+    alignItems: 'center',
+  },
+  addWayText: { color: color.accent, fontSize: type.body, fontWeight: weight.bold },
+
+  name: {
       color: color.text,
       fontSize: type.title,
       fontWeight: weight.bold,

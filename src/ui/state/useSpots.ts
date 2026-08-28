@@ -20,6 +20,7 @@ import {
   type CircuitId,
   type EventId,
   type MediaId,
+  type SpotGroupId,
   type SpotId,
   type UserId,
   newId,
@@ -196,6 +197,88 @@ export function useSpots(circuitId: CircuitId) {
     [reload],
   );
 
+  /**
+   * Record how a way of shooting turned out.
+   *
+   * Its own mutation rather than part of `update`, which takes a whole draft
+   * from the edit form: a rating is a one-tap judgement made while looking at
+   * the spot, and routing it through the form would mean reading every other
+   * field back out and writing it again to change one number.
+   */
+  const rateSpot = useCallback(
+    async (id: SpotId, rating: number | null) => {
+      const existing = await repositories.spots.get(id);
+      if (!existing) return;
+      await repositories.spots.save({
+        ...existing,
+        // Clamped rather than trusted. Nothing in the UI can currently pass
+        // anything else, but a stored 7 would quietly break every comparison
+        // that assumes 1-5, and null must stay reachable as "unrated".
+        rating:
+          rating === null ? null : Math.max(1, Math.min(5, Math.round(rating))),
+        updatedAt: nowUtc(),
+      });
+      await reload();
+    },
+    [reload],
+  );
+
+  /**
+   * Add another way of shooting the place a spot is at.
+   *
+   * The new spot starts as a copy of the one it was added from, minus the
+   * parts that are judgements about a photograph rather than facts about a
+   * place. Position, access and notes carry over because they describe the
+   * fence post and are true of every way of shooting from it; the bearing,
+   * the camera settings and the rating do not, because those are precisely
+   * what the new way exists to differ in. Copying them would present invented
+   * settings as recorded ones.
+   *
+   * If the source is not in a group yet it is put in a new one first, so the
+   * two end up as peers. The alternative — treating the original as a parent —
+   * would make deleting it a question about the survivors.
+   *
+   * Returns the new spot so the caller can show it immediately; there is no
+   * point adding a way and leaving the old one on screen.
+   */
+  const addWay = useCallback(
+    async (id: SpotId) => {
+      const source = await repositories.spots.get(id);
+      if (!source) return null;
+
+      const groupId = source.groupId ?? newId<SpotGroupId>();
+      if (source.groupId === null) {
+        await repositories.spots.save({ ...source, groupId, updatedAt: nowUtc() });
+      }
+
+      const created = newSpot({
+        circuitId: source.circuitId,
+        eventId: source.eventId,
+        name: source.name,
+        position: {
+          latitude: source.position.latitude,
+          longitude: source.position.longitude,
+          elevation: source.position.elevation,
+        },
+        createdBy: LOCAL_USER_ID,
+        accessClassification: source.accessClassification,
+      });
+
+      const way = {
+        ...created,
+        groupId,
+        accessNotes: source.accessNotes,
+        uses: source.uses,
+        nearestMarshalPostId: source.nearestMarshalPostId,
+      };
+
+      await repositories.spots.save(way);
+      await reload();
+      return way;
+    },
+    [reload],
+  );
+
   /** Tombstone, never a hard delete (§0.1). Undo restores it. */
   const remove = useCallback(
     async (id: SpotId) => {
@@ -365,6 +448,8 @@ export function useSpots(circuitId: CircuitId) {
     update,
     moveSpot,
     setHidden,
+    rateSpot,
+    addWay,
     remove,
     restore,
     addPhoto,
