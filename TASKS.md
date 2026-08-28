@@ -280,7 +280,7 @@ Minor priority. The 3D view of Suzuka has a visual glitch.
 
 ### FUNCTIONS
 
-#### F1. Waypoint photo carousel
+#### F1. Waypoint photo carousel — DONE 29 Aug (e08e245, e742aee, 649811a)
 
 Each waypoint should support multiple photos. Add a `+` button to add more photos; navigate with arrow buttons; show a carousel. Each photo is internally a new spot with all settings, grouped under the waypoint.
 
@@ -288,7 +288,7 @@ Each waypoint should support multiple photos. Add a `+` button to add more photo
 - [ ] Store photos as a collection on the waypoint rather than independent spots.
 - [ ] Implement add/remove/reorder with proper data model.
 
-#### F2. Waypoint photo rating and filtering
+#### F2. Rating and filtering — DONE 29 Aug (e742aee, 0fc318d, ebc7d0e)
 
 - Add a starring/rating system to each photo in the carousel.
 - Implement a filtering system for both spot view and the list view (F5 below):
@@ -317,7 +317,7 @@ When choosing an image for a waypoint, allow the user to define the center point
 - [ ] Implement gradient background on the slider (currently it is linear).
 - [ ] Fetch or derive weather status for the time range and render icons inline.
 
-#### F5. Spot list view with filtering
+#### F5. Spot list view with filtering — DONE 29 Aug (ebc7d0e)
 
 A separate list view showing all waypoints, with filters by date, name, and rating.
 
