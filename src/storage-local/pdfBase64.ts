@@ -29,3 +29,41 @@ export function bytesToBase64(bytes: Uint8Array): string {
   }
   return globalThis.btoa(binary);
 }
+
+/**
+ * base64 back to bytes.
+ *
+ * ── Why this exists, and it is not for PDFs ──────────────────────────────
+ * React Native implements almost none of the Blob API. Its Blob has
+ * `size`, `type` and `slice()` — and nothing else. In particular there is no
+ * `arrayBuffer()`, which is what mediaStore called to get the bytes of a
+ * photo before writing it. That call returned undefined and threw, so a
+ * reference photo has never once been saved on a device.
+ *
+ * The way to the bytes is FileReader, which RN does implement, and which
+ * hands back a data URL. This turns the base64 half of that back into the
+ * bytes the file system wants.
+ *
+ * Chunked for the same reason `bytesToBase64` is: building the array one
+ * character at a time is fine, but doing it through a growing string is not.
+ */
+export function base64ToBytes(base64: string): Uint8Array {
+  const binary = globalThis.atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+/**
+ * Strip the `data:...;base64,` prefix a FileReader data URL carries.
+ *
+ * Returns null rather than guessing when the shape is wrong. A data URL
+ * without that marker is not base64 — it is percent-encoded text — and
+ * decoding it as base64 would produce plausible-looking rubbish and write a
+ * corrupt file, which is worse than refusing.
+ */
+export function base64FromDataUrl(dataUrl: string): string | null {
+  const marker = ';base64,';
+  const at = dataUrl.indexOf(marker);
+  return at === -1 ? null : dataUrl.slice(at + marker.length);
+}

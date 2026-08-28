@@ -36,6 +36,8 @@
  */
 import { Directory, File, Paths } from 'expo-file-system';
 
+import { base64FromDataUrl, base64ToBytes } from './pdfBase64';
+
 export interface ILocalMediaStore {
   put(file: Blob, contentType: string): Promise<string>;
   getUri(key: string): Promise<string | null>;
@@ -93,7 +95,46 @@ export const mediaStore: ILocalMediaStore = {
       .toString(36)
       .slice(2, 10)}.${extensionFor(contentType)}`;
 
-    const bytes = new Uint8Array(await file.arrayBuffer());
+    /*
+     * FileReader, because React Native has no Blob.arrayBuffer().
+     *
+     * This line used to be
+     *
+     *   const bytes = new Uint8Array(await file.arrayBuffer());
+     *
+     * and it threw every single time. RN implements a deliberately minimal
+     * Blob — size, type, slice(), and nothing more — so arrayBuffer is simply
+     * undefined. A reference photo has therefore never been saved on a phone;
+     * it worked on web only because mediaStore.web.ts keeps blobs in memory
+     * and never reads their bytes at all.
+     *
+     * It surfaced as "the preview shows the photo and Save does nothing",
+     * which sent us looking at iCloud. The iCloud fix was needed too — the
+     * picker refuses to download from it by default — but it was never going
+     * to be enough on its own, because the bytes had nowhere to go.
+     *
+     * FileReader is the route RN does support. A data URL costs a base64
+     * round trip, which for a 1600px JPEG at quality 0.7 is a few hundred
+     * kilobytes — worth it to write a file that exists.
+     */
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error('Could not read the picked photo.'));
+      reader.onload = () => resolve(String(reader.result ?? ""));
+      reader.readAsDataURL(file);
+    });
+
+    const base64 = base64FromDataUrl(dataUrl);
+    if (base64 === null) {
+      throw new Error('The picked photo came back in an unreadable form.');
+    }
+
+    const bytes = base64ToBytes(base64);
+    if (bytes.byteLength === 0) {
+      // A zero-length write would leave a file that exists and cannot be
+      // decoded, which every reader treats as present. Worse than missing.
+      throw new Error('The picked photo was empty.');
+    }
     const target = new File(mediaDirectory(), key);
     if (!target.exists) target.create();
     target.write(bytes);

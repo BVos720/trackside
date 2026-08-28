@@ -8,7 +8,7 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { bytesToBase64 } from './pdfBase64';
+import { base64FromDataUrl, base64ToBytes, bytesToBase64 } from './pdfBase64';
 
 const decode = (b64: string): Uint8Array => {
   const raw = globalThis.atob(b64);
@@ -52,5 +52,43 @@ describe('bytesToBase64', () => {
     const bytes = new Uint8Array(0x8000 * 2);
     for (let i = 0; i < bytes.length; i++) bytes[i] = i % 251;
     expect(decode(bytesToBase64(bytes))).toEqual(bytes);
+  });
+});
+
+describe('base64ToBytes', () => {
+  it('round-trips with bytesToBase64', () => {
+    const original = new Uint8Array([0, 1, 127, 128, 255, 42, 200]);
+    expect([...base64ToBytes(bytesToBase64(original))]).toEqual([...original]);
+  });
+
+  it('survives bytes that are not valid text', () => {
+    // A JPEG is not a string. Anything that round-trips through a text
+    // encoding has to carry 0x00 and 0xFF unchanged or the file is corrupt.
+    const jpegish = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46]);
+    expect([...base64ToBytes(bytesToBase64(jpegish))]).toEqual([...jpegish]);
+  });
+
+  it('handles an empty input', () => {
+    expect(base64ToBytes('').byteLength).toBe(0);
+  });
+
+  it('round-trips a payload larger than the chunk size', () => {
+    // bytesToBase64 chunks at 0x8000; this crosses that boundary.
+    const big = new Uint8Array(0x8000 + 1234);
+    for (let i = 0; i < big.length; i++) big[i] = i % 256;
+    expect([...base64ToBytes(bytesToBase64(big))]).toEqual([...big]);
+  });
+});
+
+describe('base64FromDataUrl', () => {
+  it('strips the prefix a FileReader produces', () => {
+    expect(base64FromDataUrl('data:image/jpeg;base64,/9j/4AAQ')).toBe('/9j/4AAQ');
+  });
+
+  it('refuses a data URL that is not base64', () => {
+    // Percent-encoded text decoded as base64 would produce plausible rubbish
+    // and write a corrupt file. Refusing is the safe direction.
+    expect(base64FromDataUrl('data:text/plain,hello')).toBeNull();
+    expect(base64FromDataUrl('not a data url')).toBeNull();
   });
 });
