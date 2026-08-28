@@ -128,6 +128,20 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
   // Close enough to read the circuit, far enough that relief still shows.
   const zoom = 13.2;
 
+  /*
+   * Straight from VenueView, so the two maps cannot drift apart.
+   *
+   * `bounds` is the tile extract area — the region the bundled archive
+   * actually has data for — which is why it is the right limit rather than
+   * a made-up margin around the circuit.
+   */
+  const minZoom = view.minZoom;
+  const maxZoom = view.maxZoom;
+  const maxBounds = JSON.stringify([
+    [view.bounds[0][0], view.bounds[0][1]],
+    [view.bounds[1][0], view.bounds[1][1]],
+  ]);
+
   return `<!doctype html>
 <html>
 <head>
@@ -276,7 +290,23 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
           zoom: ${zoom},
           pitch: 70,
           bearing: 20,
-          attributionControl: false
+          attributionControl: false,
+          /*
+            The same limits the native map keeps, from the same venue data.
+
+            Not tidiness. The basemap is a per-venue archive covering a few
+            kilometres, so panning past its edge shows nothing at all and
+            zooming out shows a circuit-sized hole in a black world. Worse,
+            getting back is hard on a tilted map — the gesture that got you
+            lost is not obviously reversible.
+
+            maxBounds is the extract area, which is exactly the region the
+            archive has tiles for, so the camera cannot reach anywhere the
+            map is empty.
+          */
+          minZoom: ${minZoom},
+          maxZoom: ${maxZoom},
+          maxBounds: ${maxBounds}
         });
 
         window.__map = map;
@@ -305,17 +335,66 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
             mistake 'omitSpots' exists to avoid on the native screen.
           */
           try {
-            map.addSource("spots", { type: "geojson", data: window.__spots || emptySpots });
+            /*
+              Overlapping spots stack rather than hide each other.
+
+              Waypoints cluster naturally — three angles on the same corner,
+              two sides of the same fence — and drawn flat they sit on top of
+              one another, so the pin you tap is whichever happened to be
+              drawn last. A count is honest about there being more than one
+              and gives you something to zoom into.
+
+              40px radius, which is roughly a fingertip: the threshold for
+              "these overlap" should be what a thumb cannot separate, not a
+              distance on the ground.
+            */
+            map.addSource("spots", {
+              type: "geojson",
+              data: window.__spots || emptySpots,
+              cluster: true,
+              clusterRadius: 40,
+              // Past this they are far enough apart to tap individually.
+              clusterMaxZoom: 17
+            });
+            // Clusters first, so a stack reads as one object.
+            map.addLayer({
+              id: "spot-cluster",
+              type: "circle",
+              source: "spots",
+              filter: ["has", "point_count"],
+              paint: {
+                "circle-radius": ["step", ["get", "point_count"], 14, 5, 18, 10, 22],
+                "circle-color": "#2E7DF6",
+                "circle-opacity": 0.85,
+                "circle-stroke-color": "#0B0D10",
+                "circle-stroke-width": 2
+              }
+            });
+            map.addLayer({
+              id: "spot-cluster-count",
+              type: "symbol",
+              source: "spots",
+              filter: ["has", "point_count"],
+              layout: {
+                "text-field": ["get", "point_count_abbreviated"],
+                "text-size": 12,
+                "text-allow-overlap": true
+              },
+              paint: { "text-color": "#0B0D10" }
+            });
+
             map.addLayer({
               id: "spot-halo",
               type: "circle",
               source: "spots",
+              filter: ["!", ["has", "point_count"]],
               paint: { "circle-radius": 12, "circle-color": "#2E7DF6", "circle-opacity": 0.22 }
             });
             map.addLayer({
               id: "spot-pin",
               type: "circle",
               source: "spots",
+              filter: ["!", ["has", "point_count"]],
               paint: {
                 "circle-radius": 6,
                 "circle-color": "#2E7DF6",
@@ -400,6 +479,23 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
           } catch (e) { fail("spots", e); }
 
           // Tapping a pin opens it on the native side, which owns the sheet.
+          /*
+            Tapping a stack opens it rather than doing nothing.
+
+            A cluster has no single spot to show, so the useful response is
+            to go to the zoom where it breaks apart — which pmtiles can
+            answer directly, and which is what the count was inviting.
+          */
+          map.on("click", "spot-cluster", function (e) {
+            var f = e.features && e.features[0];
+            if (!f) return;
+            map.getSource("spots").getClusterExpansionZoom(
+              f.properties.cluster_id
+            ).then(function (z) {
+              map.easeTo({ center: f.geometry.coordinates, zoom: z, duration: 400 });
+            }).catch(function () {});
+          });
+
           map.on("click", "spot-pin", function (e) {
             var f = e.features && e.features[0];
             var id = f && f.properties && f.properties.id;

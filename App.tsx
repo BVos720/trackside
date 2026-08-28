@@ -1593,6 +1593,9 @@ function AppShell() {
           spotUse={spotUse}
           useCounts={useCounts}
           onSpotUseChange={setSpotUse}
+          // The spot list is reached from the map and lives over it, so
+          // "list" is still the map as far as the menu is concerned.
+          current={where === 'list' ? 'map' : (where as never)}
           onNavigate={setWhere}
         />
       )}

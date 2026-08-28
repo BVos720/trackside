@@ -438,14 +438,27 @@ export default function SpotSheet({
       the keyboard frame and the view can be inset by it, where Android already
       resizes the window and adding padding on top of that double-counts.
     */
-    <KeyboardAvoidingView
-      style={styles.sheet}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    /*
+      The whole sheet moves, not the handle.
+
+      The transform used to sit on a view containing only the grabber, so
+      dragging slid a small bar down the screen while the panel it belonged to
+      stayed put. Reported exactly that way: it should "slide the whole window
+      and not the little stripe".
+
+      The pan handlers stay on the grab area rather than the whole sheet,
+      though, and that is deliberate. The body is a ScrollView; claiming
+      vertical gestures across all of it would fight scrolling for the same
+      finger, and the loser would be whichever the user actually wanted.
+    */
+    <Animated.View
+      style={[styles.sheet, { transform: [{ translateY: dragY }] }]}
     >
-      <Animated.View
-        style={{ transform: [{ translateY: dragY }] }}
-        {...drag.panHandlers}
+      <KeyboardAvoidingView
+        style={styles.sheetInner}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
+      <View {...drag.panHandlers}>
         {/*
           The grab area is deliberately larger than the bar it draws.
 
@@ -456,7 +469,7 @@ export default function SpotSheet({
         <View style={styles.grabArea}>
           <View style={styles.grabber} />
         </View>
-      </Animated.View>
+      </View>
 
       <ScrollView
         style={styles.body}
@@ -1009,12 +1022,21 @@ export default function SpotSheet({
           <Text style={styles.saveLabel}>Save</Text>
         </Pressable>
       </View>
-    </KeyboardAvoidingView>
+      </KeyboardAvoidingView>
+    </Animated.View>
   );
 }
 
 function makeStyles(color: Theme['color']) {
   return StyleSheet.create({
+    /*
+     * The inner container carries no position of its own.
+     *
+     * `sheet` is absolutely positioned and now also animated, so the keyboard
+     * avoider inside it just fills what it is given — two positioned ancestors
+     * would fight over the same bottom edge.
+     */
+    sheetInner: { flexShrink: 1 },
     sheet: {
       position: 'absolute',
       left: 0,

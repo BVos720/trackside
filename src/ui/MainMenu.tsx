@@ -88,6 +88,7 @@ export default function MainMenu({
   spotUse,
   useCounts,
   onSpotUseChange,
+  current,
   onNavigate,
 }: {
   open: boolean;
@@ -101,6 +102,8 @@ export default function MainMenu({
   /** How many spots each mode would show, for the switch's labels. */
   useCounts: Record<SpotUse, number>;
   onSpotUseChange: (use: SpotUse) => void;
+  /** Where you are now, so the menu can leave it out. */
+  current?: Destination;
   onNavigate: (to: Destination) => void;
 }) {
   const insets = useSafeAreaInsets();
@@ -193,7 +196,20 @@ export default function MainMenu({
             </View>
 
             <ScrollView style={styles.items}>
-              {ITEMS.map((item) => {
+              {/*
+                The screen you are on is not offered.
+
+                Tapping it would do nothing visible, which reads as a broken
+                menu rather than a no-op — and the menu already closes when
+                you tap outside it, so there is a way out that does not need
+                a row leading back to where you already are.
+
+                Filtered rather than disabled: a greyed row still occupies
+                the space and still invites a press. This is a short list on
+                a phone held one-handed, and the shortest version of it is
+                the best one.
+              */}
+              {ITEMS.filter((item) => item.key !== current).map((item) => {
                 const count = badge(item.key);
                 return (
                   <Pressable
