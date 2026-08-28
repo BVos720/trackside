@@ -29,6 +29,7 @@ import {
 import { Asset } from 'expo-asset';
 import { prepareGlyphs } from '../../storage-local/glyphs';
 import { localTerrainTemplate } from '../../storage-local/terrainCache';
+import TerrainSpike from './TerrainSpike';
 import { getMapSceneryEnabled } from '../../storage-local/preferences';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -207,7 +208,21 @@ export default function MapScreen({
    */
   const zoomRef = useRef(zoom);
   zoomRef.current = zoom;
+  /**
+   * The terrain map is showing instead of the native one.
+   *
+   * ── Why it swaps the map rather than covering it ──────────────────────
+   * Everything that makes this screen useful — the sky strip, the sun dial,
+   * the circuit ruler, the menu, Spots, + Spot — is a sibling of the map,
+   * not a child of it. Replacing only the map leaves all of it in place and
+   * working, so the terrain view inherits the whole app rather than being a
+   * bare canvas with a Back button.
+   *
+   * It also makes the 2D/3D control a real mode switch again.
+   */
   const [is3D, setIs3D] = useState(false);
+
+  const [terrain3d, setTerrain3d] = useState(false);
   /**
    * Performance toggle — TASKS-profile.md D1. Defaults to `true` (matching
    * `buildMapStyle`'s own default) so the map looks unchanged before this
@@ -393,6 +408,16 @@ export default function MapScreen({
 
   return (
     <View style={styles.root}>
+      {terrain3d ? (
+        /*
+          The terrain map, in the map's place.
+
+          Same venue, same spots, same bundled archive, so the two views
+          cannot show different data. Everything below this block is
+          untouched and keeps working over it.
+        */
+        <TerrainSpike venue={venue} spots={shape} onOpenSpot={onSpotTap} />
+      ) : (
       <Map
         style={styles.map}
         mapStyle={mapStyle}
@@ -725,6 +750,7 @@ export default function MapScreen({
             );
           })}
       </Map>
+      )}
 
       {/*
         2D ⇄ 3D — spec §5.10, §5.11.
@@ -769,7 +795,7 @@ export default function MapScreen({
           only if you expected 3D to work there — and until today it did not
           work anywhere.
         */
-        onPress={() => onOpenTerrainView?.()}
+        onPress={() => setTerrain3d((on) => !on)}
         style={({ pressed }) => [
           styles.modeButton,
           // Beneath the menu, sharing its left edge: both are things you press
@@ -782,13 +808,15 @@ export default function MapScreen({
         ]}
       >
         {/*
-          Always reads 3D, because it is a door rather than a switch.
+          Names the mode you are in, as a mode switch should.
 
-          Showing "2D" while looking at the 2D map invited the reading that
-          tapping it turns 2D off. It opens the terrain view; the label should
-          say where it goes.
+          It briefly read "3D" always, while the terrain view was a separate
+          screen and the button was a door. It swaps the map in place now, so
+          it is a switch again and should say which side it is on.
         */}
-        <Text style={styles.modeLabel}>3D</Text>
+        <Text style={[styles.modeLabel, terrain3d && styles.modeLabelActive]}>
+          {terrain3d ? '3D' : '2D'}
+        </Text>
       </Pressable>
 
       {is3D && (

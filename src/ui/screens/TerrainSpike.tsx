@@ -356,7 +356,13 @@ export default function TerrainSpike({
   spots?: unknown;
   /** Tapping a pin opens it — the sheet stays on the native side. */
   onOpenSpot?: (id: string) => void;
-  onClose: () => void;
+  /**
+   * Shown as a Back button when present.
+   *
+   * Absent when embedded in MapScreen, where the 2D/3D control is already
+   * the way out and a second one would be clutter over a map.
+   */
+  onClose?: () => void;
 }) {
   const [log, setLog] = useState<string[]>([]);
   const [fps, setFps] = useState<number | null>(null);
@@ -623,9 +629,11 @@ export default function TerrainSpike({
         </View>
         )}
 
-        <Pressable onPress={onClose} style={styles.button}>
-          <Text style={styles.buttonLabel}>Back to map</Text>
-        </Pressable>
+        {onClose !== undefined && (
+          <Pressable onPress={onClose} style={styles.button}>
+            <Text style={styles.buttonLabel}>Back to map</Text>
+          </Pressable>
+        )}
       </View>
     </View>
   );
@@ -637,7 +645,14 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#0B0D10' },
   web: { flex: 1, backgroundColor: '#0B0D10' },
   centre: { flex: 1, backgroundColor: '#0B0D10', padding: 24, justifyContent: 'center' },
-  overlay: { position: 'absolute', left: 0, right: 0, bottom: 0, padding: 12 },
+  /*
+   * Loading chrome only.
+   *
+   * Embedded, this sits over the map inside MapScreen, so it is kept clear
+   * of the bottom bar the shell already puts there — the sky strip and the
+   * Spots / + Spot row own that space.
+   */
+  overlay: { position: 'absolute', left: 0, right: 0, bottom: 96, padding: 12 },
   panel: {
     backgroundColor: 'rgba(11,13,16,0.92)',
     borderRadius: 8,
