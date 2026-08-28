@@ -36,6 +36,7 @@ import {
   Camera,
   type CameraRef,
   GeoJSONSource,
+  type GeoJSONSourceRef,
   Images,
   Layer,
   Map,
@@ -223,6 +224,20 @@ export default function MapScreen({
   const [is3D, setIs3D] = useState(false);
 
   const [terrain3d, setTerrain3d] = useState(false);
+
+  /**
+   * The spots inside a tapped stack, and which of them is lit.
+   *
+   * Mirrors the terrain map deliberately: the same gesture should mean the
+   * same thing on both, and a stack that behaved differently depending on
+   * which map you were looking at would be worse than one that did not
+   * stack at all.
+   */
+  const [stack, setStack] = useState<{ id: string; name: string }[] | null>(null);
+  const [lit, setLit] = useState<string | null>(null);
+
+  // Needed for getClusterLeaves, which is a method on the source itself.
+  const spotsSourceRef = useRef<GeoJSONSourceRef>(null);
   /**
    * Performance toggle — TASKS-profile.md D1. Defaults to `true` (matching
    * `buildMapStyle`'s own default) so the map looks unchanged before this
@@ -552,32 +567,135 @@ export default function MapScreen({
         */}
         <GeoJSONSource
           key="spots"
+          ref={spotsSourceRef}
           id={SPOTS_SOURCE}
           data={shape as never}
+          /*
+            Overlapping spots stack, as they do on the terrain map.
+
+            Three angles on one corner is normal, and drawn flat they hide each
+            other — the pin you tap is whichever happened to be drawn last.
+            40px is roughly a fingertip: "these overlap" should mean what a
+            thumb cannot separate, not a distance on the ground.
+          */
+          cluster
+          clusterRadius={40}
+          clusterMaxZoom={17}
           onPress={(e) => {
             // Same mistake as the map tap: features arrive on `nativeEvent`,
             // not on the event object, so tapping a pin never opened it.
             const f = e.nativeEvent.features?.[0] as SpotFeature | undefined;
+
+            /*
+              A stack asks which one, rather than opening whichever was on top.
+
+              getClusterLeaves gives the spots themselves, so the list names
+              them instead of counting them. Picking one lights it; opening it
+              is a second tap on the pin — the same two steps the terrain map
+              uses, because they answer two different questions.
+            */
+            const clusterId = (f?.properties as { cluster_id?: number } | undefined)
+              ?.cluster_id;
+            if (typeof clusterId === 'number') {
+              void (async () => {
+                try {
+                  const leaves = await spotsSourceRef.current?.getClusterLeaves(
+                    clusterId,
+                    // Past this a list stops being readable and zooming really
+                    // is the better answer.
+                    25,
+                    0,
+                  );
+                  setStack(
+                    (leaves ?? []).map((l) => {
+                      const p = (l.properties ?? {}) as { id?: string; name?: string };
+                      return {
+                        id: String(p.id ?? ''),
+                        name: String(p.name ?? 'Unnamed spot'),
+                      };
+                    }),
+                  );
+                  setLit(null);
+                } catch {
+                  // A stack we cannot enumerate is better left alone than
+                  // reported as empty.
+                }
+              })();
+              return;
+            }
+
             const id = f?.properties?.id;
-            if (typeof id === 'string') onSpotTap?.(id);
+            if (typeof id === 'string') {
+              setStack(null);
+              setLit(null);
+              onSpotTap?.(id);
+            }
           }}
         >
           <Layer
-            id="spot-halo"
+            key="spot-cluster"
+            id="spot-cluster"
             type="circle"
+            filter={['has', 'point_count'] as never}
             paint={{
-              'circle-radius': 12,
+              'circle-radius': ['step', ['get', 'point_count'], 14, 5, 18, 10, 22] as never,
               'circle-color': color.accent,
-              'circle-opacity': 0.22,
+              'circle-opacity': 0.85,
+              'circle-stroke-color': color.background,
+              'circle-stroke-width': 2,
             }}
           />
           <Layer
+            key="spot-cluster-count"
+            id="spot-cluster-count"
+            type="symbol"
+            filter={['has', 'point_count'] as never}
+            layout={{
+              'text-field': ['get', 'point_count_abbreviated'] as never,
+              'text-size': 12,
+              'text-allow-overlap': true,
+            }}
+            paint={{ 'text-color': color.background }}
+          />
+
+          <Layer
+            key="spot-halo"
+            id="spot-halo"
+            type="circle"
+            filter={['!', ['has', 'point_count']] as never}
+            paint={{
+              'circle-radius': 12,
+              'circle-color': color.accent,
+              /*
+                Dimmed when something else in the stack is picked.
+
+                The others fade rather than disappearing: a spot that vanished
+                would be a claim it is not there, and dimming says "these too,
+                just not the one you asked about".
+              */
+              'circle-opacity': (lit === null
+                ? 0.22
+                : ['case', ['==', ['get', 'id'], lit], 0.35, 0.06]) as never,
+            }}
+          />
+          <Layer
+            key="spot-pin"
             id="spot-pin"
             type="circle"
+            filter={['!', ['has', 'point_count']] as never}
             paint={{
-              'circle-radius': 6,
+              'circle-radius': (lit === null
+                ? 6
+                : ['case', ['==', ['get', 'id'], lit], 9, 5]) as never,
               'circle-color': color.accent,
-              'circle-stroke-color': color.background,
+              'circle-opacity': (lit === null
+                ? 1
+                : ['case', ['==', ['get', 'id'], lit], 1, 0.25]) as never,
+              // A light ring makes the picked one findable among pins that are
+              // all the same colour by design.
+              'circle-stroke-color': (lit === null
+                ? color.background
+                : ['case', ['==', ['get', 'id'], lit], color.text, color.background]) as never,
               'circle-stroke-width': 2,
             }}
           />
@@ -763,6 +881,49 @@ export default function MapScreen({
       </Map>
       )}
 
+      {stack !== null && (
+        <View style={[styles.stackPanel, { top: insets.top + MENU_CLEARANCE + controlsTop }]}>
+          <View style={styles.stackHead}>
+            <Text style={styles.stackTitle}>{stack.length} SPOTS HERE</Text>
+            <Pressable
+              onPress={() => {
+                setStack(null);
+                setLit(null);
+              }}
+              hitSlop={10}
+            >
+              <Text style={styles.stackClose}>Done</Text>
+            </Pressable>
+          </View>
+
+          <Text style={styles.stackHint}>
+            Tap a name to pick it out, then tap it on the map to open it.
+          </Text>
+
+          {stack.map((s) => {
+            const on = s.id === lit;
+            return (
+              <Pressable
+                key={s.id}
+                onPress={() => setLit(on ? null : s.id)}
+                style={({ pressed }) => [
+                  styles.stackRow,
+                  on && styles.stackRowOn,
+                  pressed && styles.pressed,
+                ]}
+              >
+                <Text
+                  style={[styles.stackName, on && styles.stackNameOn]}
+                  numberOfLines={1}
+                >
+                  {s.name}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      )}
+
       {/*
         2D ⇄ 3D — spec §5.10, §5.11.
 
@@ -881,6 +1042,47 @@ export default function MapScreen({
 
 function makeStyles(color: Theme['color']) {
   return StyleSheet.create({
+    /*
+     * The stack list, matching the terrain map's.
+     *
+     * On-map furniture, so fixed dark values rather than theme tokens — the
+     * same reasoning as the menu trigger and the sun dial, which float on an
+     * always-dark basemap and would go near-invisible in a light theme.
+     */
+    stackPanel: {
+      position: 'absolute',
+      left: space.md,
+      right: space.md,
+      padding: space.sm,
+      borderRadius: radius.md,
+      backgroundColor: 'rgba(11,13,16,0.94)',
+      borderWidth: 1,
+      borderColor: color.border,
+    },
+    stackHead: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+    },
+    stackTitle: {
+      color: color.accent,
+      fontSize: type.label,
+      fontWeight: weight.bold,
+      letterSpacing: 1.2,
+    },
+    stackClose: { color: color.text, fontSize: type.label, fontWeight: weight.bold },
+    stackHint: { color: color.textMuted, fontSize: 11, lineHeight: 15, marginTop: 4 },
+    stackRow: {
+      marginTop: 6,
+      paddingVertical: 10,
+      paddingHorizontal: 10,
+      borderRadius: radius.sm,
+      borderWidth: 1,
+      borderColor: color.border,
+    },
+    stackRowOn: { borderColor: color.accent },
+    stackName: { color: color.textMuted, fontSize: type.label },
+    stackNameOn: { color: color.text, fontWeight: weight.bold },
     modeButton: {
       position: 'absolute',
       left: space.md,
