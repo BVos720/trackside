@@ -17,6 +17,7 @@ import 'react-native-get-random-values';
 import { registerRootComponent } from 'expo';
 
 import App from './App';
+import { installLogCapture, rotateLog } from './src/storage-local/appLog';
 import { installGlobalErrorHandler } from './src/ui/ErrorBoundary';
 
 /*
@@ -27,6 +28,16 @@ import { installGlobalErrorHandler } from './src/ui/ErrorBoundary';
  * catching — so it goes at module scope in the entry file, before
  * registerRootComponent. Only the crypto polyfill above may precede it.
  */
+/*
+ * Log capture goes first, so it sees the error handler's own output.
+ *
+ * Rotation is fired and not awaited: the previous run's log is only read when
+ * somebody opens Diagnostics, and blocking startup on a file read to serve a
+ * screen that may never be opened would be the wrong trade.
+ */
+installLogCapture();
+void rotateLog();
+
 installGlobalErrorHandler();
 
 // registerRootComponent calls AppRegistry.registerComponent('main', () => App);

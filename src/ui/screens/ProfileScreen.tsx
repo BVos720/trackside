@@ -82,6 +82,11 @@ import {
   setMapSceneryEnabled,
 } from '../../storage-local/preferences';
 import { BUILD_LABEL } from '../../buildInfo';
+import {
+  clearLogs,
+  readCurrentLog,
+  readPreviousLog,
+} from '../../storage-local/appLog';
 import { resetApp } from '../../storage-local/resetApp';
 import Collapsible from '../Collapsible';
 import {
@@ -173,6 +178,22 @@ export default function ProfileScreen({
   // state from the first render, not a default that then flips.
   const [sceneryEnabled, setSceneryEnabled] = useState<boolean | null>(null);
   const [rainEnabled, setRainEnabled] = useState<boolean | null>(null);
+
+  /*
+   * The log from the run before this one.
+   *
+   * The point of the whole feature: when the app dies there is no stack and
+   * no error screen, and this is the only surviving account of what it was
+   * doing. Loaded on demand rather than at mount, because it is a file read
+   * for a panel most sessions never open.
+   */
+  const [previousLog, setPreviousLog] = useState<string | null>(null);
+  const [currentLog, setCurrentLog] = useState<string | null>(null);
+
+  const loadLogs = () => {
+    setCurrentLog(readCurrentLog());
+    void readPreviousLog().then(setPreviousLog);
+  };
   useEffect(() => {
     let cancelled = false;
     void (async () => {
@@ -373,6 +394,63 @@ export default function ProfileScreen({
             pointerEvents="none"
           />
         </Pressable>
+      </Collapsible>
+
+      <Collapsible title="Diagnostics" hint="What the app logged, including the run that crashed">
+        <Text style={styles.help}>
+          The last few hundred lines this app logged. “Previous run” is what
+          survived the last time it closed — if it crashed, that is the only
+          record of what it was doing.
+        </Text>
+
+        <Pressable
+          onPress={loadLogs}
+          style={({ pressed }) => [styles.toggleRow, pressed && styles.pressed]}
+        >
+          <View style={styles.toggleText}>
+            <Text style={styles.toggleLabel}>Load logs</Text>
+            <Text style={styles.toggleSubtitle}>
+              {currentLog === null ? 'Not loaded' : 'Tap to refresh'}
+            </Text>
+          </View>
+        </Pressable>
+
+        {previousLog !== null && (
+          <>
+            <Text style={styles.logHeading}>Previous run</Text>
+            <ScrollView style={styles.logBox} horizontal>
+              <Text style={styles.logText} selectable>
+                {previousLog}
+              </Text>
+            </ScrollView>
+          </>
+        )}
+
+        {currentLog !== null && (
+          <>
+            <Text style={styles.logHeading}>This run</Text>
+            <ScrollView style={styles.logBox} horizontal>
+              <Text style={styles.logText} selectable>
+                {currentLog.length > 0 ? currentLog : '(nothing logged yet)'}
+              </Text>
+            </ScrollView>
+          </>
+        )}
+
+        {(currentLog !== null || previousLog !== null) && (
+          <Pressable
+            onPress={() => {
+              clearLogs();
+              setCurrentLog(null);
+              setPreviousLog(null);
+            }}
+            style={({ pressed }) => [styles.toggleRow, pressed && styles.pressed]}
+          >
+            <View style={styles.toggleText}>
+              <Text style={styles.toggleLabel}>Clear logs</Text>
+            </View>
+          </Pressable>
+        )}
       </Collapsible>
 
       <Collapsible
@@ -955,7 +1033,32 @@ function makeStyles(color: Theme['color']) {
     },
     toggleText: { flex: 1 },
     toggleLabel: { color: color.text, fontSize: type.body, fontWeight: weight.bold },
-    toggleSubtitle: { color: color.textFaint, fontSize: 11, marginTop: 1 },
+    logHeading: {
+    color: color.textMuted,
+    fontSize: type.label,
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+    marginTop: space.md,
+    marginBottom: space.xs,
+  },
+  /*
+   * Horizontally scrollable and never wrapped.
+   *
+   * Log lines are long and wrapping them turns a readable sequence into a
+   * wall. Selectable so a line can be copied out and pasted somewhere useful,
+   * which is the only way anything here leaves the phone.
+   */
+  logBox: {
+    maxHeight: 260,
+    backgroundColor: color.surfaceRaised,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: color.border,
+    padding: space.sm,
+  },
+  logText: { color: color.text, fontSize: 11, fontFamily: 'Menlo' },
+
+  toggleSubtitle: { color: color.textFaint, fontSize: 11, marginTop: 1 },
 
     /** Two options in a row, same shape as `themeRow`/`themeOption` above. */
     kindRow: { flexDirection: 'row', gap: space.sm, marginTop: space.sm },
