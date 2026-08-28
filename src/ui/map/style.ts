@@ -297,6 +297,34 @@ function withHillshade(keep: unknown[], hillshade: unknown): unknown[] {
   return [...keep.slice(0, i), hillshade, ...keep.slice(i)];
 }
 
+/**
+ * A square around a venue's centre, as a polygon for a `within` filter.
+ *
+ * Square rather than circular because the filter is a budget, not a boundary
+ * anybody sees: the corner of the box is 40% further out than its edge, and
+ * nothing about the frame rate turns on that. A circle would need a polygon
+ * approximation and the same expression would then cost more to evaluate for
+ * every one of ten thousand points.
+ */
+function boxAround(
+  centre: readonly [number, number],
+  radius: number,
+): { type: 'Polygon'; coordinates: number[][][] } {
+  const [x, y] = centre;
+  return {
+    type: 'Polygon',
+    coordinates: [
+      [
+        [x - radius, y - radius],
+        [x + radius, y - radius],
+        [x + radius, y + radius],
+        [x - radius, y + radius],
+        [x - radius, y - radius],
+      ],
+    ],
+  };
+}
+
 export const HORIZON_MARGIN = 0.25;
 
 export const REMOTE_GLYPHS_URL =
@@ -625,6 +653,24 @@ export function buildMapStyle(
    */
   includeScenery = true,
   /**
+   * Draw relief shading — TASKS.md F8.
+   *
+   * Off is a real choice rather than a degraded one. The terrain mesh already
+   * carries the landform; shading is an enhancement of it, and on a phone that
+   * is struggling it is the cheapest thing to give up that costs no
+   * information.
+   */
+  includeHillshade = true,
+  /**
+   * How far the scenery scatter reaches from the venue centre, in degrees —
+   * F6.
+   *
+   * A budget rather than a measurement: what costs frames is how much is on
+   * screen at once. 1 or more means "no limit", which is the default and what
+   * every caller wanted before this existed.
+   */
+  sceneryRadius = 1,
+  /**
    * Override the elevation tile template.
    *
    * Native passes a `file://` template once a venue's DEM has been downloaded
@@ -844,7 +890,22 @@ export function buildMapStyle(
 
       The two filters are now exact complements, so each point is drawn once.
     */
-    filter: ['==', ['coalesce', ['get', 'kind'], 'tree'], 'tree'] as unknown,
+    /*
+      Trees only, and only within the drawing radius.
+
+      The kind test is what keeps this layer and `ground-detail` from drawing
+      the same point twice. The radius is F6's view-distance budget — see
+      `sceneryRadius`. At the default it is not applied at all, so the common
+      case pays nothing for the feature.
+    */
+    filter:
+      sceneryRadius >= 1
+        ? ['==', ['coalesce', ['get', 'kind'], 'tree'], 'tree']
+        : ([
+            'all',
+            ['==', ['coalesce', ['get', 'kind'], 'tree'], 'tree'],
+            ['within', boxAround(VENUE_VIEW[venue].centre, sceneryRadius)],
+          ] as unknown),
     // Zoom-gated as well as mode-gated: 14k billboards at lap-overview zoom is
     // a green smear that costs frames and says nothing.
     minzoom: 14,
@@ -1156,7 +1217,7 @@ export function buildMapStyle(
      * and this file should not pretend otherwise.
      */
     layers: [
-      ...withHillshade(keep, hillshade),
+      ...(includeHillshade ? withHillshade(keep, hillshade) : keep),
       buildings,
       ...trackLayers,
       // On top of the asphalt, under the trees — a tree at the edge of a corner

@@ -31,9 +31,13 @@ import { prepareGlyphs } from '../../storage-local/glyphs';
 import { localTerrainTemplate } from '../../storage-local/terrainCache';
 import TerrainSpike from './TerrainSpike';
 import {
+  getMapHillshadeEnabled,
   getMapRainEnabled,
+  getMapSceneryDistance,
   getMapSceneryEnabled,
+  getMapStarsEnabled,
 } from '../../storage-local/preferences';
+import { sceneryRadiusDegrees } from '../../core/logic/graphicsPreset';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   Camera,
@@ -265,12 +269,24 @@ export default function MapScreen({
    * a change made on the profile screen — no subscription needed.
    */
   const [sceneryEnabled, setSceneryEnabled] = useState(true);
-  /** Also a style input, and so also settled before the map is built. */
+  /**
+   * The graphics switches, all settled before the style is built.
+   *
+   * Every one of these is a style input, so the same rule applies as for
+   * glyphs: settle first, build once. A switch arriving late would rebuild the
+   * style under live sources, which is the crash in commit 7c1fbd8.
+   */
+  const [hillshadeEnabled, setHillshadeEnabled] = useState(true);
+  const [starsEnabled, setStarsEnabled] = useState(true);
+  const [sceneryRadius, setSceneryRadius] = useState(1);
   const [scenerySettled, setScenerySettled] = useState(false);
   useEffect(() => {
     void (async () => {
       try {
         setSceneryEnabled(await getMapSceneryEnabled());
+        setHillshadeEnabled(await getMapHillshadeEnabled());
+        setStarsEnabled(await getMapStarsEnabled());
+        setSceneryRadius(sceneryRadiusDegrees(await getMapSceneryDistance()));
       } finally {
         setScenerySettled(true);
       }
@@ -508,9 +524,20 @@ export default function MapScreen({
             is3D,
             glyphsUrl ?? REMOTE_GLYPHS_URL,
             sceneryEnabled,
+            hillshadeEnabled,
+            sceneryRadius,
             terrainTiles,
           ) as never),
-    [tilesUri, venue, is3D, glyphsUrl, sceneryEnabled, terrainTiles],
+    [
+      tilesUri,
+      venue,
+      is3D,
+      glyphsUrl,
+      sceneryEnabled,
+      terrainTiles,
+      hillshadeEnabled,
+      sceneryRadius,
+    ],
   );
 
   if (error !== null) {
@@ -1042,6 +1069,9 @@ export default function MapScreen({
             // The same clock the dial and the sky strip use, so scrubbing the
             // time re-lights the terrain instead of only moving a dial.
             sunAt={clock.now}
+          // Stars are a graphics setting; the moon is not, because it is
+          // information rather than atmosphere.
+          stars={starsEnabled}
           // Real cover and rainfall for this circuit and this hour.
           /*
             Rain zeroed rather than the forecast withheld.

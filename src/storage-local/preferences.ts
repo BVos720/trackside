@@ -10,6 +10,7 @@
  * tombstones and no sync story, and putting them through the same machinery
  * would imply they do.
  */
+import type { SceneryDistance } from '../core/logic/graphicsPreset';
 import { DEFAULT_ACCENT_HUE } from '../core/logic/accentColor';
 import { kv } from './kv';
 
@@ -19,6 +20,9 @@ const SPOT_USE = 'trackside.ui.spotUse.v1';
 const PROFILE_NAME = 'trackside.ui.profileName.v1';
 const MAP_SCENERY = 'trackside.ui.mapScenery.v1';
 const MAP_RAIN = 'trackside.ui.mapRain.v1';
+const MAP_STARS = 'trackside.ui.mapStars.v1';
+const MAP_HILLSHADE = 'trackside.ui.mapHillshade.v1';
+const MAP_SCENERY_DISTANCE = 'trackside.ui.mapSceneryDistance.v1';
 const THEME_PREFERENCE = 'trackside.ui.themePreference.v1';
 const THEME_ACCENT_HUE = 'trackside.ui.themeAccentHue.v1';
 const SAFETY_ACKNOWLEDGED = 'trackside.ui.safetyAcknowledged.v1';
@@ -136,6 +140,53 @@ export async function getMapRainEnabled(): Promise<boolean> {
 
 export async function setMapRainEnabled(enabled: boolean): Promise<void> {
   await kv.set(MAP_RAIN, enabled ? '1' : '0');
+}
+
+/**
+ * The rest of the graphics switches — TASKS.md F8.
+ *
+ * Stored one key per setting rather than as a single serialised object, for
+ * the same reason the two above are: each is read independently by whichever
+ * part of the map cares, and a JSON blob would mean every reader parsing and
+ * validating a shape that could drift. It also means adding a switch never
+ * has to migrate the ones already stored.
+ *
+ * All default to on, matching `DEFAULT_GRAPHICS`: nobody who never opens the
+ * setting should find the app has gone quieter on its own.
+ */
+export async function getMapStarsEnabled(): Promise<boolean> {
+  return (await kv.get(MAP_STARS)) !== '0';
+}
+
+export async function setMapStarsEnabled(enabled: boolean): Promise<void> {
+  await kv.set(MAP_STARS, enabled ? '1' : '0');
+}
+
+export async function getMapHillshadeEnabled(): Promise<boolean> {
+  return (await kv.get(MAP_HILLSHADE)) !== '0';
+}
+
+export async function setMapHillshadeEnabled(enabled: boolean): Promise<void> {
+  await kv.set(MAP_HILLSHADE, enabled ? '1' : '0');
+}
+
+/**
+ * How far the scenery scatter reaches — F6.
+ *
+ * Validated on the way out rather than trusted. This is the one preference
+ * here that is not a boolean, so it is the one where a value written by an
+ * older or newer build could be a string this build has never heard of, and
+ * falling back beats handing an unknown to a switch statement.
+ */
+export async function getMapSceneryDistance(): Promise<SceneryDistance> {
+  const raw = await kv.get(MAP_SCENERY_DISTANCE);
+  return raw === 'near' || raw === 'mid' || raw === 'far' ? raw : 'far';
+}
+
+export async function setMapSceneryDistance(
+  distance: SceneryDistance,
+): Promise<void> {
+  await kv.set(MAP_SCENERY_DISTANCE, distance);
 }
 
 /**

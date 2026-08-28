@@ -333,6 +333,8 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
       the place for figures. This is the difference between "it will be
       overcast at four" as a number and as something you can see.
     */
+    // Stars are a graphics setting; the moon is not. See the prop's note.
+    window.__stars = true;
     window.__weather = { cover: 0, rain: 0 };
     window.__setWeather = function (json) {
       try {
@@ -735,7 +737,7 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
       // Stars and moon first: cloud draws over them, which is what cloud does.
       if (night > 0) {
 
-      for (var i = 0; i < STARS.length; i++) {
+      if (window.__stars !== false) for (var i = 0; i < STARS.length; i++) {
         var st = STARS[i];
         var p = project(st.az, st.alt);
         if (!p || p.y < 0 || p.y > h) continue;
@@ -1498,6 +1500,9 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
           // the camera changes — turning is what makes it read as sky.
           map.on("move", drawSky);
           map.on("rotate", drawSky);
+          // So a settings change can ask for a repaint without waiting for
+          // the camera to move — turning stars off should be immediate.
+          window.__redrawSky = drawSky;
           map.on("pitch", drawSky);
           map.on("pitch", fadeMask);
           window.addEventListener("resize", drawSky);
@@ -1558,6 +1563,7 @@ export default function TerrainSpike({
   mediaUris = {},
   sunAt,
   weather,
+  stars = true,
   onClose,
 }: {
   venue: VenueKey;
@@ -1584,6 +1590,15 @@ export default function TerrainSpike({
   sunAt?: Date;
   /** Cover and rainfall for the hour on screen, from the venue forecast. */
   weather?: { readonly cover: number; readonly rain: number };
+  /**
+   * Draw the star field — TASKS.md F8.
+   *
+   * The moon is deliberately not covered by this. Stars are atmosphere;
+   * the moon's position and phase are information, and a performance
+   * setting should not quietly remove the answer to "will there be any
+   * light at midnight".
+   */
+  stars?: boolean;
   /**
    * Shown as a Back button when present.
    *
@@ -1784,6 +1799,13 @@ export default function TerrainSpike({
       `window.__setSun && window.__setSun('${JSON.stringify(payload)}'); true;`,
     );
   }, [venue, sunAt, pageEpoch]);
+
+  /** Whether the page draws stars, forwarded like any other setting. */
+  useEffect(() => {
+    webRef.current?.injectJavaScript(
+      `window.__stars = ${stars ? 'true' : 'false'}; window.__redrawSky && window.__redrawSky(); true;`,
+    );
+  }, [stars, pageEpoch]);
 
   /** Cover and rainfall, forwarded whenever the forecast or the hour moves. */
   useEffect(() => {

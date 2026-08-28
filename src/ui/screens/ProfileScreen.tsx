@@ -76,11 +76,24 @@ import { deriveAccent } from '../../core/logic/accentColor';
 import { bodies, lenses, GearKind, type GearItem } from '../../core/domain/gear';
 import type { UserGearItemId } from '../../core/domain/ids';
 import {
+  getMapHillshadeEnabled,
   getMapRainEnabled,
+  getMapSceneryDistance,
   getMapSceneryEnabled,
+  getMapStarsEnabled,
+  setMapHillshadeEnabled,
   setMapRainEnabled,
+  setMapSceneryDistance,
   setMapSceneryEnabled,
+  setMapStarsEnabled,
 } from '../../storage-local/preferences';
+import {
+  presetOf,
+  settingsForPreset,
+  type GraphicsPreset,
+  type GraphicsSettings,
+  type SceneryDistance,
+} from '../../core/logic/graphicsPreset';
 import { BUILD_LABEL } from '../../buildInfo';
 import {
   clearLogs,
@@ -178,6 +191,72 @@ export default function ProfileScreen({
   // state from the first render, not a default that then flips.
   const [sceneryEnabled, setSceneryEnabled] = useState<boolean | null>(null);
   const [rainEnabled, setRainEnabled] = useState<boolean | null>(null);
+  const [starsEnabled, setStarsEnabled] = useState<boolean | null>(null);
+  const [hillshadeEnabled, setHillshadeEnabled] = useState<boolean | null>(null);
+  const [sceneryDistance, setSceneryDistanceState] =
+    useState<SceneryDistance | null>(null);
+
+  /*
+    The switches as one value, for the preset row.
+
+    Null until everything has loaded, so the row cannot briefly highlight a
+    preset that only matches because half the settings are still at their
+    defaults.
+  */
+  const graphics: GraphicsSettings | null =
+    sceneryEnabled === null ||
+    rainEnabled === null ||
+    starsEnabled === null ||
+    hillshadeEnabled === null ||
+    sceneryDistance === null
+      ? null
+      : {
+          scenery: sceneryEnabled,
+          sceneryDistance,
+          rain: rainEnabled,
+          stars: starsEnabled,
+          hillshade: hillshadeEnabled,
+        };
+
+  const activePreset = graphics === null ? null : presetOf(graphics);
+
+  /*
+    A preset writes the switches rather than shadowing them.
+
+    One source of truth for what is drawn: "Low" is a shortcut to a set of
+    values, not a mode that overrides them. So after tapping it every switch
+    below shows what it actually is, and changing one simply stops any preset
+    being highlighted.
+  */
+  const applyPreset = (preset: GraphicsPreset) => {
+    const next = settingsForPreset(preset);
+    setSceneryEnabled(next.scenery);
+    setRainEnabled(next.rain);
+    setStarsEnabled(next.stars);
+    setHillshadeEnabled(next.hillshade);
+    setSceneryDistanceState(next.sceneryDistance);
+    void setMapSceneryEnabled(next.scenery);
+    void setMapRainEnabled(next.rain);
+    void setMapStarsEnabled(next.stars);
+    void setMapHillshadeEnabled(next.hillshade);
+    void setMapSceneryDistance(next.sceneryDistance);
+  };
+
+  const toggleStars = () => {
+    setStarsEnabled((current) => {
+      const next = !(current ?? true);
+      void setMapStarsEnabled(next);
+      return next;
+    });
+  };
+
+  const toggleHillshade = () => {
+    setHillshadeEnabled((current) => {
+      const next = !(current ?? true);
+      void setMapHillshadeEnabled(next);
+      return next;
+    });
+  };
 
   /*
    * The log from the run before this one.
@@ -199,9 +278,15 @@ export default function ProfileScreen({
     void (async () => {
       const enabled = await getMapSceneryEnabled();
       const rain = await getMapRainEnabled();
+      const stars = await getMapStarsEnabled();
+      const hillshade = await getMapHillshadeEnabled();
+      const distance = await getMapSceneryDistance();
       if (!cancelled) {
         setSceneryEnabled(enabled);
         setRainEnabled(rain);
+        setStarsEnabled(stars);
+        setHillshadeEnabled(hillshade);
+        setSceneryDistanceState(distance);
       }
     })();
     return () => {
@@ -345,9 +430,38 @@ export default function ProfileScreen({
         hint={sceneryEnabled === false ? 'Map scenery off' : 'Map detail, for slower devices'}
       >
         <Text style={styles.help}>
+          A preset sets everything below at once. Change any switch afterwards
+          and it simply stops matching a preset — nothing is locked.
+        </Text>
+
+        <View style={styles.presetRow}>
+          {(['low', 'medium', 'high'] as const).map((p) => (
+            <Pressable
+              key={p}
+              onPress={() => applyPreset(p)}
+              disabled={graphics === null}
+              style={({ pressed }) => [
+                styles.preset,
+                activePreset === p && styles.presetOn,
+                pressed && styles.pressed,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.presetLabel,
+                  activePreset === p && styles.presetLabelOn,
+                ]}
+              >
+                {p === 'low' ? 'Low' : p === 'medium' ? 'Medium' : 'High'}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+
+        <Text style={styles.help}>
           Trees and field detail cost the most to draw. Turn them off if the
-          map feels slow on this device — the circuit and its buildings stay
-          on either way.
+          map feels slow on this device — the circuit, the spots and the light
+          stay on at every setting.
         </Text>
         <Pressable
           onPress={toggleScenery}
@@ -394,6 +508,81 @@ export default function ProfileScreen({
             pointerEvents="none"
           />
         </Pressable>
+
+        <Pressable
+          onPress={toggleStars}
+          disabled={starsEnabled === null}
+          style={({ pressed }) => [styles.toggleRow, pressed && styles.pressed]}
+        >
+          <View style={styles.toggleText}>
+            <Text style={styles.toggleLabel}>Stars at night</Text>
+            <Text style={styles.toggleSubtitle}>
+              The night sky's star field. The moon stays either way.
+            </Text>
+          </View>
+          <Switch
+            value={starsEnabled ?? true}
+            onValueChange={toggleStars}
+            trackColor={{ false: color.surfaceRaised, true: color.accent }}
+            thumbColor={color.text}
+            pointerEvents="none"
+          />
+        </Pressable>
+
+        <Pressable
+          onPress={toggleHillshade}
+          disabled={hillshadeEnabled === null}
+          style={({ pressed }) => [styles.toggleRow, pressed && styles.pressed]}
+        >
+          <View style={styles.toggleText}>
+            <Text style={styles.toggleLabel}>Relief shading</Text>
+            <Text style={styles.toggleSubtitle}>
+              Depth on the hills. The terrain keeps its shape without it.
+            </Text>
+          </View>
+          <Switch
+            value={hillshadeEnabled ?? true}
+            onValueChange={toggleHillshade}
+            trackColor={{ false: color.surfaceRaised, true: color.accent }}
+            thumbColor={color.text}
+            pointerEvents="none"
+          />
+        </Pressable>
+
+        {/*
+          Distance, not a count.
+
+          What costs frames is how much is on screen at once, and that is a
+          function of how far you can see rather than how many trees exist.
+        */}
+        <Text style={styles.help}>How far scenery is drawn.</Text>
+        <View style={styles.presetRow}>
+          {(['near', 'mid', 'far'] as const).map((d) => (
+            <Pressable
+              key={d}
+              onPress={() => {
+                setSceneryDistanceState(d);
+                void setMapSceneryDistance(d);
+              }}
+              disabled={sceneryDistance === null || sceneryEnabled === false}
+              style={({ pressed }) => [
+                styles.preset,
+                sceneryDistance === d && styles.presetOn,
+                sceneryEnabled === false && styles.presetMuted,
+                pressed && styles.pressed,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.presetLabel,
+                  sceneryDistance === d && styles.presetLabelOn,
+                ]}
+              >
+                {d === 'near' ? 'Near' : d === 'mid' ? 'Medium' : 'Far'}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
       </Collapsible>
 
       <Collapsible title="Diagnostics" hint="What the app logged, including the run that crashed">
@@ -1033,7 +1222,27 @@ function makeStyles(color: Theme['color']) {
     },
     toggleText: { flex: 1 },
     toggleLabel: { color: color.text, fontSize: type.body, fontWeight: weight.bold },
-    logHeading: {
+    presetRow: {
+    flexDirection: 'row',
+    gap: space.xs,
+    marginBottom: space.sm,
+  },
+  preset: {
+    flex: 1,
+    paddingVertical: space.sm,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: color.border,
+    backgroundColor: color.surfaceRaised,
+    alignItems: 'center',
+  },
+  presetOn: { backgroundColor: color.accent, borderColor: color.accent },
+  /** Distance is meaningless with the scatter off, and says so by fading. */
+  presetMuted: { opacity: 0.4 },
+  presetLabel: { color: color.textMuted, fontSize: type.label },
+  presetLabelOn: { color: color.onAccent, fontWeight: weight.bold },
+
+  logHeading: {
     color: color.textMuted,
     fontSize: type.label,
     letterSpacing: 1,
