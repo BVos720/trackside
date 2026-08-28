@@ -234,7 +234,13 @@ function normaliseEvent(row: Event & { dates?: string | null }): Event {
  * the field is there rather than `?? null` scattered through the UI.
  */
 function normaliseMedia(row: Media): Media {
-  return { ...row, tag: row.tag ?? null };
+  return {
+    ...row,
+    tag: row.tag ?? null,
+    // Null is 'nobody has said', which every reader treats as centre.
+    focalX: row.focalX ?? null,
+    focalY: row.focalY ?? null,
+  };
 }
 
 class SpotRepository implements ISpotRepository {

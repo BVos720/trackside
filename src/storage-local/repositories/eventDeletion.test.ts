@@ -101,6 +101,8 @@ async function aPhoto(
     externalUrl: null,
     referenceKind,
     isKeyImage: false,
+    focalX: null,
+    focalY: null,
     sortOrder: 0,
     capturedAt: null,
     capturedBearing: null,

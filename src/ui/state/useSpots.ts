@@ -354,6 +354,9 @@ export function useSpots(circuitId: CircuitId) {
         externalUrl: null,
         referenceKind,
         isKeyImage,
+        // Nobody has framed it yet; readers centre-crop until they do.
+        focalX: null,
+        focalY: null,
         sortOrder: existing.length,
         capturedAt: null,
         capturedBearing: null,
@@ -382,6 +385,32 @@ export function useSpots(circuitId: CircuitId) {
           await repositories.media.save({ ...m, isKeyImage: shouldBeKey, updatedAt: at });
         }
       }
+      await reload();
+    },
+    [reload],
+  );
+
+  /**
+   * Say which part of a picture the square crops should keep — F3.
+   *
+   * Stored on the media rather than on the spot, because it is a fact about
+   * this photograph and not about the place: two shots of the same corner
+   * are framed differently and want different points.
+   */
+  const setMediaFocal = useCallback(
+    async (id: MediaId, focal: { x: number; y: number }) => {
+      const existing = await repositories.media.get(id);
+      if (!existing) return;
+      // Clamped to the image. Nothing in the UI can currently pass anything
+      // else, but a stored 1.4 would push the crop off the edge for every
+      // future reader of the row.
+      const clamp = (v: number) => Math.max(0, Math.min(1, v));
+      await repositories.media.save({
+        ...existing,
+        focalX: clamp(focal.x),
+        focalY: clamp(focal.y),
+        updatedAt: nowUtc(),
+      });
       await reload();
     },
     [reload],
@@ -482,6 +511,7 @@ export function useSpots(circuitId: CircuitId) {
     restore,
     addPhoto,
     setKeyImage,
+    setMediaFocal,
     removePhoto,
     asGeoJson,
     reload,

@@ -334,6 +334,7 @@ function AppShell() {
     addWay,
     addPhoto,
     setKeyImage,
+    setMediaFocal,
     removePhoto,
     asGeoJson,
     cloneInto,
@@ -1241,6 +1242,9 @@ function AppShell() {
               <SpotOverview
                 spot={activeSpot}
                 members={activeWaypoint?.members ?? [activeSpot]}
+                onSetFocal={(mediaId, focal) =>
+                  void setMediaFocal(mediaId as never, focal)
+                }
                 /*
                   Stepping changes which spot is open, which is all a "way" is.
                   Wrapping at both ends because a carousel that stops dead at

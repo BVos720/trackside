@@ -19,6 +19,7 @@ import {
 
 import { AccessClassification, type Spot } from '../../core/domain/spot';
 import type { Media } from '../../core/domain/media';
+import FocalImage from '../FocalImage';
 import { radius, space, type, useTheme, weight, type Theme } from '../theme';
 
 const ACCESS_LABEL: Record<AccessClassification, string> = {
@@ -38,6 +39,7 @@ export default function SpotOverview({
   onDelete,
   onClose,
   onSetKey,
+  onSetFocal,
   onStepWay,
   onAddWay,
   onRate,
@@ -59,6 +61,13 @@ export default function SpotOverview({
   onDelete: () => void;
   onClose: () => void;
   onSetKey: (mediaId: string) => void;
+  /**
+   * Set which part of the key picture the square crops keep — F3.
+   *
+   * Optional, so a caller that has not wired it simply gets no reframe
+   * control rather than a dead one.
+   */
+  onSetFocal?: (mediaId: string, focal: { x: number; y: number }) => void;
   /** Step to the previous (-1) or next (+1) way, wrapping at both ends. */
   onStepWay: (delta: number) => void;
   /** Record another way of shooting this same place. */
@@ -196,6 +205,33 @@ export default function SpotOverview({
           </View>
         ) : null}
 
+        {/*
+          What the square crops will show, and how to change it.
+
+          The hero above is letterboxed and shows the whole frame, so it
+          cannot answer this — the question 'what will the thumbnail be'
+          needs a thumbnail. Tapping puts what you touched in the middle,
+          which is the whole interaction: no handles, no zoom, no modal.
+        */}
+        {key !== null && keyUri !== undefined && onSetFocal && (
+          <View style={styles.reframeRow}>
+            <FocalImage
+              uri={keyUri}
+              focal={
+                key.focalX == null || key.focalY == null
+                  ? null
+                  : { x: key.focalX, y: key.focalY }
+              }
+              onChangeFocal={(f) => onSetFocal(key.id, f)}
+              style={styles.reframe}
+            />
+            <Text style={styles.reframeHint}>
+              This is how it appears in lists and on the map. Tap the picture
+              to centre it on what matters.
+            </Text>
+          </View>
+        )}
+
         <Text style={styles.name}>{spot.name}</Text>
         <Text style={styles.coords}>
           {spot.position.latitude.toFixed(5)},{' '}
@@ -306,10 +342,14 @@ export default function SpotOverview({
                     style={styles.thumb}
                   >
                     {uri ? (
-                      <Image
-                        source={{ uri }}
+                      <FocalImage
+                        uri={uri}
+                        focal={
+                          m.focalX === null || m.focalY === null
+                            ? null
+                            : { x: m.focalX, y: m.focalY }
+                        }
                         style={styles.thumbImage}
-                        resizeMode="contain"
                       />
                     ) : (
                       <View style={[styles.thumbImage, styles.thumbMissing]}>
@@ -432,7 +472,21 @@ function makeStyles(color: Theme['color']) {
       marginTop: space.xs,
     },
 
-    wayBar: {
+    reframeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.md,
+    marginTop: space.sm,
+  },
+  reframe: {
+    width: 64,
+    height: 64,
+    borderRadius: radius.sm,
+    backgroundColor: color.surfaceRaised,
+  },
+  reframeHint: { flex: 1, color: color.textMuted, fontSize: type.label },
+
+  wayBar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',

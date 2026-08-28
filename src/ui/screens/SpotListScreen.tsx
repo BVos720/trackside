@@ -19,6 +19,7 @@ import {
 
 import { AccessClassification, type Spot } from '../../core/domain/spot';
 import type { Media } from '../../core/domain/media';
+import FocalImage from '../FocalImage';
 import { arrangeWaypoints, type SpotSort } from '../../core/logic/spotFilter';
 import { groupSpots, waypointRating } from '../../core/logic/spotGroups';
 import type { SpotId } from '../../core/domain/ids';
@@ -231,7 +232,25 @@ export default function SpotListScreen({
               ]}
             >
               {uri ? (
-                <Image source={{ uri }} style={styles.thumb} resizeMode="contain" />
+                /*
+                  Cropped around the chosen point rather than letterboxed.
+
+                  'contain' fitted the whole frame into a square, which for a
+                  landscape photograph means two bars of background and a
+                  picture too small to recognise a corner from. Filling the
+                  square is the right call for a list you are scanning — and
+                  filling it around the part that identifies the place is what
+                  makes that safe to do. See core/logic/focalCrop.ts.
+                */
+                <FocalImage
+                  uri={uri}
+                  focal={
+                    key?.focalX == null || key?.focalY == null
+                      ? null
+                      : { x: key.focalX, y: key.focalY }
+                  }
+                  style={styles.thumb}
+                />
               ) : (
                 <View style={[styles.thumb, styles.thumbEmpty]}>
                   <Text style={styles.thumbEmptyText}>no key</Text>

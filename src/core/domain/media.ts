@@ -97,6 +97,21 @@ export interface Media extends EntityBase {
   readonly isKeyImage: boolean;
   /** Ordering within a spot's reference set. */
   readonly sortOrder: number;
+  /**
+   * Where the interesting part of this picture is — TASKS.md F3.
+   *
+   * Fractions of the image's own width and height, 0-1. Null means
+   * nobody has said, and every square rendering then centre-crops, which
+   * is exactly what it did before this field existed.
+   *
+   * Worth storing because every thumbnail here is square and no
+   * photograph is. A reference shot is framed around a corner, a fence
+   * gap or a marshal post, and that is rarely in the middle of the frame
+   * — so a centre crop routinely cuts out the very thing that identifies
+   * the place. See `core/logic/focalCrop.ts`.
+   */
+  readonly focalX: number | null;
+  readonly focalY: number | null;
   readonly capturedAt: Utc | null;
   /** Compass bearing at capture, degrees true. Feeds `Spot.shootingBearing`. */
   readonly capturedBearing: number | null;
