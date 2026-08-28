@@ -273,6 +273,28 @@ export default function MapScreen({
   useEffect(() => {
     void (async () => setRainEnabled(await getMapRainEnabled()))();
   }, []);
+
+  /**
+   * When the terrain map is allowed to start building itself.
+   *
+   * It is still built before it is asked for — that is the whole point, and
+   * pressing 3D should not be a wait. But building it *at the same instant*
+   * as this screen mounts means a second MapLibre instance, a second WebGL
+   * context and a multi-megabyte archive all being allocated while the flat
+   * map is doing exactly the same thing. That spike lands precisely when you
+   * arrive here from somewhere else — which is the moment "navigate" and
+   * "start event" both reported as a crash.
+   *
+   * So the flat map gets the device to itself until it has settled, and the
+   * terrain map starts a couple of seconds later. Pressing 3D inside that
+   * window mounts it immediately rather than making you wait out the timer:
+   * the delay is there to stagger the work, not to withhold it.
+   */
+  const [warm, setWarm] = useState(false);
+  useEffect(() => {
+    const id = setTimeout(() => setWarm(true), 2500);
+    return () => clearTimeout(id);
+  }, []);
   /**
    * Local glyph template, once the ranges are on disk.
    *
@@ -915,6 +937,7 @@ export default function MapScreen({
         invisible full-screen layer would swallow every tap meant for the
         flat map underneath.
       */}
+      {(warm || terrain3d) && (
       <View
         style={[styles.terrainLayer, !terrain3d && styles.terrainWarming]}
         pointerEvents={terrain3d ? "auto" : "none"}
@@ -956,6 +979,7 @@ export default function MapScreen({
             }}
           />
       </View>
+      )}
       {stack !== null && (
         <View style={[styles.stackPanel, { top: insets.top + MENU_CLEARANCE + controlsTop }]}>
           <View style={styles.stackHead}>

@@ -617,3 +617,27 @@ D1 is consequently not the cheap item it was billed as. Three real options:
 
 - [ ] Try the billboard scatter first. It is the only one of the three that is
       both cheap and volumetric-looking.
+
+### D8. The archive edge is a hard line (reported as "Suzuka 3D is glitchy")
+
+Reproduced 29 August at Suzuka, pitch 70: a straight horizontal seam runs
+across the view. Below it is the vector archive — roads, fields, the river.
+Above it is bare terrain with no detail at all.
+
+Same root cause as D7. The seam is the extract's own rectangular boundary, and
+it was invisible for as long as the corridor mask painted over everything
+outside the corridor. It is not a Suzuka bug: it shows there first because that
+extract is small (0.045° x 0.037°, against the Nordschleife's 0.16° x 0.11°),
+so the edge falls inside the visible frame instead of miles away.
+
+Two things make it read as a fault rather than as distance:
+
+- The boundary is **straight**, and nothing in real terrain is. A rectangular
+  edge is unmistakably an artifact.
+- The colours either side are far apart — inside is grey-green urban and field
+  fills, outside is forest green — so the line has high contrast at Suzuka in
+  a way it does not at the Ring.
+
+- [ ] Decide together with D7; they are one question, not two. Any fix that
+      softens the tree line (fade with distance, or widen the data) applies
+      here unchanged.
