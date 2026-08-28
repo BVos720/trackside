@@ -162,6 +162,30 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
       nothing.
     */
     var emptySpots = { type: "FeatureCollection", features: [] };
+
+    /*
+      Where you are, and where you are going.
+
+      Same shape as the spots channel and for the same reason: both change
+      constantly — a position fix every second or so, a route on every fix —
+      and neither should rebuild the style. Held on window so a value that
+      arrives before the map exists is picked up when the layers are made.
+    */
+    window.__here = emptySpots;
+    window.__route = emptySpots;
+    window.__setNav = function (json) {
+      try {
+        var nav = JSON.parse(json);
+        window.__here = nav.here || emptySpots;
+        window.__route = nav.route || emptySpots;
+        if (window.__map) {
+          var h = window.__map.getSource("nav-here");
+          var r = window.__map.getSource("nav-route");
+          if (h) h.setData(window.__here);
+          if (r) r.setData(window.__route);
+        }
+      } catch (e) { fail("nav-parse", e); }
+    };
     window.__spots = emptySpots;
     window.__setSpots = function (json) {
       try {
@@ -300,6 +324,79 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
               }
             });
             post({ stage: "spots-layer-added" });
+
+            /*
+              The route, under the spots and over the ground.
+
+              Network legs solid, direct legs dashed — the same distinction
+              the native map draws, and it is not decoration: a dashed leg
+              means "no path here, this is a bearing", and drawing it like a
+              footpath would claim knowledge the data does not have.
+            */
+            map.addSource("nav-route", { type: "geojson", data: window.__route });
+            map.addLayer({
+              id: "nav-route-network",
+              type: "line",
+              source: "nav-route",
+              filter: ["==", ["get", "kind"], "network"],
+              layout: { "line-cap": "round", "line-join": "round" },
+              paint: { "line-color": "#2E7DF6", "line-width": 5, "line-opacity": 0.9 }
+            }, "spot-halo");
+            map.addLayer({
+              id: "nav-route-direct",
+              type: "line",
+              source: "nav-route",
+              filter: ["==", ["get", "kind"], "direct"],
+              layout: { "line-cap": "round" },
+              paint: {
+                "line-color": "#2E7DF6",
+                "line-width": 4,
+                "line-opacity": 0.8,
+                "line-dasharray": [1.5, 1.5]
+              }
+            }, "spot-halo");
+
+            /*
+              You, on top of everything.
+
+              The heading arrow is a rotated text glyph rather than a sprite.
+              The native map uses a bundled PNG for this; adding a sprite
+              sheet to the page would mean another asset to deliver for one
+              triangle, and text-rotate does the same job with what the
+              glyphs already provide.
+
+              Drawn only when a heading exists — an arrow pointing nowhere in
+              particular still looks like an assertion.
+            */
+            map.addSource("nav-here", { type: "geojson", data: window.__here });
+            map.addLayer({
+              id: "nav-here-cone",
+              type: "symbol",
+              source: "nav-here",
+              filter: ["has", "heading"],
+              layout: {
+                "text-field": "\u25B2",
+                "text-size": 22,
+                "text-rotate": ["get", "heading"],
+                "text-rotation-alignment": "map",
+                "text-allow-overlap": true,
+                "text-ignore-placement": true,
+                "text-offset": [0, -0.9]
+              },
+              paint: { "text-color": "#2E7DF6", "text-opacity": 0.55 }
+            });
+            map.addLayer({
+              id: "nav-here-dot",
+              type: "circle",
+              source: "nav-here",
+              paint: {
+                "circle-radius": 7,
+                "circle-color": "#F2F5F8",
+                "circle-stroke-color": "#2E7DF6",
+                "circle-stroke-width": 3
+              }
+            });
+            post({ stage: "nav-layers-added" });
           } catch (e) { fail("spots", e); }
 
           // Tapping a pin opens it on the native side, which owns the sheet.
@@ -348,12 +445,21 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
 export default function TerrainSpike({
   venue,
   spots,
+  here,
+  heading,
+  route,
   onOpenSpot,
   onClose,
 }: {
   venue: VenueKey;
   /** The same GeoJSON the native map draws. */
   spots?: unknown;
+  /** Where you are, or null with no fix. */
+  here?: { latitude: number; longitude: number } | null;
+  /** Compass bearing in degrees from north, or null when unknown. */
+  heading?: number | null;
+  /** The walking route, as the native map draws it. */
+  route?: unknown;
   /** Tapping a pin opens it — the sheet stays on the native side. */
   onOpenSpot?: (id: string) => void;
   /**
@@ -478,6 +584,49 @@ export default function TerrainSpike({
       .replace(/\u2029/g, '\\u2029');
     webRef.current?.injectJavaScript(`window.__setSpots && window.__setSpots("${json}"); true;`);
   }, [spots]);
+
+  /**
+   * Push position and route into the page.
+   *
+   * Both change constantly — a fix every second or so, and the route is
+   * recomputed on each one — so they go over the same live channel the
+   * spots use rather than through the style. Tiny payloads: a point and a
+   * line, against the megabyte the style needed.
+   *
+   * `heading` rides on the point as a property so the arrow can rotate
+   * without a second source, and is simply absent when unknown — the layer
+   * filters on `has`, so no heading means no arrow rather than an arrow
+   * pointing north by default.
+   */
+  useEffect(() => {
+    const point =
+      here == null
+        ? { type: 'FeatureCollection', features: [] }
+        : {
+            type: 'FeatureCollection',
+            features: [
+              {
+                type: 'Feature',
+                properties: heading == null ? {} : { heading },
+                geometry: {
+                  type: 'Point',
+                  coordinates: [here.longitude, here.latitude],
+                },
+              },
+            ],
+          };
+
+    const json = JSON.stringify({
+      here: point,
+      route: route ?? { type: 'FeatureCollection', features: [] },
+    })
+      .replace(/\\/g, '\\\\')
+      .replace(/"/g, '\\"')
+      .replace(/\u2028/g, '\\u2028')
+      .replace(/\u2029/g, '\\u2029');
+
+    webRef.current?.injectJavaScript(`window.__setNav && window.__setNav("${json}"); true;`);
+  }, [here, heading, route]);
 
   const sendArchiveOverBridge = async () => {
     if (archiveUrl === null || archiveUrl === '') {

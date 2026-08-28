@@ -416,7 +416,14 @@ export default function MapScreen({
           cannot show different data. Everything below this block is
           untouched and keeps working over it.
         */
-        <TerrainSpike venue={venue} spots={shape} onOpenSpot={onSpotTap} />
+        <TerrainSpike
+          venue={venue}
+          spots={shape}
+          here={here}
+          heading={heading}
+          route={route}
+          onOpenSpot={onSpotTap}
+        />
       ) : (
       <Map
         style={styles.map}
