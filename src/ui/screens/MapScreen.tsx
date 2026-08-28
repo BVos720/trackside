@@ -46,6 +46,7 @@ import {
   ViewAnnotation,
 } from '@maplibre/maplibre-react-native';
 
+import { safeFeatureCollection } from '../../core/logic/geojsonSafety';
 import {
   MENU_CLEARANCE,
   MENU_TOP,
@@ -413,10 +414,45 @@ export default function MapScreen({
     [spots],
   );
 
+  /*
+    Sieved before it reaches MapLibre.
+
+    A coordinate that is NaN or missing is not a rendering glitch here — the
+    parser is C++, it throws, nothing on the JS side can catch it, and the
+    process takes SIGABRT with no stack to read. One unusable row is enough.
+    See core/logic/geojsonSafety.ts.
+  */
   const shape = useMemo(
-    () => spots ?? { type: 'FeatureCollection', features: [] },
+    () =>
+      safeFeatureCollection(
+        spots ?? { type: 'FeatureCollection', features: [] },
+        (reason, feature) =>
+          console.warn('[map] dropped a spot before drawing:', reason, feature),
+      ),
     [spots],
   );
+
+  /** The route, sieved for the same reason and with the same consequence. */
+  const safeRoute = useMemo(
+    () =>
+      route == null
+        ? null
+        : safeFeatureCollection(route, (reason, feature) =>
+            console.warn('[map] dropped a route leg:', reason, feature),
+          ),
+    [route],
+  );
+
+  /*
+    A fix is only drawable if it is actually a pair of numbers.
+
+    CoreLocation is not supposed to hand back a non-finite coordinate, and the
+    cost of it doing so once is the whole app rather than a missing dot.
+  */
+  const drawableHere =
+    here && Number.isFinite(here.longitude) && Number.isFinite(here.latitude)
+      ? here
+      : null;
 
   /**
    * Style is built once per venue and per tile URI.
@@ -739,8 +775,8 @@ export default function MapScreen({
           "no path here, this is a bearing", and drawing it like a footpath
           would claim knowledge the data does not have.
         */}
-        {route != null && (
-          <GeoJSONSource key="nav-route" id="nav-route" data={route as never}>
+        {safeRoute != null && (
+          <GeoJSONSource key="nav-route" id="nav-route" data={safeRoute as never}>
             <Layer
               id="nav-route-network"
               type="line"
@@ -779,7 +815,7 @@ export default function MapScreen({
           exists — an arrow pointing nowhere in particular is worse than no
           arrow, because it still looks like an assertion.
         */}
-        {here && (
+        {drawableHere && (
           <GeoJSONSource
             key="nav-here"
             id="nav-here"
@@ -792,7 +828,7 @@ export default function MapScreen({
                     properties: { heading: heading ?? 0 },
                     geometry: {
                       type: 'Point',
-                      coordinates: [here.longitude, here.latitude],
+                      coordinates: [drawableHere.longitude, drawableHere.latitude],
                     },
                   },
                 ],
