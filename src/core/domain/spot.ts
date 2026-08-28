@@ -9,7 +9,7 @@ import {
   type Utc,
 } from './common';
 import { type CircuitId,
-  type EventId, type MarshalPostId, type SpotId, type UserId, newId } from './ids';
+  type EventId, type MarshalPostId, type SpotGroupId, type SpotId, type UserId, newId } from './ids';
 
 /**
  * What a position is good for.
@@ -254,6 +254,43 @@ export interface Spot extends EntityBase {
    */
   readonly uses: readonly SpotUse[];
   readonly isHidden: boolean;
+  /**
+   * The waypoint this spot belongs to, or null when it stands alone.
+   *
+   * ── One place, several ways of shooting it ───────────────────────────────
+   * A corner is one position on the ground but rarely one photograph: long
+   * lens down the straight, wide from the same fence post, panning low
+   * through the apex. Those want different bearings, different glass and
+   * different notes, which is to say they want to be different spots — but
+   * they are emphatically not different *places*, and drawing three pins on
+   * one fence post says they are.
+   *
+   * So members keep every setting of their own and share a waypoint. The map
+   * draws the waypoint; the carousel steps between the ways of shooting it.
+   *
+   * An opaque shared token rather than a pointer to a primary row. If the
+   * group were identified by one member's id, deleting that member would
+   * either destroy the group or leave the rest pointing at nothing; with a
+   * token, membership is simply "same value" and any member can go.
+   *
+   * Null is the ordinary case and the safe default: a spot with no group is a
+   * waypoint of one, and nothing downstream needs to special-case it.
+   */
+  readonly groupId: SpotGroupId | null;
+  /**
+   * How good this way of shooting turned out to be — 1 to 5, or null.
+   *
+   * Null means "not rated", which is *not* the same as bad and must never
+   * sort or filter as zero. Most spots will never be rated; a filter for
+   * "3 stars and up" should exclude them, and a filter for "everything"
+   * should not.
+   *
+   * The photographer's own judgement, like `keyTimes` and unlike anything
+   * computed. It belongs on `UserSpotNote` once accounts exist, for the same
+   * reason `isHidden` does — one person's opinion of a shot must not become
+   * everyone's — and moves there with the Milestone 3 work.
+   */
+  readonly rating: number | null;
   readonly visibility: Visibility;
   readonly createdBy: UserId;
 }
@@ -290,6 +327,16 @@ export function newSpot(input: {
   return {
     id: newId<SpotId>(),
     circuitId: input.circuitId,
+    /*
+      A new spot stands alone and is unrated.
+
+      Not parameters. Joining a waypoint is an action taken against an
+      existing group, and a rating is a judgement formed after the fact —
+      neither is something the creating caller can honestly know, and
+      offering them here would invite a caller to invent both.
+    */
+    groupId: null,
+    rating: null,
     eventId: input.eventId ?? null,
     nearestMarshalPostId: input.nearestMarshalPostId ?? null,
     name: input.name,

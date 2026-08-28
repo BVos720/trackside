@@ -177,6 +177,10 @@ export function spotsFromLayout(
   return layout.spots.map((s) => ({
     id: mintId(),
     circuitId: layout.circuitId,
+    // A layout describes places, not ways of shooting them, and carries
+    // nobody's opinion of the results.
+    groupId: null,
+    rating: null,
     // A layout is not a weekend. Imported spots land on the home map, and are
     // taken into an event the same way any other spot is.
     eventId: null,

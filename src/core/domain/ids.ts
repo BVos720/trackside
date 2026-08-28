@@ -32,6 +32,14 @@ export type CircuitId = Branded<'CircuitId'>;
 export type MarshalPostId = Branded<'MarshalPostId'>;
 export type CircuitFeatureId = Branded<'CircuitFeatureId'>;
 export type SpotId = Branded<'SpotId'>;
+/**
+ * Ties several spots together as one waypoint — see `Spot.groupId`.
+ *
+ * Its own brand rather than a `SpotId`, because a group is not a spot. Using
+ * the primary's id would make the group die with it, and would invite code to
+ * fetch the group id as though it were a row.
+ */
+export type SpotGroupId = Branded<'SpotGroupId'>;
 export type UserSpotNoteId = Branded<'UserSpotNoteId'>;
 export type MediaId = Branded<'MediaId'>;
 export type WalkEdgeId = Branded<'WalkEdgeId'>;
@@ -51,6 +59,7 @@ export type EntityId =
   | MarshalPostId
   | CircuitFeatureId
   | SpotId
+  | SpotGroupId
   | UserSpotNoteId
   | MediaId
   | WalkEdgeId

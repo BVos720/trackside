@@ -169,6 +169,11 @@ function normaliseSpot(row: Spot): Spot {
     tags: row.tags ?? [],
     shotSettings: row.shotSettings ?? [],
     isHidden: row.isHidden ?? false,
+    // Both arrived after the first spots were saved. A row without them is a
+    // waypoint of one that nobody has rated — which is exactly what null
+    // means, so there is nothing cleverer to do here.
+    groupId: row.groupId ?? null,
+    rating: row.rating ?? null,
     // Rows written before events existed belong to the permanent collection.
     eventId: row.eventId ?? null,
     /*
