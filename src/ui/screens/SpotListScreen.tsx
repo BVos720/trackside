@@ -13,11 +13,14 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 
 import { AccessClassification, type Spot } from '../../core/domain/spot';
 import type { Media } from '../../core/domain/media';
+import { arrangeWaypoints, type SpotSort } from '../../core/logic/spotFilter';
+import { groupSpots, waypointRating } from '../../core/logic/spotGroups';
 import type { SpotId } from '../../core/domain/ids';
 import { radius, space, type, useTheme, weight, type Theme } from '../theme';
 
@@ -57,16 +60,44 @@ export default function SpotListScreen({
   const styles = useMemo(() => makeStyles(color), [color]);
 
   const [showHidden, setShowHidden] = useState(false);
+  const [query, setQuery] = useState('');
+  const [minRating, setMinRating] = useState<number | null>(null);
+  const [sort, setSort] = useState<SpotSort>('recent');
+
+  /*
+    The list is of places, not of ways of shooting them.
+
+    Grouping here rather than taking waypoints as a prop keeps this screen
+    working from the same `spots` array everything else uses — see
+    core/logic/spotGroups.ts.
+  */
+  const waypoints = useMemo(() => groupSpots(spots), [spots]);
 
   const { visible, hidden } = useMemo(
     () => ({
-      visible: spots.filter((s) => !s.isHidden),
-      hidden: spots.filter((s) => s.isHidden),
+      // Hidden only when every way is, matching the map.
+      visible: waypoints.filter((w) => !w.members.every((m) => m.isHidden)),
+      hidden: waypoints.filter((w) => w.members.every((m) => m.isHidden)),
     }),
-    [spots],
+    [waypoints],
   );
 
-  const rows = showHidden ? hidden : visible;
+  /*
+    The tab has already decided about hidden, so the filter is told to keep
+    whatever it is given. Asking it a second time would make the Hidden tab
+    permanently empty.
+  */
+  const rows = useMemo(
+    () =>
+      arrangeWaypoints(
+        showHidden ? hidden : visible,
+        { query, minRating, includeHidden: true },
+        sort,
+      ),
+    [showHidden, hidden, visible, query, minRating, sort],
+  );
+
+  const filtering = query.trim() !== '' || minRating !== null;
 
   return (
     <View style={styles.root}>
@@ -97,21 +128,97 @@ export default function SpotListScreen({
         </Pressable>
       </View>
 
+      <View style={styles.controls}>
+        <TextInput
+          value={query}
+          onChangeText={setQuery}
+          placeholder="Search names"
+          placeholderTextColor={color.textMuted}
+          style={styles.search}
+          autoCorrect={false}
+          autoCapitalize="none"
+          clearButtonMode="while-editing"
+        />
+
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.chips}
+        >
+          {(
+            [
+              ['recent', 'Newest'],
+              ['oldest', 'Oldest'],
+              ['name', 'Name'],
+              ['rating', 'Rating'],
+            ] as const
+          ).map(([value, label]) => (
+            <Pressable
+              key={value}
+              onPress={() => setSort(value)}
+              style={({ pressed }) => [
+                styles.chip,
+                sort === value && styles.chipOn,
+                pressed && styles.pressed,
+              ]}
+            >
+              <Text style={[styles.chipText, sort === value && styles.chipTextOn]}>
+                {label}
+              </Text>
+            </Pressable>
+          ))}
+
+          <View style={styles.chipDivider} />
+
+          {/*
+            Rating is a floor, not an exact match: "at least three" is the
+            question people actually ask of their own spots. Tapping the
+            active one clears it, so the filter is always escapable without
+            hunting for a reset.
+          */}
+          {[3, 4, 5].map((n) => (
+            <Pressable
+              key={n}
+              onPress={() => setMinRating(minRating === n ? null : n)}
+              style={({ pressed }) => [
+                styles.chip,
+                minRating === n && styles.chipOn,
+                pressed && styles.pressed,
+              ]}
+            >
+              <Text style={[styles.chipText, minRating === n && styles.chipTextOn]}>
+                {n}★+
+              </Text>
+            </Pressable>
+          ))}
+        </ScrollView>
+      </View>
+
       <ScrollView contentContainerStyle={styles.list}>
         {rows.length === 0 && (
           <Text style={styles.empty}>
-            {showHidden
-              ? 'Nothing hidden. Hiding a spot keeps it — it just stops cluttering the map.'
-              : 'No spots yet. Tap “+ Spot” on the map to add one.'}
+            {/*
+              Three different nothings. "No spots yet" is wrong when the
+              collection is full and the search simply found none, and it
+              sends people looking for a bug instead of clearing the filter.
+            */}
+            {filtering
+              ? 'Nothing matches. Clear the search or the rating filter.'
+              : showHidden
+                ? 'Nothing hidden. Hiding a spot keeps it — it just stops cluttering the map.'
+                : 'No spots yet. Tap “+ Spot” on the map to add one.'}
           </Text>
         )}
 
-        {rows.map((s) => {
+        {rows.map((w) => {
+          const s = w.primary;
           const rows_ = media[s.id] ?? [];
           const key = rows_.find((m) => m.isKeyImage);
           const uri = key?.storageKey ? mediaUris[key.storageKey] : undefined;
           const undocumented =
             s.accessClassification === AccessClassification.Unknown;
+          const rating = waypointRating(w);
+          const ways = w.members.length;
 
           return (
             <Pressable
@@ -144,6 +251,8 @@ export default function SpotListScreen({
                 >
                   {ACCESS_LABEL[s.accessClassification]}
                   {rows_.length > 0 ? ` · ${rows_.length} photo${rows_.length === 1 ? '' : 's'}` : ''}
+                  {ways > 1 ? ` · ${ways} ways` : ''}
+                  {rating !== null ? ` · ${'★'.repeat(rating)}` : ''}
                 </Text>
                 {(s.keyTimes.length > 0 || s.tags.length > 0) && (
                   <Text style={styles.rowTags} numberOfLines={1}>
@@ -238,7 +347,41 @@ function makeStyles(color: Theme['color']) {
     },
     tabLabelActive: { color: color.text },
 
-    list: { padding: space.sm, paddingBottom: space.xl },
+    controls: {
+    paddingHorizontal: space.md,
+    paddingBottom: space.sm,
+    gap: space.sm,
+  },
+  search: {
+    backgroundColor: color.surfaceRaised,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: color.border,
+    paddingHorizontal: space.md,
+    paddingVertical: space.sm,
+    color: color.text,
+    fontSize: type.body,
+  },
+  chips: { flexDirection: 'row', alignItems: 'center', gap: space.xs },
+  chip: {
+    paddingHorizontal: space.md,
+    paddingVertical: 6,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: color.border,
+    backgroundColor: color.surfaceRaised,
+  },
+  chipOn: { backgroundColor: color.accent, borderColor: color.accent },
+  chipText: { color: color.textMuted, fontSize: type.label },
+  chipTextOn: { color: color.onAccent, fontWeight: weight.bold },
+  chipDivider: {
+    width: 1,
+    height: 20,
+    backgroundColor: color.border,
+    marginHorizontal: space.xs,
+  },
+
+  list: { padding: space.sm, paddingBottom: space.xl },
     empty: {
       color: color.textFaint,
       fontSize: type.body,
