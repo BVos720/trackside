@@ -743,7 +743,11 @@ export default function MapScreen({
                   style={[styles.callout, dimmed && styles.calloutDimmed]}
                 >
                   {uri ? (
-                    <Image source={{ uri }} style={styles.calloutImage} />
+                    <Image
+                      source={{ uri }}
+                      style={styles.calloutImage}
+                      resizeMode="contain"
+                    />
                   ) : (
                     <View style={[styles.calloutImage, styles.calloutEmpty]}>
                       <Text style={styles.calloutEmptyText}>no photo</Text>

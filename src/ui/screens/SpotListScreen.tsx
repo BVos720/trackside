@@ -124,7 +124,7 @@ export default function SpotListScreen({
               ]}
             >
               {uri ? (
-                <Image source={{ uri }} style={styles.thumb} />
+                <Image source={{ uri }} style={styles.thumb} resizeMode="contain" />
               ) : (
                 <View style={[styles.thumb, styles.thumbEmpty]}>
                   <Text style={styles.thumbEmptyText}>no key</Text>

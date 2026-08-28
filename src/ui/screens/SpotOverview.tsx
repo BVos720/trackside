@@ -61,7 +61,7 @@ export default function SpotOverview({
       <ScrollView style={styles.body} contentContainerStyle={styles.bodyContent}>
         {/* Key picture leads — full-bleed, no border or shadow (§5.13). */}
         {keyUri ? (
-          <Image source={{ uri: keyUri }} style={styles.hero} />
+          <Image source={{ uri: keyUri }} style={styles.hero} resizeMode="contain" />
         ) : (
           <View style={[styles.hero, styles.heroEmpty]}>
             <Text style={styles.heroEmptyText}>No key picture yet</Text>
@@ -140,7 +140,11 @@ export default function SpotOverview({
                     style={styles.thumb}
                   >
                     {uri ? (
-                      <Image source={{ uri }} style={styles.thumbImage} />
+                      <Image
+                        source={{ uri }}
+                        style={styles.thumbImage}
+                        resizeMode="contain"
+                      />
                     ) : (
                       <View style={[styles.thumbImage, styles.thumbMissing]}>
                         <Text style={styles.thumbMissingText}>no preview</Text>
@@ -232,7 +236,20 @@ function makeStyles(color: Theme['color']) {
     bodyContent: { padding: space.md, paddingBottom: space.lg },
     pressed: { opacity: 0.7 },
 
-    hero: { width: '100%', height: 168, borderRadius: radius.md },
+    /*
+     * A ground for the letterboxing.
+     *
+     * The image is drawn with resizeMode contain now, so a photo whose shape
+     * does not match this frame leaves bars. Without a background those are
+     * whatever is behind the sheet, which reads as the image having failed to
+     * load rather than as deliberate margin.
+     */
+    hero: {
+      width: '100%',
+      height: 168,
+      borderRadius: radius.md,
+      backgroundColor: color.surfaceRaised,
+    },
     heroEmpty: {
       backgroundColor: color.surfaceRaised,
       alignItems: 'center',

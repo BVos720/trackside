@@ -881,6 +881,24 @@ export default function SpotSheet({
             >
               {keyUri ?? pendingKey?.previewUri ? (
                 <Image
+                  /*
+                    contain, not the default.
+
+                    React Native Images default to cover, which fills the
+                    frame by centre-cropping whatever does not fit. A
+                    photo cropped in the picker was then cropped again on
+                    the way to the screen, around the middle rather than
+                    around whatever was framed — reported as the picture
+                    being "not centered where i want".
+
+                    A reference photo exists to show one specific thing:
+                    the gap in the fence, the post number, which side of
+                    the path. Deciding for the photographer which part of
+                    that survives is the one thing this must not do. Bars
+                    down the sides are a far smaller cost than losing the
+                    subject.
+                  */
+                  resizeMode="contain"
                   source={{ uri: (keyUri ?? pendingKey?.previewUri) as string }}
                   style={styles.keyImage}
                 />
@@ -933,7 +951,11 @@ export default function SpotSheet({
                     style={styles.thumb}
                   >
                     {uri ? (
-                      <Image source={{ uri }} style={styles.thumbImage} />
+                      <Image
+                        source={{ uri }}
+                        style={styles.thumbImage}
+                        resizeMode="contain"
+                      />
                     ) : (
                       <View style={[styles.thumbImage, styles.thumbMissing]}>
                         <Text style={styles.thumbMissingText}>no preview</Text>
@@ -961,6 +983,7 @@ export default function SpotSheet({
                     <View key={`${p.kind ?? 'photo'}-${i}`} style={styles.thumb}>
                       {p.previewUri ? (
                         <Image
+                          resizeMode="contain"
                           source={{ uri: p.previewUri }}
                           style={styles.thumbImage}
                         />
