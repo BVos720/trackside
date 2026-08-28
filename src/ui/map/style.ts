@@ -896,7 +896,30 @@ export function buildMapStyle(
     type: 'symbol',
     source: BASEMAP_SOURCE,
     'source-layer': 'places',
-    filter: ['==', ['get', 'kind_detail'], 'locality'],
+    /*
+     * Localities, and only those near the circuit.
+     *
+     * The tag test alone was enough at the Nordschleife, where the localities
+     * in the extract *are* the corner names. Elsewhere it is not: Spa's woods
+     * and hamlets — Bois de Hourt, Le Fagnou — carry the same
+     * `place=locality` tag, so names were appearing all over the surrounding
+     * countryside with nothing to do with the track.
+     *
+     * They used to be hidden by accident rather than by intent: the corridor
+     * mask is drawn over this layer, so anything outside it was painted out.
+     * Turning the mask off in 3D removed that cover and left the names on show.
+     * Filtering by position says what was previously only implied.
+     *
+     * Falls back to the tag test alone if the corridor cannot be read, since a
+     * few stray names are a much smaller failure than no names at all.
+     */
+    filter: ((): unknown => {
+      const corridor = corridorPolygonFor(venue);
+      const isLocality = ['==', ['get', 'kind_detail'], 'locality'];
+      return corridor === null
+        ? isLocality
+        : ['all', isLocality, ['within', corridor]];
+    })(),
     layout: {
       'text-field': ['get', 'name'],
       'text-font': ['NotoSansMedium'],
@@ -1212,6 +1235,31 @@ export function pathLinesFor(
     out.push(feat.geometry.coordinates as [number, number][]);
   }
   return out;
+}
+
+/**
+ * The circuit corridor as a polygon, for filtering by position.
+ *
+ * The mask already holds this shape, inverted: its outer ring is the world and
+ * its hole is the corridor. Reading the hole back out avoids shipping the same
+ * geometry twice and keeps the two definitions of "near the circuit" from ever
+ * drifting apart.
+ *
+ * Null when the mask is not the expected single-hole polygon, so a caller can
+ * fall back to no filtering rather than to an empty map.
+ */
+export function corridorPolygonFor(
+  venue: VenueKey,
+): { type: 'Polygon'; coordinates: number[][][] } | null {
+  const mask = MASK_GEOJSON[venue] as {
+    geometry?: { type?: string; coordinates?: number[][][] };
+  };
+  const rings = mask?.geometry?.coordinates;
+  if (mask?.geometry?.type !== 'Polygon' || !rings || rings.length < 2) {
+    return null;
+  }
+  // Ring 0 is the world box; everything after it is corridor.
+  return { type: 'Polygon', coordinates: rings.slice(1) };
 }
 
 export function trackLinesFor(
