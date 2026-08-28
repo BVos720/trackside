@@ -93,7 +93,9 @@ import {
   weight,
   type Theme,
 } from '../theme';
+import type { HourlyForecastPoint } from '../../core/logic/forecast';
 import { rgbString, sampleDayRamp } from '../../core/logic/lightRamp';
+import { weatherMarksForDay } from '../../core/logic/weatherMarks';
 import type { MapClock } from '../state/useMapClock';
 
 /** Full interactive height, while a thumb is down. Matches the old always-on height. */
@@ -181,6 +183,7 @@ export default function SkyControl({
   /** Distance from the bottom of the screen, already clear of the safe area. */
   bottom,
   timeZone,
+  forecast = [],
 }: {
   clock: MapClock;
   position: LatLon;
@@ -188,6 +191,15 @@ export default function SkyControl({
   bottom?: number;
   /** The circuit's IANA zone — see `formatClock`. */
   timeZone: string;
+  /**
+   * The venue's hourly forecast, for the weather marks.
+   *
+   * Optional and defaulting to empty, because there is often no forecast at
+   * all — no signal, or a circuit nobody has an event at — and the strip has
+   * to be complete without it. No marks then, rather than a row of question
+   * marks.
+   */
+  forecast?: readonly HourlyForecastPoint[];
 }) {
   const { color } = useTheme();
   const styles = useMemo(() => makeStyles(color), [color]);
@@ -325,6 +337,25 @@ export default function SkyControl({
     [dayKey, position.latitude, position.longitude],
   );
 
+  /*
+    What the sky will be doing, hour by hour.
+
+    Light and weather are not separable in practice: golden hour under a
+    closed sky is not golden hour, and a shot that needs the sun behind you
+    needs to know whether there will be one.
+
+    Only cloudy and wet hours get a mark. An absent mark is the honest
+    rendering of both "clear" and "we have no forecast for that hour" — a
+    clear-sky symbol for an hour the provider never sent would be a claim.
+  */
+  const weatherMarks = useMemo(() => {
+    const d = clock.now;
+    const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
+      d.getDate(),
+    ).padStart(2, '0')}`;
+    return weatherMarksForDay(forecast, iso);
+  }, [forecast, dayKey]);
+
   const samples = useMemo(
     () => sampleDayLight(clock.now, position),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- deliberately
@@ -410,6 +441,30 @@ export default function SkyControl({
             style={[styles.hourCell, { backgroundColor: rgbString(step.color) }]}
           />
         ))}
+        {/*
+          Weather over the light, under the knob.
+
+          Positioned by hour across the same axis as the gradient, so a mark
+          sits above the light it qualifies. pointerEvents none for the same
+          reason the gradient cells have it: the strip's own pan handler must
+          stay the only hit-test target, or a drag starting on a mark reports
+          coordinates relative to the mark instead of the strip.
+        */}
+        {stripWidth > 0 &&
+          expanded &&
+          weatherMarks.map((m) => (
+            <Text
+              key={m.hour}
+              pointerEvents="none"
+              style={[
+                styles.weatherMark,
+                { left: ((m.hour + 0.5) / 24) * stripWidth - 6 },
+              ]}
+            >
+              {m.kind === 'rain' ? '☂' : '☁'}
+            </Text>
+          ))}
+
         {stripWidth > 0 && (
           <View
             style={[
@@ -542,7 +597,23 @@ function makeStyles(color: Theme['color']) {
       borderWidth: 1,
       borderColor: color.border,
     },
-    hourCell: { flex: 1, height: '100%' },
+    /*
+   * Small, and only while the strip is open.
+   *
+   * The collapsed strip is a hint of the day's shape rather than a control,
+   * and symbols on it would be unreadable at that height as well as noisy.
+   */
+  weatherMark: {
+    position: 'absolute',
+    top: -2,
+    width: 12,
+    textAlign: 'center',
+    fontSize: 10,
+    color: color.text,
+    opacity: 0.85,
+  },
+
+  hourCell: { flex: 1, height: '100%' },
     knob: {
       position: 'absolute',
       top: -3,

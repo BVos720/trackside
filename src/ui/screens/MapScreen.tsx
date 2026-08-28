@@ -1229,6 +1229,9 @@ export default function MapScreen({
         position={position}
         // The circuit's clock, not the phone's. See formatClock in SkyControl.
         timeZone={view.timezone}
+        // The day's forecast, so the strip can say what the sky will be doing
+        // as well as what the light will be.
+        forecast={conditions.series}
         bottom={insets.bottom + BOTTOM_BAR_CLEARANCE}
       />
 

@@ -29,6 +29,14 @@ export interface VenueConditions {
   readonly cover: number;
   /** Millimetres in the hour. */
   readonly rain: number;
+  /**
+   * Every hour the provider sent, for callers that show a span rather than a
+   * moment — the time strip marks a whole day at once.
+   *
+   * Exposed rather than re-fetched because it is the same request: this hook
+   * already holds the series and only narrows it to one hour for the sky.
+   */
+  readonly series: readonly HourlyForecastPoint[];
 }
 
 export function useVenueConditions(
@@ -66,6 +74,7 @@ export function useVenueConditions(
       // inventing cloud would be worse.
       cover: point?.cloudCoverPercent ?? 0,
       rain: point?.precipitationMm ?? 0,
+      series: points,
     };
   }, [points, at, timezone]);
 }
