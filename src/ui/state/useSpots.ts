@@ -25,6 +25,7 @@ import {
   type UserId,
   newId,
 } from '../../core/domain/ids';
+import { groupSpots, waypointRating } from '../../core/logic/spotGroups';
 import {
   cloneSpotsForEvent,
   spotsForContext,
@@ -395,28 +396,55 @@ export function useSpots(circuitId: CircuitId) {
   );
 
   /** GeoJSON for the map's `spots` source. */
+  /**
+   * One pin per place, not per way of shooting it.
+   *
+   * Members of a waypoint sit on the same fence post by definition, so drawing
+   * a feature each would stack several pins on one point — which is both
+   * unreadable and a lie about how many places there are to stand. The map
+   * gets the waypoint; the carousel behind it holds the ways.
+   *
+   * The primary carries the pin, so tapping opens the oldest way and the
+   * arrows reach the rest. Its own key image is preferred, falling back to any
+   * member's: a waypoint whose first way was never photographed should still
+   * show the picture that exists rather than an empty card.
+   */
   const asGeoJson = useMemo(
     () => ({
       type: 'FeatureCollection' as const,
-      features: spots.map((s) => ({
-        type: 'Feature' as const,
-        id: s.id,
-        properties: {
+      features: groupSpots(spots).map((w) => {
+        const s = w.primary;
+        const keyOf = (id: SpotId) =>
+          (media[id] ?? []).find((m) => m.isKeyImage)?.storageKey ?? '';
+        const key =
+          keyOf(s.id) ||
+          (w.members.map((m) => keyOf(m.id)).find((k) => k !== '') ?? '');
+
+        return {
+          type: 'Feature' as const,
           id: s.id,
-          name: s.name,
-          access: s.accessClassification,
-          hidden: s.isHidden ? 1 : 0,
-          notes: s.accessNotes ?? '',
-          keyTimes: (s.keyTimes ?? []).join(' · '),
-          tags: (s.tags ?? []).join(' · '),
-          keyImageKey:
-            (media[s.id] ?? []).find((m) => m.isKeyImage)?.storageKey ?? '',
-        },
-        geometry: {
-          type: 'Point' as const,
-          coordinates: [s.position.longitude, s.position.latitude],
-        },
-      })),
+          properties: {
+            id: s.id,
+            name: s.name,
+            access: s.accessClassification,
+            // Hidden only when every way is: hiding one way of shooting a
+            // corner is not a decision to stop showing the corner.
+            hidden: w.members.every((m) => m.isHidden) ? 1 : 0,
+            notes: s.accessNotes ?? '',
+            keyTimes: (s.keyTimes ?? []).join(' · '),
+            tags: (s.tags ?? []).join(' · '),
+            keyImageKey: key,
+            /** How many ways of shooting this place — 1 for an ungrouped spot. */
+            ways: w.members.length,
+            /** Best rating across the ways, or 0 when none is rated. */
+            rating: waypointRating(w) ?? 0,
+          },
+          geometry: {
+            type: 'Point' as const,
+            coordinates: [s.position.longitude, s.position.latitude],
+          },
+        };
+      }),
     }),
     [spots, media],
   );
