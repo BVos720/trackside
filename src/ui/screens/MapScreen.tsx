@@ -438,6 +438,17 @@ export default function MapScreen({
           heading={heading}
           route={route}
           onOpenSpot={onSpotTap}
+          /*
+            Placing works in 3D too.
+
+            Gated on `placing` here rather than in the page, so the rule about
+            when a tap means "put a spot there" lives in one place and cannot
+            drift between the two maps.
+          */
+          onMapTap={(latitude, longitude) => {
+            if (!placing) return;
+            onMapTap?.({ longitude, latitude });
+          }}
         />
       ) : (
       <Map

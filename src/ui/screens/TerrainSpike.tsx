@@ -565,6 +565,21 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
             if (id) post({ tapSpot: String(id) });
           });
 
+          /*
+            A tap on open ground, for placing a spot.
+
+            Checked against the pin and cluster layers first so this only
+            fires on genuinely empty map — otherwise every attempt to open a
+            waypoint would also try to create one underneath it.
+          */
+          map.on("click", function (e) {
+            var hits = map.queryRenderedFeatures(e.point, {
+              layers: ["spot-pin", "spot-cluster"]
+            });
+            if (hits && hits.length > 0) return;
+            post({ tapMap: { lon: e.lngLat.lng, lat: e.lngLat.lat } });
+          });
+
           map.on("mouseenter", "spot-pin", function () { map.getCanvas().style.cursor = "pointer"; });
           map.on("mouseleave", "spot-pin", function () { map.getCanvas().style.cursor = ""; });
         });
@@ -608,6 +623,7 @@ export default function TerrainSpike({
   heading,
   route,
   onOpenSpot,
+  onMapTap,
   onClose,
 }: {
   venue: VenueKey;
@@ -621,6 +637,8 @@ export default function TerrainSpike({
   route?: unknown;
   /** Tapping a pin opens it — the sheet stays on the native side. */
   onOpenSpot?: (id: string) => void;
+  /** Tapping open ground, for placing a spot. Latitude first, as elsewhere. */
+  onMapTap?: (latitude: number, longitude: number) => void;
   /**
    * Shown as a Back button when present.
    *
@@ -765,6 +783,22 @@ export default function TerrainSpike({
    * on 'window' whether or not the map exists yet, so this is safe to call
    * before it has loaded.
    */
+  /**
+   * Everything the page needs, sent again once it exists.
+   *
+   * ── Why once was not enough ───────────────────────────────────────────
+   * These effects run on mount, which is before the WebView has loaded its
+   * document — so `window.__setSpots` was undefined and the `&&` guard threw
+   * the payload away without a word. If the spots then never changed, and on a
+   * saved map they do not, they were never sent at all. Hence a map with
+   * "Spots · 2" in the bar and nothing on it.
+   *
+   * Bumping this when the page reports its layers exist re-runs every sender
+   * below. Cheap — a point, a line and a few waypoints — and it removes the
+   * ordering assumption entirely rather than papering over it.
+   */
+  const [pageEpoch, setPageEpoch] = useState(0);
+
   useEffect(() => {
     if (spots === undefined) return;
     const json = JSON.stringify(spots)
@@ -773,7 +807,7 @@ export default function TerrainSpike({
       .replace(/\u2028/g, '\\u2028')
       .replace(/\u2029/g, '\\u2029');
     webRef.current?.injectJavaScript(`window.__setSpots && window.__setSpots("${json}"); true;`);
-  }, [spots]);
+  }, [spots, pageEpoch]);
 
   /**
    * Push position and route into the page.
@@ -816,7 +850,7 @@ export default function TerrainSpike({
       .replace(/\u2029/g, '\\u2029');
 
     webRef.current?.injectJavaScript(`window.__setNav && window.__setNav("${json}"); true;`);
-  }, [here, heading, route]);
+  }, [here, heading, route, pageEpoch]);
 
   const sendArchiveOverBridge = async () => {
     if (archiveUrl === null || archiveUrl === '') {
@@ -908,6 +942,7 @@ export default function TerrainSpike({
               pitch?: number;
               tapSpot?: string;
               stack?: { id: string; name: string }[];
+              tapMap?: { lon: number; lat: number };
             };
             if (typeof m.fps === 'number') {
               setFps(m.fps);
@@ -931,6 +966,13 @@ export default function TerrainSpike({
             // The page could not read the file itself. Send it across.
             // A pin was tapped. The sheet belongs to the native side, so
             // this is handed straight back out rather than handled here.
+            // Open ground was tapped. The shell decides whether that means
+            // anything — it only does while placing.
+            if (m.tapMap) {
+              onMapTap?.(m.tapMap.lat, m.tapMap.lon);
+              return;
+            }
+
             // A stack was tapped: list what is in it.
             if (Array.isArray(m.stack)) {
               setStack(m.stack);
@@ -945,7 +987,21 @@ export default function TerrainSpike({
               return;
             }
 
-            if (m.stage === '3d-layers-shown') setReady(true);
+            if (m.stage === '3d-layers-shown') {
+              setReady(true);
+              // The page is listening now, so send what it missed.
+              setPageEpoch((n) => n + 1);
+            }
+
+            /*
+              The log goes as soon as there is a map to look at.
+
+              It waited for the layers, which arrive a moment later and
+              sometimes not at all if one of them fails — leaving a wall of
+              stage names over a perfectly good landscape. A visible map is
+              the honest signal that loading is over.
+            */
+            if (m.stage === 'map-loaded') setReady(true);
             if (m.stage === 'awaiting-archive') void sendArchiveOverBridge();
             if (m.stage === 'awaiting-style') sendStyle();
           } catch {
