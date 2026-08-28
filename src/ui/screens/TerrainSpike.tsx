@@ -755,8 +755,59 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
       }
 
       g.globalAlpha = 1;
+      // Under the cloud, because cloud covers the sun — that is the single
+      // most useful thing an overcast forecast can tell you.
+      drawSun(g);
       drawClouds(g, w, h, tSec);
       drawRain(g, w, h, tSec);
+    }
+
+    /*
+      The sun, which was missing entirely.
+
+      The sky drew stars and a moon at night and nothing at all by day, so the
+      one object the whole feature is about — where the sun is, and therefore
+      what is lit and what is backlit — could only be read off the dial. Now
+      you can look at it.
+
+      Drawn from about -6 degrees, so it is still there through the part of
+      twilight where its position is the thing you are planning around. Below
+      that it is genuinely gone and drawing it would be a fiction.
+
+      Colour tracks altitude the way the real thing does: deep orange on the
+      horizon, pale gold climbing, near-white overhead. Same interpolation the
+      ground and the sky gradient use, so the disc agrees with the light it is
+      supposedly casting.
+    */
+    function drawSun(g) {
+      var sun = window.__sun;
+      if (!sun) return;
+      var alt = sun.altitude;
+      if (alt < -6) return;
+
+      var p = project(sun.azimuth, alt);
+      if (!p) return;
+
+      // 0 on the horizon, 1 by the time it is well up.
+      var high = Math.max(0, Math.min(1, (alt + 6) / 26));
+      var core = mixHex([255, 138, 46], [255, 246, 214], high);
+      var r = 13;
+
+      // The glow is what makes it read as a light source rather than a
+      // sticker, and it is what you actually see first when turning the map.
+      var glow = g.createRadialGradient(p.x, p.y, 0, p.x, p.y, r * 7);
+      glow.addColorStop(0, core.replace("rgb(", "rgba(").replace(")", ",0.55)"));
+      glow.addColorStop(0.35, core.replace("rgb(", "rgba(").replace(")", ",0.18)"));
+      glow.addColorStop(1, core.replace("rgb(", "rgba(").replace(")", ",0)"));
+      g.fillStyle = glow;
+      g.beginPath();
+      g.arc(p.x, p.y, r * 7, 0, Math.PI * 2);
+      g.fill();
+
+      g.fillStyle = core;
+      g.beginPath();
+      g.arc(p.x, p.y, r, 0, Math.PI * 2);
+      g.fill();
     }
 
     function drawMoon(g, cx, cy, r, moon, night) {
