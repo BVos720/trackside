@@ -68,6 +68,7 @@ import {
   buildMapStyle,
   type VenueKey,
 } from '../map/style';
+import { SCENERY_DATA_URIS } from '../map/scenerySprites';
 import { TILE_ASSETS } from './MapScreen';
 
 /*
@@ -160,6 +161,10 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
    */
   const minZoom = view.minZoom;
   const maxZoom = view.maxZoom;
+  // Inlined into the page: see scenerySprites.ts for why these travel as
+  // data URIs rather than as files or a sprite URL.
+  const sceneryUris = JSON.stringify(SCENERY_DATA_URIS);
+
   const maxBounds = JSON.stringify([
     [view.bounds[0][0], view.bounds[0][1]],
     [view.bounds[1][0], view.bounds[1][1]],
@@ -372,37 +377,32 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
           post({ stage: "map-loaded" });
 
           /*
-            Scenery icons, drawn here rather than fetched.
+            The real sprites, inlined.
 
-            The native map registers tree/shrub/grass/rock as bundled PNGs
-            through addImage, and the style has no sprite on purpose. This
-            page has neither, so every scenery layer was silently drawing
-            nothing — "Image tree could not be loaded", repeated per kind,
-            and a circuit with no trees on it.
+            These are the same PNGs the native map registers through
+            <Images>, carried in as data URIs by scenerySprites.ts. The page
+            has no sprite sheet and cannot read the app's files, so without
+            them every scenery layer drew nothing.
 
-            A canvas blob is enough. At the zoom these appear the icons are
-            a few pixels across; what matters is that there is green where
-            the woods are, not that it is leaf-shaped.
+            They were briefly flat canvas circles, which did render — as
+            green dots. Under two kilobytes buys the actual artwork, at the
+            sizes the icon-size ramps in style.ts were tuned against.
+
+            Loading is asynchronous but local, so it finishes in a frame or
+            two; MapLibre repaints the layers as each image lands.
           */
           try {
-            var SCENERY = {
-              tree: ["#2F7A46", 7],
-              shrub: ["#3C8850", 5],
-              grass: ["#4A8B49", 4],
-              rock: ["#6B6F73", 4]
-            };
-            Object.keys(SCENERY).forEach(function (name) {
+            var SPRITES = ${sceneryUris};
+            Object.keys(SPRITES).forEach(function (name) {
               if (map.hasImage(name)) return;
-              var c = document.createElement("canvas");
-              c.width = 16;
-              c.height = 16;
-              var g = c.getContext("2d");
-              g.fillStyle = SCENERY[name][0];
-              g.beginPath();
-              g.arc(8, 8, SCENERY[name][1], 0, Math.PI * 2);
-              g.fill();
-              var px = g.getImageData(0, 0, 16, 16);
-              map.addImage(name, { width: 16, height: 16, data: px.data });
+              var img = new Image();
+              img.onload = function () {
+                if (!map.hasImage(name)) map.addImage(name, img);
+              };
+              img.onerror = function () {
+                post({ stage: "scenery-icon-failed", error: name });
+              };
+              img.src = SPRITES[name];
             });
             post({ stage: "scenery-icons-added" });
           } catch (e) {

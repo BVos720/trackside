@@ -793,6 +793,18 @@ export function buildMapStyle(
     id: 'trees',
     type: 'symbol',
     source: TREES_SOURCE,
+    /*
+      Only the points that are actually trees.
+
+      This layer had no filter, so it drew a tree on *every* scatter point —
+      including the ones 'ground-detail' was simultaneously drawing as grass or
+      shrub, since that layer takes the complement. Every tuft of grass had a
+      tree standing in it, which is what "trees and bushes inside each other"
+      is: not a placement glitch, two layers drawing the same point.
+
+      The two filters are now exact complements, so each point is drawn once.
+    */
+    filter: ['==', ['coalesce', ['get', 'kind'], 'tree'], 'tree'] as unknown,
     // Zoom-gated as well as mode-gated: 14k billboards at lap-overview zoom is
     // a green smear that costs frames and says nothing.
     minzoom: 14,
