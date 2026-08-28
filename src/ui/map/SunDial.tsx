@@ -63,7 +63,20 @@ import {
 } from '../theme';
 
 /** Outer diameter of the compass ring. */
-const RING_SIZE = 88;
+/*
+  A compass, not a dial.
+
+  At 88px this was an instrument in its own right, and it had to be: it was
+  the only way to see where the sun was. The 3D view now draws the sun itself,
+  so the dial's job has shrunk to the one thing the sky cannot do — tell you
+  which way you are facing, and give the exact figures when a glance at the
+  horizon is not precise enough.
+
+  So it keeps the ring, the north mark and the sun's position, and gives up
+  the size and the running commentary. Small enough to sit in a corner without
+  competing with the map it is describing.
+*/
+const RING_SIZE = 52;
 const RING_RADIUS = RING_SIZE / 2;
 
 /**
@@ -191,8 +204,6 @@ export default function SunDial({
       style={[styles.root, top === undefined ? null : { top }]}
       pointerEvents="none"
     >
-      <Text style={styles.title}>SUN</Text>
-
       <View style={styles.ringSlot}>
         <View style={styles.ringBackdrop} />
         <View
@@ -239,11 +250,18 @@ export default function SunDial({
 
       {isNorthUp && <Text style={styles.northUpNote}>NORTH-UP</Text>}
 
-      <View style={styles.row}>
-        <Text style={styles.bearingValue}>{compassAbbrev(solar.azimuth)}</Text>
-        <Text style={styles.altitudeValue}>{formatAltitude(solar.altitude)}</Text>
-      </View>
-      <Text style={styles.qualityLabel}>{quality.toUpperCase()}</Text>
+      {/*
+        Bearing and elevation, on one line.
+
+        Kept, and only these. The quality word went with the dial — the sky
+        itself now says whether it is golden or dark far better than a caption
+        could, and the strip already names it in words. These two are the part
+        no view of the sky gives you: the exact figures you would otherwise be
+        estimating by eye.
+      */}
+      <Text style={styles.reading}>
+        {compassAbbrev(solar.azimuth)} {formatAltitude(solar.altitude)}
+      </Text>
     </View>
   );
 }
@@ -263,6 +281,14 @@ const textLegibility = {
 
 function makeStyles(color: Theme['color']) {
   return StyleSheet.create({
+    reading: {
+      ...textLegibility,
+      color: color.text,
+      fontSize: type.label,
+      fontWeight: weight.bold,
+      marginTop: 2,
+      letterSpacing: 0.5,
+    },
     root: {
       position: 'absolute',
       right: space.md,
