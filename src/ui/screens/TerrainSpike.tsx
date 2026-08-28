@@ -315,6 +315,27 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
     window.__sun = { azimuth: 180, altitude: 25 };
     window.__moon = null;
 
+    /*
+      What the sky is doing, from the forecast.
+
+      Cover and rainfall are real numbers for this circuit and this hour, so a
+      wet weekend looks wet before you get there. The *arrangement* is invented
+      — these are not the actual clouds overhead — and the weather screen stays
+      the place for figures. This is the difference between "it will be
+      overcast at four" as a number and as something you can see.
+    */
+    window.__weather = { cover: 0, rain: 0 };
+    window.__setWeather = function (json) {
+      try {
+        var w = JSON.parse(json);
+        window.__weather = {
+          cover: Math.max(0, Math.min(100, w.cover || 0)),
+          rain: Math.max(0, w.rain || 0)
+        };
+        pumpWeather();
+      } catch (e) {}
+    };
+
     window.__setSun = function (json) {
       try {
         var payload = JSON.parse(json);
@@ -509,6 +530,140 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
       };
     }
 
+    /*
+      A fixed sky of clouds, revealed in proportion to the cover.
+
+      Generated once and then drawn 0..N of them, so going from broken to
+      overcast adds cloud rather than rearranging the sky — the same reason
+      the stars are a fixed set.
+
+      They drift in azimuth rather than across the screen, so they hold
+      station against the compass while you turn, and only the wind moves
+      them.
+    */
+    var CLOUDS = (function () {
+      var out = [];
+      var seed = 8112026;
+      function rnd() {
+        seed = (seed * 1103515245 + 12345) % 2147483648;
+        return seed / 2147483648;
+      }
+      for (var i = 0; i < 26; i++) {
+        out.push({
+          az: rnd() * 360,
+          // Spread across the full sky. Altitude is compressed into the
+          // strip above the horizon, so a narrow range up there collapses
+          // into a single bright band that reads as haze, not cloud.
+          alt: 8 + rnd() * 68,
+          w: 90 + rnd() * 190,
+          h: 26 + rnd() * 44
+        });
+      }
+      return out;
+    })();
+
+    function drawClouds(g, vw, vh, tSec) {
+      var cover = window.__weather ? window.__weather.cover : 0;
+      if (cover <= 0) return;
+
+      var t = daylight();
+      // Bright and grey by day, barely-there shapes at night. Clouds are
+      // lit by the same sun as the ground.
+      var body = mixHex([26, 30, 38], [206, 214, 226], t);
+      var n = Math.round((cover / 100) * CLOUDS.length);
+
+      for (var i = 0; i < n; i++) {
+        var c = CLOUDS[i];
+        // Slow: a cloud should cross the view in minutes, not seconds.
+        var az = (c.az + tSec * 0.22) % 360;
+        var p = project(az, c.alt);
+        if (!p) continue;
+
+        var grad = g.createRadialGradient(p.x, p.y, 0, p.x, p.y, c.w / 2);
+        grad.addColorStop(0, body.replace("rgb(", "rgba(").replace(")", ",0.55)"));
+        grad.addColorStop(1, body.replace("rgb(", "rgba(").replace(")", ",0)"));
+        g.fillStyle = grad;
+        g.save();
+        g.translate(p.x, p.y);
+        g.scale(1, c.h / c.w);
+        g.beginPath();
+        g.arc(0, 0, c.w / 2, 0, Math.PI * 2);
+        g.fill();
+        g.restore();
+      }
+    }
+
+    /*
+      Rain, in screen space.
+
+      Deliberately not projected: rain is the nearest thing there is, falling
+      between you and everything else, so it belongs to the window rather
+      than to the sky. Positions come from the index and the clock instead of
+      an array of drops, which keeps it stateless and cheap.
+    */
+    function drawRain(g, vw, vh, tSec) {
+      var mm = window.__weather ? window.__weather.rain : 0;
+      if (mm <= 0) return;
+
+      // Drizzle and downpour differ by orders of magnitude, so this is
+      // compressed hard: 0.1mm still shows, 8mm is not eighty times denser.
+      var drops = Math.round(Math.min(1, Math.pow(mm / 6, 0.55)) * 320);
+      var t = daylight();
+      g.strokeStyle = t > 0.4 ? "rgba(196,214,232,0.42)" : "rgba(150,170,196,0.34)";
+      g.lineWidth = 1;
+      g.beginPath();
+
+      for (var i = 0; i < drops; i++) {
+        /*
+          Hashed, not strided.
+
+          Stepping x and y by fixed amounts per drop lays them out on a
+          lattice, and falling rain on a regular grid reads as a texture
+          rather than as weather. Two cheap hashes scatter them instead.
+        */
+        var hx = (Math.sin(i * 12.9898) * 43758.5453) % 1;
+        var hy = (Math.sin(i * 78.233) * 12345.6789) % 1;
+        var speed = 480 + Math.abs(hy) * 420;
+        var len = 12 + Math.abs(hx) * 12;
+        var x = (Math.abs(hx) * (vw + 120) + tSec * 46) % (vw + 120) - 60;
+        var y = (Math.abs(hy) * (vh + 80) + tSec * speed) % (vh + 80) - 40;
+        g.moveTo(x, y);
+        g.lineTo(x - len * 0.3, y + len);
+      }
+      g.stroke();
+    }
+
+    /*
+      One animation loop, running only when there is something moving.
+
+      Stars and the moon are still: they are redrawn when the camera moves
+      and cost nothing in between. Cloud and rain are not, so this starts on
+      the first forecast that has either and stops the moment both are zero.
+      A clear day pays for no frames at all.
+    */
+    var weatherLoop = null;
+
+    function pumpWeather() {
+      var w = window.__weather || { cover: 0, rain: 0 };
+      var moving = w.cover > 0 || w.rain > 0;
+
+      if (!moving) {
+        if (weatherLoop !== null) {
+          cancelAnimationFrame(weatherLoop);
+          weatherLoop = null;
+        }
+        drawSky();
+        return;
+      }
+      if (weatherLoop !== null) return;
+
+      var step = function () {
+        drawSky();
+        weatherLoop = requestAnimationFrame(step);
+      };
+      weatherLoop = requestAnimationFrame(step);
+    }
+
     function drawSky() {
       var map = window.__map;
       if (!map) return;
@@ -536,10 +691,12 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
       g.setTransform(dpr, 0, 0, dpr, 0, 0);
       g.clearRect(0, 0, w, h);
 
+      var tSec = Date.now() / 1000;
       var alt = window.__sun ? window.__sun.altitude : 25;
-      // Nothing at all while the sun is up, so daytime costs one clear().
       var night = Math.max(0, Math.min(1, (-alt - 2) / 10));
-      if (night <= 0) return;
+
+      // Stars and moon first: cloud draws over them, which is what cloud does.
+      if (night > 0) {
 
       for (var i = 0; i < STARS.length; i++) {
         var st = STARS[i];
@@ -558,7 +715,11 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
         var mp = project(moon.azimuth, moon.altitude);
         if (mp) drawMoon(g, mp.x, mp.y, 16, moon, night);
       }
+      }
+
       g.globalAlpha = 1;
+      drawClouds(g, w, h, tSec);
+      drawRain(g, w, h, tSec);
     }
 
     function drawMoon(g, cx, cy, r, moon, night) {
@@ -1176,6 +1337,7 @@ export default function TerrainSpike({
   onMapTap,
   mediaUris = {},
   sunAt,
+  weather,
   onClose,
 }: {
   venue: VenueKey;
@@ -1200,6 +1362,8 @@ export default function TerrainSpike({
    * screen passes `clock.now`, which is what ties this to the time slider.
    */
   sunAt?: Date;
+  /** Cover and rainfall for the hour on screen, from the venue forecast. */
+  weather?: { readonly cover: number; readonly rain: number };
   /**
    * Shown as a Back button when present.
    *
@@ -1400,6 +1564,14 @@ export default function TerrainSpike({
       `window.__setSun && window.__setSun('${JSON.stringify(payload)}'); true;`,
     );
   }, [venue, sunAt, pageEpoch]);
+
+  /** Cover and rainfall, forwarded whenever the forecast or the hour moves. */
+  useEffect(() => {
+    if (!weather) return;
+    webRef.current?.injectJavaScript(
+      `window.__setWeather && window.__setWeather('${JSON.stringify(weather)}'); true;`,
+    );
+  }, [weather, pageEpoch]);
 
   /** Pin positions in CSS pixels, which are device-independent pixels here. */
   const [marks, setMarks] = useState<Mark[]>([]);

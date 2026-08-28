@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  conditionsAt,
   DEFAULT_FRESH_WITHIN_MINUTES,
   MAX_FORECAST_HORIZON_DAYS,
   resolveForecastDisplay,
@@ -419,5 +420,33 @@ describe('summariseDay', () => {
       toHour: 16,
       meanCloudPercent: 30,
     });
+  });
+});
+
+describe('conditionsAt', () => {
+  const points = [
+    { time: '2026-08-28T17:00', cloudCoverPercent: 20, precipitationMm: 0 },
+    { time: '2026-08-28T18:00', cloudCoverPercent: 85, precipitationMm: 2.4 },
+  ];
+
+  it('finds the hour covering an instant that is not on the hour', () => {
+    // The whole point: a clock reads 18:42, and the series only has 18:00.
+    expect(conditionsAt(points, '2026-08-28T18:42')?.cloudCoverPercent).toBe(85);
+  });
+
+  it('matches an exact hour', () => {
+    expect(conditionsAt(points, '2026-08-28T17:00')?.precipitationMm).toBe(0);
+  });
+
+  it('returns null when the hour is not in the series', () => {
+    expect(conditionsAt(points, '2026-08-29T04:00')).toBeNull();
+  });
+
+  it('returns null rather than guessing from a truncated string', () => {
+    expect(conditionsAt(points, '2026-08-28')).toBeNull();
+  });
+
+  it('is null-safe on an empty series', () => {
+    expect(conditionsAt([], '2026-08-28T18:00')).toBeNull();
   });
 });

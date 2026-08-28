@@ -282,6 +282,27 @@ export interface ForecastDay {
  * rather than being re-sorted: the provider returns time-ascending, and imposing
  * a sort here would quietly paper over a response that did not.
  */
+/**
+ * The forecast hour covering an instant, or null.
+ *
+ * Takes a local-time string rather than a Date so this file stays free of
+ * timezones: `time` on each point is already the circuit's local hour (see
+ * the note on HourlyForecastPoint), and converting an instant into that is
+ * metno.ts's job. Here it is a lookup.
+ *
+ * Truncated to the hour on both sides. The series is hourly, so an exact
+ * string match would find nothing for any instant that is not on the hour —
+ * which is every instant a clock actually reports.
+ */
+export function conditionsAt(
+  points: readonly HourlyForecastPoint[],
+  localIso: string,
+): HourlyForecastPoint | null {
+  const hour = localIso.slice(0, 13);
+  if (hour.length < 13) return null;
+  return points.find((p) => p.time.slice(0, 13) === hour) ?? null;
+}
+
 export function groupForecastByDay(
   hourly: readonly HourlyForecastPoint[],
 ): ForecastDay[] {

@@ -55,6 +55,7 @@ import {
 } from '../theme';
 import CircuitRuler from '../map/CircuitRuler';
 import SunDial from '../map/SunDial';
+import { useVenueConditions } from '../state/useVenueConditions';
 import SkyControl from '../map/SkyControl';
 import { useMapClock } from '../state/useMapClock';
 import { useHeading } from '../state/useHeading';
@@ -182,6 +183,19 @@ export default function MapScreen({
    * task file's note on the shared-clock desync bug.
    */
   const clock = useMapClock();
+
+  /*
+   * The sky's own conditions, for the 3D view.
+   *
+   * Venue-scoped rather than event-scoped: the map is most often open with no
+   * event at all, and useWeather reports nothing in that case. Fails silently
+   * offline — see the hook.
+   */
+  const conditions = useVenueConditions(
+    { latitude: VENUE_VIEW[venue].centre[1], longitude: VENUE_VIEW[venue].centre[0] },
+    VENUE_VIEW[venue].timezone,
+    clock.now,
+  );
   /**
    * C2: which way the phone is pointing, for `SunDial`'s rotation.
    *
@@ -908,6 +922,8 @@ export default function MapScreen({
             // The same clock the dial and the sky strip use, so scrubbing the
             // time re-lights the terrain instead of only moving a dial.
             sunAt={clock.now}
+          // Real cover and rainfall for this circuit and this hour.
+          weather={conditions}
             /*
               Placing works in 3D too.
 
