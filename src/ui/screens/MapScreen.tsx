@@ -1173,7 +1173,14 @@ export default function MapScreen({
           onPress={onLeaveFirstPerson}
           style={({ pressed }) => [
             styles.leaveFirstPerson,
-            { top: insets.top + MENU_CLEARANCE + controlsTop },
+            /*
+              Below the 2D/3D button, not across the top.
+
+              Centred at the top it landed between the venue card and the
+              site ruler and overlapped both. This column already holds the
+              view controls, and 64 clears the 56pt button above it.
+            */
+            { top: insets.top + MENU_CLEARANCE + controlsTop + 64 },
             pressed && styles.pressed,
           ]}
         >
@@ -1443,7 +1450,9 @@ function makeStyles(color: Theme['color']) {
      */
     leaveFirstPerson: {
       position: 'absolute',
-      alignSelf: 'center',
+      // Left column with the other view controls, rather than centred over
+      // the two cards that already occupy the top of the screen.
+      left: space.md,
       paddingHorizontal: space.lg,
       paddingVertical: space.sm,
       borderRadius: radius.md,
