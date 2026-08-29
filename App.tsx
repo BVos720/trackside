@@ -532,6 +532,19 @@ function AppShell() {
     return () => clearInterval(id);
   }, [navStop]);
 
+  /**
+   * The spot you are standing at in the 3D view, or null.
+   *
+   * Held here rather than inside the map so closing the sheet, deleting the
+   * spot or switching venue all bring the camera back on their own. A view
+   * with no exit is the failure mode worth designing against.
+   */
+  const [standingAt, setStandingAt] = useState<{
+    lon: number;
+    lat: number;
+    bearing: number | null;
+  } | null>(null);
+
   const [placing, setPlacing] = useState(false);
   const [sheet, setSheet] = useState<SheetMode>({ kind: 'none' });
   const [moving, setMoving] = useState<MoveTarget>(null);
@@ -1123,6 +1136,8 @@ function AppShell() {
               key={venue}
               venue={venue}
               spots={visibleGeoJson}
+              standAt={standingAt}
+              onLeaveFirstPerson={() => setStandingAt(null)}
               route={routeGeoJson}
               here={fix?.position ?? null}
               heading={heading}
@@ -1287,6 +1302,18 @@ function AppShell() {
                 }}
                 onRate={(value) => void rateSpot(activeSpot.id, value)}
                 onRenameWay={(subName) => void renameWay(activeSpot.id, subName)}
+                onStandHere={() => {
+                  setStandingAt({
+                    lon: activeSpot.position.longitude,
+                    lat: activeSpot.position.latitude,
+                    // Arrive facing the way the photograph was taken, when
+                    // that is recorded. Nothing else on a spot says which
+                    // way to look.
+                    bearing: activeSpot.shootingBearing,
+                  });
+                  // The sheet would cover the view it just opened.
+                  setSheet({ kind: 'none' });
+                }}
                 media={activeMedia}
                 mediaUris={mediaUris}
                 onEdit={() => setSheet({ kind: 'edit', id: activeSpot.id })}

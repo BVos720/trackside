@@ -1780,6 +1780,96 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
       */
       map.on("idle", function () { refreshGroundLevels(map); });
     }
+    /*
+      Standing at a spot and looking around.
+
+      ── What this is, and what it is not ─────────────────────────────
+      A real first-person camera would sit at eye height at the fence post.
+      maplibre-gl has no free camera — getFreeCameraOptions is a Mapbox API
+      and does not exist here — so the camera is always some distance above
+      the point it is centred on, and how far is a function of zoom.
+
+      What that leaves is close enough to be worth having: centre on the
+      spot, pitch right over so the view is nearly horizontal, and zoom in
+      until the camera is low. You get the sightline — which way the corner
+      is, what stands between you and it, where the sun will be over your
+      shoulder — which is the whole reason to want this.
+
+      Dragging rotates instead of panning. That is the part that makes it
+      feel like standing somewhere rather than looking at a map: your feet
+      stay put and your head turns. Panning is disabled outright rather than
+      merely discouraged, because a pan here would walk you off the spot
+      without ever saying so.
+
+      The basemap has no tiles at this zoom and will look soft. That is
+      honest — there is no more detail to have — and it does not matter,
+      because everything being read here is the shape of the land and the
+      position of the sun, both of which are still exact.
+    */
+    window.__fpv = null;
+
+    window.__enterFirstPerson = function (json) {
+      try {
+        var o = JSON.parse(json);
+        var map = window.__map;
+        if (!map) return;
+
+        window.__fpv = { lon: o.lon, lat: o.lat };
+
+        // Feet planted: rotate and tilt, never pan.
+        map.dragPan.disable();
+        map.dragRotate.enable();
+        if (map.touchZoomRotate && map.touchZoomRotate.enableRotation) {
+          map.touchZoomRotate.enableRotation();
+        }
+
+        map.easeTo({
+          center: [o.lon, o.lat],
+          zoom: 18.5,
+          pitch: 85,
+          /*
+            Facing the way the photograph was taken, when that is recorded.
+
+            shootingBearing is the one piece of orientation a spot actually
+            carries, and arriving already pointed at the subject saves the
+            first thing everyone would otherwise do by hand.
+          */
+          bearing: typeof o.bearing === "number" ? o.bearing : map.getBearing(),
+          duration: 900
+        });
+
+        post({ stage: "first-person", lon: o.lon, lat: o.lat });
+      } catch (e) {
+        fail("first-person", e);
+      }
+    };
+
+    window.__exitFirstPerson = function () {
+      var map = window.__map;
+      if (!map) return;
+      window.__fpv = null;
+      map.dragPan.enable();
+      map.easeTo({ zoom: 14, pitch: 60, duration: 700 });
+    };
+
+    /*
+      Keeps you on the spot as the ground moves under you.
+
+      Rotating at this pitch swings the camera through a wide arc, and
+      MapLibre keeps the *centre of the screen* fixed rather than the point
+      you are standing on — so without this you drift off the fence post
+      while turning around. Re-centring on every rotation is what makes the
+      turn happen about you.
+    */
+    function holdFirstPerson() {
+      var fpv = window.__fpv;
+      if (!fpv) return;
+      var map = window.__map;
+      if (!map) return;
+      var c = map.getCenter();
+      if (Math.abs(c.lng - fpv.lon) < 1e-7 && Math.abs(c.lat - fpv.lat) < 1e-7) return;
+      map.setCenter([fpv.lon, fpv.lat]);
+    }
     function drawSky() {
       var map = window.__map;
       if (!map) return;
@@ -2093,7 +2183,15 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
             maxBounds still pins the camera over the circuit, so the far terrain
             is something you look at, never somewhere you can wander off to.
           */
-          maxPitch: 82,
+          /*
+            85 so the first-person view can actually look out.
+
+            At 82 the camera is still tilted enough down that a person
+            standing at a spot sees mostly the ground in front of them.
+            The last few degrees are the difference between looking at your
+            feet and looking at the corner.
+          */
+          maxPitch: 85,
           bearing: 20,
           attributionControl: false,
           /*
@@ -2595,6 +2693,8 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
           // the camera changes — turning is what makes it read as sky.
           map.on("move", drawSky);
           map.on("rotate", drawSky);
+          map.on("rotate", holdFirstPerson);
+          map.on("move", holdFirstPerson);
           // So a settings change can ask for a repaint without waiting for
           // the camera to move — turning stars off should be immediate.
           window.__redrawSky = drawSky;
@@ -2660,6 +2760,7 @@ export default function TerrainSpike({
   weather,
   stars = true,
   shadows = true,
+  standAt = null,
   onClose,
 }: {
   venue: VenueKey;
@@ -2695,6 +2796,14 @@ export default function TerrainSpike({
    * light at midnight".
    */
   stars?: boolean;
+  /**
+   * Where to stand, or null for the ordinary overhead view.
+   *
+   * `bearing` is the spot's recorded shooting direction when it has one,
+   * so you arrive already facing the subject rather than having to turn
+   * around first.
+   */
+  standAt?: { lon: number; lat: number; bearing: number | null } | null;
   /**
    * Draw cast shadows — the most expensive thing in this view.
    *
@@ -2903,6 +3012,30 @@ export default function TerrainSpike({
       `window.__setSun && window.__setSun('${JSON.stringify(payload)}'); true;`,
     );
   }, [venue, sunAt, pageEpoch, ready]);
+
+  /**
+   * Enter or leave the first-person view.
+   *
+   * Driven by a prop rather than an imperative call so the camera follows
+   * from the app's state: if the sheet closes or the spot goes away, the
+   * view comes back on its own rather than stranding somebody at a fence
+   * post with no way out.
+   */
+  useEffect(() => {
+    if (standAt) {
+      webRef.current?.injectJavaScript(
+        `window.__enterFirstPerson && window.__enterFirstPerson('${JSON.stringify({
+          lon: standAt.lon,
+          lat: standAt.lat,
+          bearing: standAt.bearing,
+        })}'); true;`,
+      );
+    } else {
+      webRef.current?.injectJavaScript(
+        `window.__exitFirstPerson && window.__exitFirstPerson(); true;`,
+      );
+    }
+  }, [standAt, pageEpoch]);
 
   /** Cast shadows on or off, recomputed on the page when re-enabled. */
   useEffect(() => {

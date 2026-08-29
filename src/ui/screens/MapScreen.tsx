@@ -145,6 +145,8 @@ export default function MapScreen({
   placing = false,
   route,
   here,
+  standAt = null,
+  onLeaveFirstPerson,
   heading = null,
   controlsTop = 0,
   position,
@@ -166,6 +168,9 @@ export default function MapScreen({
   route?: unknown;
   /** Live position, whenever there is a fix. */
   here?: { latitude: number; longitude: number } | null;
+  /** Stand at a spot and look around, or null for the usual view. */
+  standAt?: { lon: number; lat: number; bearing: number | null } | null;
+  onLeaveFirstPerson?: () => void;
   /** Compass bearing in degrees from north, or null when unknown. */
   heading?: number | null;
   /**
@@ -1104,6 +1109,7 @@ export default function MapScreen({
           // information rather than atmosphere.
           stars={starsEnabled}
           shadows={shadowsEnabled}
+          standAt={standAt}
           // Real cover and rainfall for this circuit and this hour.
           /*
             Rain zeroed rather than the forecast withheld.
@@ -1130,6 +1136,26 @@ export default function MapScreen({
           />
       </View>
       )}
+      {/*
+        The way back out.
+
+        A first-person view has no obvious exit — every gesture turns your
+        head rather than taking you anywhere — so the control has to be
+        explicit. Centred at the top, clear of the sky the view is for.
+      */}
+      {standAt !== null && (
+        <Pressable
+          onPress={onLeaveFirstPerson}
+          style={({ pressed }) => [
+            styles.leaveFirstPerson,
+            { top: insets.top + MENU_CLEARANCE + controlsTop },
+            pressed && styles.pressed,
+          ]}
+        >
+          <Text style={styles.leaveFirstPersonText}>Back to the map</Text>
+        </Pressable>
+      )}
+
       {stack !== null && (
         <View style={[styles.stackPanel, { top: insets.top + MENU_CLEARANCE + controlsTop }]}>
           <View style={styles.stackHead}>
@@ -1390,6 +1416,22 @@ function makeStyles(color: Theme['color']) {
      * to know the other exists, and so hiding it changes nothing about the
      * layout of the controls stacked above.
      */
+    leaveFirstPerson: {
+      position: 'absolute',
+      alignSelf: 'center',
+      paddingHorizontal: space.lg,
+      paddingVertical: space.sm,
+      borderRadius: radius.md,
+      backgroundColor: 'rgba(11,13,16,0.92)',
+      borderWidth: 1,
+      borderColor: color.border,
+    },
+    leaveFirstPersonText: {
+      color: color.text,
+      fontSize: type.label,
+      fontWeight: weight.bold,
+    },
+
     terrainLayer: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
     /*
      * Hidden, not unmounted — see the note at the mount site.
