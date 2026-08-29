@@ -59,7 +59,9 @@ function matches(haystack: string, needle: string): boolean {
 function nameMatches(waypoint: Waypoint, query: string): boolean {
   const q = query.trim();
   if (q === '') return true;
-  return waypoint.members.some((m) => matches(m.name, q));
+  return waypoint.members.some(
+    (m) => matches(m.name, q) || (m.subName !== null && matches(m.subName, q)),
+  );
 }
 
 /** Hidden only when every way is — the same rule the map draws by. */

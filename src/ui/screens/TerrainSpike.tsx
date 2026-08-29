@@ -660,8 +660,21 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
     var weatherLoop = null;
 
     function pumpWeather() {
+      /*
+        Drives the map as well as the canvas.
+
+        MapLibre only redraws when asked: a camera move, a data change, or an
+        explicit triggerRepaint. Mist, cloud and rain are custom layers that
+        animate from the clock, so without a repaint each frame they advance
+        only when the map happens to redraw for some other reason — rain
+        crawls and cloud looks frozen.
+
+        This was hidden while the canvas rain existed, because that drove the
+        loop for its own sake. Deleting it took the heartbeat with it.
+      */
       var w = window.__weather || { cover: 0, rain: 0 };
-      var moving = w.cover > 0 || w.rain > 0;
+      var mistNow = window.__mist || { density: 0 };
+      var moving = w.cover > 0 || w.rain > 0 || mistNow.density > 0;
 
       if (!moving) {
         if (weatherLoop !== null) {
@@ -675,6 +688,9 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
 
       var step = function () {
         drawSky();
+        // The half that was missing: without this the custom layers hold
+        // whatever frame the last camera move left them on.
+        if (window.__map) window.__map.triggerRepaint();
         weatherLoop = requestAnimationFrame(step);
       };
       weatherLoop = requestAnimationFrame(step);
@@ -904,14 +920,32 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
     function refreshGroundLevels(map) {
       var levels = mistLevels(map);
       if (!levels) {
-        if (groundTries++ < 12) {
+        /*
+          Forty tries at 600ms is about twenty-four seconds.
+
+          Twelve was tuned against a desktop with the tiles already cached and
+          is nowhere near enough on a phone fetching DEM over mobile data. If
+          this gives up, the mist, the cloud and the shadows are all silently
+          absent — so it is worth waiting a long time, and worth saying so
+          when it fails rather than leaving three features quietly missing.
+        */
+        if (groundTries++ < 40) {
           setTimeout(function () { refreshGroundLevels(map); }, 600);
+        } else {
+          post({ stage: "ground-levels-unavailable", tries: groundTries });
         }
         return;
       }
+      post({
+        stage: "ground-levels",
+        base: Math.round(levels.base),
+        thickness: Math.round(levels.thickness),
+        tries: groundTries
+      });
       groundTries = 0;
       window.__ground = levels;
       applyMist();
+      refreshShadows(map);
       map.triggerRepaint();
     }
 
@@ -955,6 +989,8 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
         density: mistDensity()
       };
       if (window.__map) window.__map.triggerRepaint();
+      // Fog drifts, so it needs the heartbeat as much as the rain does.
+      pumpWeather();
     }
 
     /*
@@ -1587,6 +1623,11 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
         return;
       }
 
+      post({
+        stage: "shadows-drawn",
+        azimuth: Math.round(sun.azimuth),
+        altitude: Math.round(sun.altitude)
+      });
       map.addSource("shadow-src", { type: "image", url: url, coordinates: coords });
       /*
         Under the labels and the circuit, over the ground.

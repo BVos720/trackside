@@ -268,6 +268,15 @@ export function useSpots(circuitId: CircuitId) {
       const way = {
         ...created,
         groupId,
+        /*
+          The place keeps its name; the way gets a blank one.
+
+          Copying the source's subName would label the new way as the old
+          one — "long lens" twice over — which is worse than unnamed,
+          because it reads as a duplicate rather than as something to fill
+          in. Empty is a prompt.
+        */
+        subName: null,
         accessNotes: source.accessNotes,
         uses: source.uses,
         nearestMarshalPostId: source.nearestMarshalPostId,

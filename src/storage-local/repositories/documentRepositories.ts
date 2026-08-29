@@ -173,6 +173,7 @@ function normaliseSpot(row: Spot): Spot {
     // waypoint of one that nobody has rated — which is exactly what null
     // means, so there is nothing cleverer to do here.
     groupId: row.groupId ?? null,
+    subName: row.subName ?? null,
     rating: row.rating ?? null,
     // Rows written before events existed belong to the permanent collection.
     eventId: row.eventId ?? null,

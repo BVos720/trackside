@@ -278,6 +278,19 @@ export interface Spot extends EntityBase {
    */
   readonly groupId: SpotGroupId | null;
   /**
+   * What this way of shooting is called, under the waypoint's own name.
+   *
+   * `name` is the place — Brünnchen — and every way of shooting it shares
+   * that. This is the part that differs: "long lens down the straight",
+   * "low through the apex". Null when a waypoint has only ever had one way,
+   * which is most of them, and there is nothing to distinguish.
+   *
+   * Kept separate rather than folded into `name` because a way is not a
+   * place. Renaming the corner should rename it everywhere at once, and
+   * naming one approach should not quietly rename the fence post.
+   */
+  readonly subName: string | null;
+  /**
    * How good this way of shooting turned out to be — 1 to 5, or null.
    *
    * Null means "not rated", which is *not* the same as bad and must never
@@ -336,6 +349,7 @@ export function newSpot(input: {
       offering them here would invite a caller to invent both.
     */
     groupId: null,
+    subName: null,
     rating: null,
     eventId: input.eventId ?? null,
     nearestMarshalPostId: input.nearestMarshalPostId ?? null,
