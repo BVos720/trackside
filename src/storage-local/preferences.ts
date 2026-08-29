@@ -21,6 +21,7 @@ const PROFILE_NAME = 'trackside.ui.profileName.v1';
 const MAP_SCENERY = 'trackside.ui.mapScenery.v1';
 const MAP_RAIN = 'trackside.ui.mapRain.v1';
 const MAP_STARS = 'trackside.ui.mapStars.v1';
+const MAP_SHADOWS = 'trackside.ui.mapShadows.v1';
 const MAP_HILLSHADE = 'trackside.ui.mapHillshade.v1';
 const MAP_SCENERY_DISTANCE = 'trackside.ui.mapSceneryDistance.v1';
 const THEME_PREFERENCE = 'trackside.ui.themePreference.v1';
@@ -160,6 +161,15 @@ export async function getMapStarsEnabled(): Promise<boolean> {
 
 export async function setMapStarsEnabled(enabled: boolean): Promise<void> {
   await kv.set(MAP_STARS, enabled ? '1' : '0');
+}
+
+/** Cast shadows on the terrain — the heaviest thing the 3D view draws. */
+export async function getMapShadowsEnabled(): Promise<boolean> {
+  return (await kv.get(MAP_SHADOWS)) !== '0';
+}
+
+export async function setMapShadowsEnabled(enabled: boolean): Promise<void> {
+  await kv.set(MAP_SHADOWS, enabled ? '1' : '0');
 }
 
 export async function getMapHillshadeEnabled(): Promise<boolean> {

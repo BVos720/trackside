@@ -1531,6 +1531,20 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
       return shadowCanvas.toDataURL();
     }
 
+    window.__refreshShadows = function () {
+      if (!window.__map) return;
+      if (window.__shadows === false) {
+        if (window.__map.getLayer('terrain-shadows')) {
+          window.__map.setPaintProperty('terrain-shadows', 'raster-opacity', 0);
+        }
+        return;
+      }
+      // Forget the cached key so re-enabling redraws immediately rather
+      // than waiting for the sun to move three degrees.
+      lastShadowKey = '';
+      refreshShadows(window.__map);
+    };
+
     function refreshShadows(map) {
       if (window.__shadows === false) return;
       var sun = window.__sun;
@@ -2604,6 +2618,7 @@ export default function TerrainSpike({
   sunAt,
   weather,
   stars = true,
+  shadows = true,
   onClose,
 }: {
   venue: VenueKey;
@@ -2639,6 +2654,14 @@ export default function TerrainSpike({
    * light at midnight".
    */
   stars?: boolean;
+  /**
+   * Draw cast shadows — the most expensive thing in this view.
+   *
+   * Its own switch rather than folded into hillshade, because they
+   * answer different questions: hillshade is which way a slope faces,
+   * this is what is standing between the ground and the sun.
+   */
+  shadows?: boolean;
   /**
    * Shown as a Back button when present.
    *
@@ -2839,6 +2862,14 @@ export default function TerrainSpike({
       `window.__setSun && window.__setSun('${JSON.stringify(payload)}'); true;`,
     );
   }, [venue, sunAt, pageEpoch, ready]);
+
+  /** Cast shadows on or off, recomputed on the page when re-enabled. */
+  useEffect(() => {
+    webRef.current?.injectJavaScript(
+      `window.__shadows = ${shadows ? 'true' : 'false'};` +
+        `window.__refreshShadows && window.__refreshShadows(); true;`,
+    );
+  }, [shadows, pageEpoch]);
 
   /** Whether the page draws stars, forwarded like any other setting. */
   useEffect(() => {

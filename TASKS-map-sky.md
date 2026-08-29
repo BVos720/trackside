@@ -641,3 +641,48 @@ Two things make it read as a fault rather than as distance:
 - [ ] Decide together with D7; they are one question, not two. Any fix that
       softens the tree line (fade with distance, or widen the data) applies
       here unchanged.
+
+---
+
+## 29 August 2026 — D1, D3, D5 and D6 are done
+
+All four were previously marked as custom-WebGL projects and out of reach.
+Three of the four were, and I was wrong about the fourth twice.
+
+The fact that unlocked everything: **MapLibre custom layers are depth-tested
+against the terrain mesh.** Checked before building anything, by drawing an
+opaque quad at 50m over the Eifel and confirming the hills hid it. Geometry
+placed in mercator coordinates with a real altitude is therefore occluded by
+the landscape, which is what separates weather in the scene from weather on
+the glass.
+
+- **D1 mist** — a stack of 14 sheets with levels read from the terrain, so it
+  fills valleys and leaves peaks clear at any venue. `a93339a`
+- **D3 world-space rain** — drops at real coordinates falling through real
+  altitudes, in a box that follows the camera. The canvas rain is deleted, not
+  kept as a fallback: it was a different claim about where the rain is. `6ff607a`
+- **D5 volumetric cloud** — 26 sheets through a noise field. Carries the one
+  deliberate lie in this sky, documented at the call site: the deck is kept
+  above the camera, because the camera sits above any real cloud base and a
+  physically-placed deck spends its life between you and the circuit. `5da8799`
+- **D6 cast shadows** — a 128x128 height grid sampled once from
+  `queryTerrainElevation`, then a horizon walk toward the sun per cell. Not an
+  approximation of a shadow; the definition of one. `76f9d77`
+
+### Two bugs worth remembering
+
+**Shader noise needs a local origin.** Mercator coordinates are ~0.5, and
+scaling by thousands puts the hash on `sin()` of ~1e6 where a float has no
+precision left. The noise silently becomes a constant and whole sheets show or
+discard as one. Subtract the venue origin first.
+
+**Never trust one `idle` for terrain data.** `queryTerrainElevation` reads
+tiles that arrive over the network and `idle` usually fires before they land.
+A listener that gave up on the first empty answer disabled mist, cloud and
+rain together, for the whole session. It retries now.
+
+### Still open
+
+- Wind gusts as world-space movement (part of D3) — the rain drifts, but there
+  is no gusting.
+- D7 / D8, the tree line and archive edge, unchanged and still one decision.

@@ -35,6 +35,7 @@ import {
   getMapRainEnabled,
   getMapSceneryDistance,
   getMapSceneryEnabled,
+  getMapShadowsEnabled,
   getMapStarsEnabled,
 } from '../../storage-local/preferences';
 import { sceneryRadiusDegrees } from '../../core/logic/graphicsPreset';
@@ -278,6 +279,7 @@ export default function MapScreen({
    */
   const [hillshadeEnabled, setHillshadeEnabled] = useState(true);
   const [starsEnabled, setStarsEnabled] = useState(true);
+  const [shadowsEnabled, setShadowsEnabled] = useState(true);
   const [sceneryRadius, setSceneryRadius] = useState(1);
   const [scenerySettled, setScenerySettled] = useState(false);
   useEffect(() => {
@@ -286,6 +288,7 @@ export default function MapScreen({
         setSceneryEnabled(await getMapSceneryEnabled());
         setHillshadeEnabled(await getMapHillshadeEnabled());
         setStarsEnabled(await getMapStarsEnabled());
+        setShadowsEnabled(await getMapShadowsEnabled());
         setSceneryRadius(sceneryRadiusDegrees(await getMapSceneryDistance()));
       } finally {
         setScenerySettled(true);
@@ -1072,6 +1075,7 @@ export default function MapScreen({
           // Stars are a graphics setting; the moon is not, because it is
           // information rather than atmosphere.
           stars={starsEnabled}
+          shadows={shadowsEnabled}
           // Real cover and rainfall for this circuit and this hour.
           /*
             Rain zeroed rather than the forecast withheld.
