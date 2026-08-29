@@ -321,7 +321,18 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
       { alt: 35, sky: [92, 147, 204], horizon: [168, 200, 232], fog: [159, 178, 196] }
     ];
 
-    window.__sun = { azimuth: 180, altitude: 25 };
+    /*
+      No sun until the real one arrives.
+
+      This used to hold a placeholder — due south at 25 degrees — so that
+      the sky had something to draw before the native side reported the
+      true position. That was a mistake: the injection is guarded on
+      __setSun existing, so if it ran before this script did, nothing
+      replaced the placeholder and the map lit itself from a sun that was
+      not anywhere. A fiction that looks like an answer is worse than a
+      blank, and this view exists to answer exactly this question.
+    */
+    window.__sun = null;
     window.__moon = null;
 
     /*
@@ -392,6 +403,8 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
     }
 
     function daylight() {
+      // No sun reported yet: treat it as full day rather than inventing a
+      // position. Nothing is drawn until the real one lands a frame later.
       var alt = window.__sun ? window.__sun.altitude : 25;
       // Zero at astronomical dusk, one once the sun is properly up, and
       // continuous in between — the transition *is* the interesting part,
@@ -731,6 +744,8 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
       g.clearRect(0, 0, w, h);
 
       var tSec = Date.now() / 1000;
+      // No sun reported yet: treat it as full day rather than inventing a
+      // position. Nothing is drawn until the real one lands a frame later.
       var alt = window.__sun ? window.__sun.altitude : 25;
       var night = Math.max(0, Math.min(1, (-alt - 2) / 10));
 
@@ -1798,7 +1813,7 @@ export default function TerrainSpike({
     webRef.current?.injectJavaScript(
       `window.__setSun && window.__setSun('${JSON.stringify(payload)}'); true;`,
     );
-  }, [venue, sunAt, pageEpoch]);
+  }, [venue, sunAt, pageEpoch, ready]);
 
   /** Whether the page draws stars, forwarded like any other setting. */
   useEffect(() => {
