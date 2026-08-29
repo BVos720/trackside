@@ -786,6 +786,7 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
       "uniform float u_density;",
       "uniform float u_time;",
       "uniform vec3 u_tint;",
+      "uniform vec2 u_noiseOrigin;",
       "out vec4 o;",
       // Value noise. Cheap, and fog has no detail worth a gradient noise.
       "float hash(vec2 p) {",
@@ -805,7 +806,15 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
       "// a venue spans ~0.0004 mercator units, so the scale has to be large",
       "// for the noise to have features the size of a valley rather than one",
       "// flat cell across the whole map",
-      "  vec2 p = v_world * 22000.0 + vec2(u_time * 0.020, u_time * 0.013);",
+      "// relative to the venue, not absolute mercator.",
+      "//",
+      "// v_world is around (0.52, 0.33) and scaling that by twenty thousand",
+      "// lands the hash on sin() of ~1e6, where a float has no precision left",
+      "// and neighbouring cells return the same number. The noise then has no",
+      "// features at all: it is a constant, and the whole sheet either shows",
+      "// or discards as one. Subtracting the origin first keeps the input",
+      "// small enough for the hash to mean anything.",
+      "  vec2 p = (v_world - u_noiseOrigin) * 22000.0 + vec2(u_time * 0.020, u_time * 0.013);",
       "  float n = fbm(p);",
 "// thickest at the bottom so it settles rather than floats",
       "  float height = 1.0 - smoothstep(0.35, 1.0, v_t);",
@@ -877,9 +886,30 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
     */
     window.__ground = null;
 
+    /*
+      Keeps asking until the ground answers.
+
+      queryTerrainElevation reads DEM tiles that arrive over the network, so
+      an early call returns nothing — and 'idle' fires before they land more
+      often than not. A listener that gives up on the first empty answer
+      leaves the levels null for the whole session, which silently disables
+      the mist, the cloud and the rain at once. That is the failure this has
+      already caused twice, so it retries rather than trusting the timing.
+
+      It stops as soon as it has an answer, and gives up after a few seconds
+      rather than polling forever on a venue where the DEM never arrives.
+    */
+    var groundTries = 0;
+
     function refreshGroundLevels(map) {
       var levels = mistLevels(map);
-      if (!levels) return;
+      if (!levels) {
+        if (groundTries++ < 12) {
+          setTimeout(function () { refreshGroundLevels(map); }, 600);
+        }
+        return;
+      }
+      groundTries = 0;
       window.__ground = levels;
       applyMist();
       map.triggerRepaint();
@@ -1039,6 +1069,7 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
           this.uSpan = gl.getUniformLocation(this.prog, "u_span");
           this.uAlpha = gl.getUniformLocation(this.prog, "u_alpha");
           this.uTint = gl.getUniformLocation(this.prog, "u_tint");
+          this.uNoiseOrigin = gl.getUniformLocation(this.prog, "u_noiseOrigin");
           this.buf = gl.createBuffer();
           gl.bindBuffer(gl.ARRAY_BUFFER, this.buf);
           gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
@@ -1133,6 +1164,258 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
         }
       });
     }
+    /*
+      Volumetric cloud.
+
+      Same idea as the mist and a different problem: cloud has to have form.
+      Fog reads correctly as a soft layer you are inside, but a cloud that is
+      only a soft layer looks like haze — what makes it a cloud is a lit top,
+      a shaded base and a billowed edge.
+
+      A stack of sheets sampled through a noise field, rather than a true
+      raymarch. Marching a volume per pixel is the textbook answer and would
+      cost tens of samples for every pixel of sky; slicing the same field and
+      letting the blender accumulate it gets the parallax and the silhouette
+      for one texture fetch per sheet. On a phone that difference is the
+      difference between having this and not.
+
+      Sheets are spaced through the slab and each samples the noise offset by
+      its own height, which is what turns a stack of flat layers into
+      something with an inside.
+    */
+    var CLOUD_SHEETS = 26;
+
+    function cloudGeometry(bounds) {
+      /*
+        Wider than the extract, because cloud is not local.
+
+        The mist is clipped to the venue on purpose — it is a fact about this
+        valley. A cloud deck that stopped at the same line would show its own
+        edge as a straight seam across the sky, which is the one thing that
+        would give the whole effect away.
+      */
+      var pad = 0.55;
+      var w = bounds[0][0] - pad, s0 = bounds[0][1] - pad;
+      var e = bounds[1][0] + pad, n = bounds[1][1] + pad;
+      var out = [];
+      for (var i = 0; i < CLOUD_SHEETS; i++) {
+        var t = i / (CLOUD_SHEETS - 1);
+        var a = maplibregl.MercatorCoordinate.fromLngLat([w, s0], 0);
+        var b = maplibregl.MercatorCoordinate.fromLngLat([e, s0], 0);
+        var c = maplibregl.MercatorCoordinate.fromLngLat([e, n], 0);
+        var d = maplibregl.MercatorCoordinate.fromLngLat([w, n], 0);
+        out.push(
+          a.x, a.y, t, b.x, b.y, t, c.x, c.y, t,
+          a.x, a.y, t, c.x, c.y, t, d.x, d.y, t
+        );
+      }
+      return new Float32Array(out);
+    }
+
+    var CLOUD_VS = [
+      "#version 300 es",
+      "in vec3 a_pos;",
+      "uniform mat4 u_matrix;",
+      "uniform float u_base;",
+      "uniform float u_thickness;",
+      "uniform float u_mercPerMetre;",
+      "out vec2 v_world;",
+      "out float v_t;",
+      "void main() {",
+      "  v_t = a_pos.z;",
+      "  v_world = a_pos.xy;",
+      "  float metres = u_base + a_pos.z * u_thickness;",
+      "  gl_Position = u_matrix * vec4(a_pos.xy, metres * u_mercPerMetre, 1.0);",
+      "}"
+    ].join("\\n");
+
+    var CLOUD_FS = [
+      "#version 300 es",
+      "precision highp float;",
+      "in vec2 v_world;",
+      "in float v_t;",
+      "uniform float u_cover;",
+      "uniform float u_time;",
+      "uniform vec2 u_noiseOrigin;",
+      "uniform float u_visible;",
+      "uniform vec3 u_lit;",
+      "uniform vec3 u_shade;",
+      "out vec4 o;",
+      "float hash(vec2 p) {",
+      "  return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);",
+      "}",
+      "float noise(vec2 p) {",
+      "  vec2 i = floor(p); vec2 f = fract(p);",
+      "  f = f * f * (3.0 - 2.0 * f);",
+      "  return mix(mix(hash(i), hash(i + vec2(1,0)), f.x),",
+      "             mix(hash(i + vec2(0,1)), hash(i + vec2(1,1)), f.x), f.y);",
+      "}",
+      "float fbm(vec2 p) {",
+      "  float v = 0.0; float a = 0.5;",
+      "  for (int i = 0; i < 5; i++) { v += a * noise(p); p *= 2.03; a *= 0.5; }",
+      "  return v;",
+      "}",
+      "void main() {",
+      "// each sheet samples the field offset by its own height, which is what",
+      "// turns a stack of flat layers into something with an inside",
+      "// relative to the venue — see the note in the mist shader for why",
+      "  vec2 p = (v_world - u_noiseOrigin) * 9000.0 + vec2(u_time * 0.004, u_time * 0.0025);",
+      "  float n = fbm(p + vec2(v_t * 1.7, v_t * -1.1));",
+      "// rounded top and flat-ish base, which is the shape of fair-weather",
+      "// cloud and the thing that stops a slab reading as haze",
+      "  float profile = smoothstep(0.0, 0.22, v_t) * (1.0 - smoothstep(0.55, 1.0, v_t));",
+      "// cover maps onto the part of the range fbm actually occupies.",
+      "// fbm averages about 0.48 and seldom leaves 0.30-0.70, so a threshold",
+      "// taken straight from cover spends most of its travel outside the",
+      "// values the noise ever produces: everything below ~30% cover is a",
+      "// clear sky and everything above ~70% is solid overcast.",
+      "  float threshold = mix(0.68, 0.26, u_cover);",
+      "  float d = smoothstep(threshold, threshold + 0.11, n) * profile;",
+      "  if (d <= 0.004) discard;",
+      "// lit from above and shaded below: one cheap lerp does the job of a",
+      "// light march, and the eye only checks that the top is brighter",
+      "  vec3 col = mix(u_shade, u_lit, smoothstep(0.15, 0.75, v_t));",
+      "// per sheet, not per cloud. Twenty-six sheets at 0.30 accumulate to",
+      "// solid overcast whatever the forecast says: 1-(1-0.3)^26 is 1. The",
+      "// figure that matters is the total, and the blender does that sum.",
+      "  o = vec4(col, d * 0.14 * u_visible);",
+      "}"
+    ].join("\\n");
+
+    function addCloudLayer(map) {
+      if (map.getLayer("cloud3d")) return;
+      var data = cloudGeometry(BOUNDS);
+
+      map.addLayer({
+        id: "cloud3d",
+        type: "custom",
+        renderingMode: "3d",
+        onAdd: function (m, gl) {
+          this.prog = makeProgram(gl, CLOUD_VS, CLOUD_FS);
+          this.aPos = gl.getAttribLocation(this.prog, "a_pos");
+          this.uMatrix = gl.getUniformLocation(this.prog, "u_matrix");
+          this.uBase = gl.getUniformLocation(this.prog, "u_base");
+          this.uThickness = gl.getUniformLocation(this.prog, "u_thickness");
+          this.uMerc = gl.getUniformLocation(this.prog, "u_mercPerMetre");
+          this.uCover = gl.getUniformLocation(this.prog, "u_cover");
+          this.uTime = gl.getUniformLocation(this.prog, "u_time");
+          this.uLit = gl.getUniformLocation(this.prog, "u_lit");
+          this.uShade = gl.getUniformLocation(this.prog, "u_shade");
+          this.uNoiseOrigin = gl.getUniformLocation(this.prog, "u_noiseOrigin");
+          this.uVisible = gl.getUniformLocation(this.prog, "u_visible");
+          this.buf = gl.createBuffer();
+          gl.bindBuffer(gl.ARRAY_BUFFER, this.buf);
+          gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
+          this.count = data.length / 3;
+        },
+        render: function (gl, args) {
+          var w = window.__weather || { cover: 0 };
+          if (!w.cover || window.__cloud3d === false) return;
+          var g = window.__ground;
+          if (!g) return;
+
+          gl.useProgram(this.prog);
+          gl.uniformMatrix4fv(
+            this.uMatrix,
+            false,
+            args.defaultProjectionData
+              ? args.defaultProjectionData.mainMatrix
+              : args.modelViewProjectionMatrix
+          );
+
+          var centre = map.getCenter();
+          gl.uniform1f(
+            this.uMerc,
+            maplibregl.MercatorCoordinate.fromLngLat(centre, 1).z -
+              maplibregl.MercatorCoordinate.fromLngLat(centre, 0).z
+          );
+
+          /*
+            Cloud base above the high ground rather than at a fixed altitude.
+
+            Measured from the terrain for the same reason the mist is: 1200m
+            is a low deck over the Eifel and unreachable over Zandvoort. 700m
+            above the high ground is roughly where a fair-weather base sits,
+            and more importantly it is always *above the hills*, which is the
+            part that has to be true everywhere.
+          */
+          gl.uniform1f(this.uThickness, 900);
+          var cno = maplibregl.MercatorCoordinate.fromLngLat(centre, 0);
+          gl.uniform2f(this.uNoiseOrigin, cno.x, cno.y);
+          gl.uniform1f(this.uCover, Math.max(0, Math.min(1, w.cover / 100)));
+          gl.uniform1f(this.uTime, Date.now() / 1000);
+
+          /*
+            Cloud fades out once the camera climbs above it.
+
+            This is the one place where being literal makes the map worse. The
+            camera here sits kilometres up almost all the time, which is above
+            any real cloud base — so a physically-placed deck spends its life
+            between you and the circuit, and an overcast forecast turns the
+            whole view white. That is accurate and useless: the map exists to
+            show where the light falls, and it cannot do that from inside a
+            cloud.
+
+            So the deck is drawn when you are underneath it, looking up or
+            along, and thins as you rise through it. What is lost is the view
+            of cloud tops from above, which nobody is here for. What is kept
+            is cloud in the sky when you are down in the landscape, where it
+            is the thing you are reading.
+          */
+          /*
+            Camera height from the zoom, not from getFreeCameraOptions.
+
+            That API reports 0 here, which would read as a camera on the
+            ground and leave the cloud at full strength from any altitude —
+            the exact failure this fade exists to prevent. The zoom
+            relationship is fixed and needs nothing from the renderer.
+          */
+          var latRad = (centre.lat * Math.PI) / 180;
+          var mpp =
+            (156543.03392 * Math.cos(latRad)) / Math.pow(2, map.getZoom());
+          var cam = ((map.getCanvas().clientHeight / 2) * mpp) / 0.3333;
+
+          /*
+            The deck stays above the camera. This is a deliberate lie, and the
+            only one in this sky.
+
+            Everything else here is placed where it really is. Cloud cannot
+            be, because the camera in this app sits kilometres up almost all
+            the time — well above any real base — so a physically-placed deck
+            spends its life *between you and the circuit*. An overcast
+            forecast then turns the whole view white, which is accurate and
+            useless: the map exists to show where the light falls and cannot
+            do that from inside a cloud.
+
+            Fading it as the camera rose was tried first and is worse: the
+            cloud is then either obscuring the map or missing entirely, and it
+            changes with zoom for no reason a person could see.
+
+            Keeping it overhead preserves what the cloud is actually being
+            read for — how much sky is covered, and what the light will be
+            doing — and gives up only the view of cloud tops from above, which
+            nobody opens this map for. The height is a fiction; the *cover* is
+            the forecast's own number.
+          */
+          gl.uniform1f(this.uBase, Math.max(g.base + g.thickness + 700, cam + 500));
+          gl.uniform1f(this.uVisible, 1);
+
+          var t = daylight();
+          gl.uniform3f(this.uLit, 0.30 + 0.68 * t, 0.33 + 0.65 * t, 0.38 + 0.60 * t);
+          gl.uniform3f(this.uShade, 0.16 + 0.38 * t, 0.18 + 0.40 * t, 0.22 + 0.44 * t);
+
+          gl.bindBuffer(gl.ARRAY_BUFFER, this.buf);
+          gl.enableVertexAttribArray(this.aPos);
+          gl.vertexAttribPointer(this.aPos, 3, gl.FLOAT, false, 0, 0);
+          gl.enable(gl.BLEND);
+          gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+          gl.enable(gl.DEPTH_TEST);
+          gl.depthMask(false);
+          gl.disable(gl.CULL_FACE);
+          gl.drawArrays(gl.TRIANGLES, 0, this.count);
+        }
+      });
+    }
     function addMistLayer(map) {
       if (map.getLayer("mist")) return;
       var data = mistGeometry(BOUNDS);
@@ -1151,6 +1434,7 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
           this.uDensity = gl.getUniformLocation(this.prog, "u_density");
           this.uTime = gl.getUniformLocation(this.prog, "u_time");
           this.uTint = gl.getUniformLocation(this.prog, "u_tint");
+          this.uNoiseOrigin = gl.getUniformLocation(this.prog, "u_noiseOrigin");
           this.buf = gl.createBuffer();
           gl.bindBuffer(gl.ARRAY_BUFFER, this.buf);
           gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
@@ -1174,8 +1458,65 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
             maplibregl.MercatorCoordinate.fromLngLat(map.getCenter(), 1).z -
               maplibregl.MercatorCoordinate.fromLngLat(map.getCenter(), 0).z
           );
+          var no = maplibregl.MercatorCoordinate.fromLngLat(map.getCenter(), 0);
+          gl.uniform2f(this.uNoiseOrigin, no.x, no.y);
           gl.uniform1f(this.uDensity, mist.density);
           gl.uniform1f(this.uTime, Date.now() / 1000);
+
+          /*
+            Cloud fades out once the camera climbs above it.
+
+            This is the one place where being literal makes the map worse. The
+            camera here sits kilometres up almost all the time, which is above
+            any real cloud base — so a physically-placed deck spends its life
+            between you and the circuit, and an overcast forecast turns the
+            whole view white. That is accurate and useless: the map exists to
+            show where the light falls, and it cannot do that from inside a
+            cloud.
+
+            So the deck is drawn when you are underneath it, looking up or
+            along, and thins as you rise through it. What is lost is the view
+            of cloud tops from above, which nobody is here for. What is kept
+            is cloud in the sky when you are down in the landscape, where it
+            is the thing you are reading.
+          */
+          /*
+            Camera height from the zoom, not from getFreeCameraOptions.
+
+            That API reports 0 here, which would read as a camera on the
+            ground and leave the cloud at full strength from any altitude —
+            the exact failure this fade exists to prevent. The zoom
+            relationship is fixed and needs nothing from the renderer.
+          */
+          var latRad = (centre.lat * Math.PI) / 180;
+          var mpp =
+            (156543.03392 * Math.cos(latRad)) / Math.pow(2, map.getZoom());
+          var cam = ((map.getCanvas().clientHeight / 2) * mpp) / 0.3333;
+
+          /*
+            The deck stays above the camera. This is a deliberate lie, and the
+            only one in this sky.
+
+            Everything else here is placed where it really is. Cloud cannot
+            be, because the camera in this app sits kilometres up almost all
+            the time — well above any real base — so a physically-placed deck
+            spends its life *between you and the circuit*. An overcast
+            forecast then turns the whole view white, which is accurate and
+            useless: the map exists to show where the light falls and cannot
+            do that from inside a cloud.
+
+            Fading it as the camera rose was tried first and is worse: the
+            cloud is then either obscuring the map or missing entirely, and it
+            changes with zoom for no reason a person could see.
+
+            Keeping it overhead preserves what the cloud is actually being
+            read for — how much sky is covered, and what the light will be
+            doing — and gives up only the view of cloud tops from above, which
+            nobody opens this map for. The height is a fiction; the *cover* is
+            the forecast's own number.
+          */
+          gl.uniform1f(this.uBase, Math.max(g.base + g.thickness + 700, cam + 500));
+          gl.uniform1f(this.uVisible, 1);
           var t = daylight();
           // Lit by the same sun as everything else: grey-blue before dawn,
           // near-white once it is up.
@@ -1602,6 +1943,8 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
             fadeMask();
             addMistLayer(map);
             addRainLayer(map);
+            addCloudLayer(map);
+            refreshGroundLevels(map);
             applyMist();
             post({ stage: "ground-coloured" });
             applySun();
