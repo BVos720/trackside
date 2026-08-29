@@ -648,45 +648,6 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
       }
     }
 
-    /*
-      Rain, in screen space.
-
-      Deliberately not projected: rain is the nearest thing there is, falling
-      between you and everything else, so it belongs to the window rather
-      than to the sky. Positions come from the index and the clock instead of
-      an array of drops, which keeps it stateless and cheap.
-    */
-    function drawRain(g, vw, vh, tSec) {
-      var mm = window.__weather ? window.__weather.rain : 0;
-      if (mm <= 0) return;
-
-      // Drizzle and downpour differ by orders of magnitude, so this is
-      // compressed hard: 0.1mm still shows, 8mm is not eighty times denser.
-      var drops = Math.round(Math.min(1, Math.pow(mm / 6, 0.55)) * 320);
-      var t = daylight();
-      g.strokeStyle = t > 0.4 ? "rgba(196,214,232,0.42)" : "rgba(150,170,196,0.34)";
-      g.lineWidth = 1;
-      g.beginPath();
-
-      for (var i = 0; i < drops; i++) {
-        /*
-          Hashed, not strided.
-
-          Stepping x and y by fixed amounts per drop lays them out on a
-          lattice, and falling rain on a regular grid reads as a texture
-          rather than as weather. Two cheap hashes scatter them instead.
-        */
-        var hx = (Math.sin(i * 12.9898) * 43758.5453) % 1;
-        var hy = (Math.sin(i * 78.233) * 12345.6789) % 1;
-        var speed = 480 + Math.abs(hy) * 420;
-        var len = 12 + Math.abs(hx) * 12;
-        var x = (Math.abs(hx) * (vw + 120) + tSec * 46) % (vw + 120) - 60;
-        var y = (Math.abs(hy) * (vh + 80) + tSec * speed) % (vh + 80) - 40;
-        g.moveTo(x, y);
-        g.lineTo(x - len * 0.3, y + len);
-      }
-      g.stroke();
-    }
 
     /*
       One animation loop, running only when there is something moving.
@@ -805,6 +766,8 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
       "uniform float u_base;",
       "uniform float u_thickness;",
       "uniform float u_mercPerMetre;",
+      "uniform vec2 u_origin;",
+      "uniform float u_span;",
       "out vec2 v_world;",
       "out float v_t;",
       "void main() {",
@@ -904,15 +867,21 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
       return { base: floor, thickness: thickness };
     }
 
-    function refreshMistLevels(map) {
+    /*
+      Where the ground is, as a fact in its own right.
+
+      Both the fog and the rain need to know how high the landscape stands:
+      one to sit on it, the other to fall onto it. Hanging that on the fog
+      made the rain depend on whether it was foggy, which is nonsense — and
+      in practice meant no rain fell at all on a clear wet afternoon.
+    */
+    window.__ground = null;
+
+    function refreshGroundLevels(map) {
       var levels = mistLevels(map);
       if (!levels) return;
-      var current = window.__mist || { density: 0 };
-      window.__mist = {
-        base: levels.base,
-        thickness: levels.thickness,
-        density: current.density
-      };
+      window.__ground = levels;
+      applyMist();
       map.triggerRepaint();
     }
 
@@ -949,15 +918,221 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
     }
 
     function applyMist() {
-      var current = window.__mist || { base: 0, thickness: 0, density: 0 };
+      var g = window.__ground;
       window.__mist = {
-        base: current.base,
-        thickness: current.thickness,
+        base: g ? g.base : 0,
+        thickness: g ? g.thickness : 0,
         density: mistDensity()
       };
       if (window.__map) window.__map.triggerRepaint();
     }
 
+    /*
+      Rain that falls in the world rather than on the glass.
+
+      The canvas rain is honest about *whether* it is raining and says
+      nothing about *where*. It cannot be occluded by a hill, it does not
+      get thinner with distance, and it sits at the same size whether the
+      camera is on the ground or a kilometre up — because it is a pattern
+      drawn over the finished picture.
+
+      This is the same drops placed at real coordinates, falling through
+      real altitudes, in the same depth-tested layer the mist uses. A ridge
+      in front of a shower hides it. Looking down a valley you see the rain
+      along its length. That is the difference between weather on the map
+      and weather in the scene.
+
+      Drops are stateless: position comes from a per-drop seed and the
+      clock, so there is no particle array to step and nothing to fall out
+      of sync if a frame is dropped.
+    */
+    /*
+      Enough to fill a pitched view, which sees a long way.
+
+      Two vertices each as GL_LINES, so this is 28k vertices in one draw call
+      — trivial next to the terrain mesh, and the cost is flat whether it is
+      drizzling or pouring.
+    */
+    var RAIN_DROPS = 14000;
+
+    function rainGeometry(bounds) {
+      var w = bounds[0][0], s0 = bounds[0][1], e = bounds[1][0], n = bounds[1][1];
+      var out = [];
+      var seed = 20260829;
+      function rnd() {
+        seed = (seed * 1103515245 + 12345) % 2147483648;
+        return seed / 2147483648;
+      }
+      /*
+        Offsets in a box that travels with the camera, not fixed places.
+
+        Scattering a fixed number of drops across the whole extract puts
+        almost all of them kilometres away: the far field covers far more
+        ground than the near field, so it rains hard on the horizon and
+        barely at all where you are standing — the opposite of real rain.
+
+        Rain is everywhere, so there is nothing lost by following the camera.
+        Density stays even wherever you look and the same four thousand drops
+        do far more work.
+      */
+      for (var i = 0; i < RAIN_DROPS; i++) {
+        var m = { x: rnd() - 0.5, y: rnd() - 0.5 };
+        var phase = rnd();
+        // Two vertices per drop: the head and the tail of one streak. The
+        // last component says which end this is, so the shader can offset
+        // the tail upward without a second buffer.
+        out.push(m.x, m.y, phase, 0);
+        out.push(m.x, m.y, phase, 1);
+      }
+      return new Float32Array(out);
+    }
+
+    var RAIN_VS = [
+      "#version 300 es",
+      "in vec4 a_drop;",
+      "uniform mat4 u_matrix;",
+      "uniform float u_time;",
+      "uniform float u_top;",
+      "uniform float u_fall;",
+      "uniform float u_streak;",
+      "uniform float u_mercPerMetre;",
+      "uniform vec2 u_origin;",
+      "uniform float u_span;",
+      "void main() {",
+      "  float phase = a_drop.z;",
+      "  vec2 world = u_origin + a_drop.xy * u_span;",
+      "// each drop runs its own loop from the same clock, so nothing has to",
+      "// be stepped or stored between frames",
+      "  float t = fract(phase + u_time);",
+      "  float metres = u_top - t * u_fall + a_drop.w * u_streak;",
+      "  gl_Position = u_matrix * vec4(world, metres * u_mercPerMetre, 1.0);",
+      "}"
+    ].join("\\n");
+
+    var RAIN_FS = [
+      "#version 300 es",
+      "precision mediump float;",
+      "uniform float u_alpha;",
+      "uniform vec3 u_tint;",
+      "out vec4 o;",
+      "void main() { o = vec4(u_tint, u_alpha); }"
+    ].join("\\n");
+
+    function addRainLayer(map) {
+      if (map.getLayer("rain3d")) return;
+      var data = rainGeometry(BOUNDS);
+
+      map.addLayer({
+        id: "rain3d",
+        type: "custom",
+        renderingMode: "3d",
+        onAdd: function (m, gl) {
+          this.prog = makeProgram(gl, RAIN_VS, RAIN_FS);
+          this.aDrop = gl.getAttribLocation(this.prog, "a_drop");
+          this.uMatrix = gl.getUniformLocation(this.prog, "u_matrix");
+          this.uTime = gl.getUniformLocation(this.prog, "u_time");
+          this.uTop = gl.getUniformLocation(this.prog, "u_top");
+          this.uFall = gl.getUniformLocation(this.prog, "u_fall");
+          this.uStreak = gl.getUniformLocation(this.prog, "u_streak");
+          this.uMerc = gl.getUniformLocation(this.prog, "u_mercPerMetre");
+          this.uOrigin = gl.getUniformLocation(this.prog, "u_origin");
+          this.uSpan = gl.getUniformLocation(this.prog, "u_span");
+          this.uAlpha = gl.getUniformLocation(this.prog, "u_alpha");
+          this.uTint = gl.getUniformLocation(this.prog, "u_tint");
+          this.buf = gl.createBuffer();
+          gl.bindBuffer(gl.ARRAY_BUFFER, this.buf);
+          gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
+          this.count = data.length / 4;
+        },
+        render: function (gl, args) {
+          var w = window.__weather || { rain: 0 };
+          if (!w.rain || window.__rain3d === false) return;
+
+          // Falls onto the landscape, so it needs to know where that is.
+          // Without levels there is no honest altitude to fall through.
+          var g = window.__ground;
+          if (!g) return;
+
+          gl.useProgram(this.prog);
+          gl.uniformMatrix4fv(
+            this.uMatrix,
+            false,
+            args.defaultProjectionData
+              ? args.defaultProjectionData.mainMatrix
+              : args.modelViewProjectionMatrix
+          );
+
+          var centre = map.getCenter();
+          gl.uniform1f(
+            this.uMerc,
+            maplibregl.MercatorCoordinate.fromLngLat(centre, 1).z -
+              maplibregl.MercatorCoordinate.fromLngLat(centre, 0).z
+          );
+
+          /*
+            Compressed, deliberately.
+
+            Real rain falls at about 8m/s, so a drop released at cloud base
+            would take a minute to arrive and the scene would look like
+            drizzle suspended in aspic. The fall is shortened to a couple of
+            hundred metres and cycled about once a second, which is what
+            reads as rain. The honest part is where it is and what is in
+            front of it, not the terminal velocity.
+          */
+          var top = g.base + g.thickness + 140;
+          /*
+            The box follows the camera, sized to what is on screen.
+
+            Snapped to a grid so it jumps in steps rather than sliding with
+            every pan. Sliding would drag the whole field of rain along with
+            the camera, which reads as drops stuck to the screen — the exact
+            thing this replaced.
+          */
+          /*
+            Sized to what is on screen, which at a high pitch is a long way
+            past the centre of the map. A box scaled from zoom alone covers
+            the ground under the camera and leaves the horizon dry, which
+            looks like a localised shower rather than weather.
+          */
+          var vb = map.getBounds();
+          var sw = maplibregl.MercatorCoordinate.fromLngLat(vb.getSouthWest(), 0);
+          var ne = maplibregl.MercatorCoordinate.fromLngLat(vb.getNorthEast(), 0);
+          var span = Math.max(Math.abs(ne.x - sw.x), Math.abs(ne.y - sw.y)) * 1.15;
+          if (!isFinite(span) || span <= 0) return;
+
+          // Snapped so the field jumps in steps rather than sliding with the
+          // camera. Sliding drags every drop along and reads as rain stuck
+          // to the screen, which is the thing this replaced.
+          var step = span / 6;
+          gl.uniform2f(
+            this.uOrigin,
+            Math.round(((sw.x + ne.x) / 2) / step) * step,
+            Math.round(((sw.y + ne.y) / 2) / step) * step
+          );
+          gl.uniform1f(this.uSpan, span);
+
+          gl.uniform1f(this.uTop, top);
+          gl.uniform1f(this.uFall, 240);
+          gl.uniform1f(this.uStreak, 11);
+          gl.uniform1f(this.uTime, (Date.now() / 1000) * 1.1);
+
+          var t = daylight();
+          gl.uniform3f(this.uTint, 0.62 + 0.2 * t, 0.70 + 0.18 * t, 0.80 + 0.14 * t);
+          // Heavier rain is denser rather than brighter, but alpha is the
+          // only dial a fixed drop count gives, so it stands in for both.
+          gl.uniform1f(this.uAlpha, Math.min(0.5, 0.12 + w.rain * 0.10));
+
+          gl.bindBuffer(gl.ARRAY_BUFFER, this.buf);
+          gl.enableVertexAttribArray(this.aDrop);
+          gl.vertexAttribPointer(this.aDrop, 4, gl.FLOAT, false, 0, 0);
+          gl.enable(gl.BLEND);
+          gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+          gl.enable(gl.DEPTH_TEST);
+          gl.depthMask(false);
+          gl.drawArrays(gl.LINES, 0, this.count);
+        }
+      });
+    }
     function addMistLayer(map) {
       if (map.getLayer("mist")) return;
       var data = mistGeometry(BOUNDS);
@@ -1022,9 +1197,16 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
       });
 
       map.on("move", function () { map.triggerRepaint(); });
-      // The DEM arrives asynchronously, so the first read can be empty. Once
-      // the map is idle the tiles are there and the levels are real.
-      map.once("idle", function () { refreshMistLevels(map); });
+      /*
+        On every idle, not once.
+
+        The DEM arrives asynchronously, so the first read can be empty — and
+        a single listener that fires before the tiles land leaves the levels
+        at zero forever, which is exactly what stopped the rain falling.
+        Recomputing when the map settles also keeps them right after a zoom
+        changes which tiles are loaded.
+      */
+      map.on("idle", function () { refreshGroundLevels(map); });
     }
     function drawSky() {
       var map = window.__map;
@@ -1086,7 +1268,15 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
       // most useful thing an overcast forecast can tell you.
       drawSun(g);
       drawClouds(g, w, h, tSec);
-      drawRain(g, w, h, tSec);
+      /*
+        The canvas rain is gone; rain3d replaces it.
+
+        Drawing both meant two unrelated downpours at once — one in the world
+        with perspective and occlusion, one pasted over the finished picture
+        at a fixed size. Keeping the screen-space one as a 'cheap' fallback
+        was tempting and wrong: it is not a lower-detail version of the same
+        thing, it is a different claim about where the rain is.
+      */
     }
 
     /*
@@ -1411,6 +1601,7 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
             applyGround();
             fadeMask();
             addMistLayer(map);
+            addRainLayer(map);
             applyMist();
             post({ stage: "ground-coloured" });
             applySun();
