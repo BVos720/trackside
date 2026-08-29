@@ -335,6 +335,7 @@ function AppShell() {
     addPhoto,
     setKeyImage,
     setMediaFocal,
+    renameWay,
     removePhoto,
     asGeoJson,
     cloneInto,
@@ -630,6 +631,25 @@ function AppShell() {
     if (!navSpot) return null;
     const from = fix?.position ?? null;
     if (!from) return null;
+
+    /*
+      No route from off-site.
+
+      Reported as a distance of 155km: standing at home, the router
+      faithfully drew a line from the living room to the Nordschleife. That
+      is not navigation, it is a very long straight line — the walking
+      network stops at the venue, so every metre of it is guesswork drawn
+      in the same blue as a real path.
+
+      The bounds check already exists for "add my current location", which
+      refuses for exactly the same reason: a fix outside the extract cannot
+      say anything useful about this circuit. Navigation is the other half
+      of that, and was missing it.
+
+      The panel still opens and still names the spot; it just stops
+      pretending to know the way there. See NavigatorPanel.
+    */
+    if (!atVenue) return null;
 
     // The racing surface is a barrier, not scenery: a straight line across it
     // is never a suggestion worth drawing (core/logic/route.ts).
@@ -1266,6 +1286,7 @@ function AppShell() {
                   })();
                 }}
                 onRate={(value) => void rateSpot(activeSpot.id, value)}
+                onRenameWay={(subName) => void renameWay(activeSpot.id, subName)}
                 media={activeMedia}
                 mediaUris={mediaUris}
                 onEdit={() => setSheet({ kind: 'edit', id: activeSpot.id })}
@@ -1316,6 +1337,7 @@ function AppShell() {
                 network={walkNetwork}
                 barriers={trackLinesFor(venue)}
                 fix={fix}
+                atVenue={atVenue}
                 status={positionStatus}
                 now={now}
                 onClose={() => setNavStopId(null)}

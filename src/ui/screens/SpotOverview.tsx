@@ -14,6 +14,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 
@@ -43,6 +44,7 @@ export default function SpotOverview({
   onStepWay,
   onAddWay,
   onRate,
+  onRenameWay,
 }: {
   /** The way of shooting currently on screen — always one of `members`. */
   spot: Spot;
@@ -74,6 +76,8 @@ export default function SpotOverview({
   onAddWay: () => void;
   /** 1–5, or null to clear it back to unrated. */
   onRate: (value: number | null) => void;
+  /** Name this way of shooting. Empty clears it back to unnamed. */
+  onRenameWay?: (subName: string) => void;
 }) {
   const { color } = useTheme();
   const styles = useMemo(() => makeStyles(color), [color]);
@@ -191,9 +195,16 @@ export default function SpotOverview({
             >
               <Text style={styles.wayArrowText}>‹</Text>
             </Pressable>
-            <Text style={styles.wayCount}>
-              Way {members.findIndex((m) => m.id === spot.id) + 1} of{' '}
-              {members.length}
+            {/*
+              The way's own name when it has one, the count when it does not.
+
+              "Long lens" tells you where you are in the carousel far better
+              than "2 of 3"; the count is only a fallback for a way nobody
+              has named yet.
+            */}
+            <Text style={styles.wayCount} numberOfLines={1}>
+              {spot.subName ??
+                `Way ${members.findIndex((m) => m.id === spot.id) + 1} of ${members.length}`}
             </Text>
             <Pressable
               onPress={() => onStepWay(1)}
@@ -233,6 +244,23 @@ export default function SpotOverview({
         )}
 
         <Text style={styles.name}>{spot.name}</Text>
+
+        {/*
+          The place is named above; this names the way of shooting it.
+
+          Only offered once there is more than one way. Until then there is
+          nothing to tell apart, and a second empty name field under every
+          spot is a question nobody asked.
+        */}
+        {members.length > 1 && onRenameWay ? (
+          <TextInput
+            value={spot.subName ?? ''}
+            onChangeText={onRenameWay}
+            placeholder="Name this way — long lens, wide, low"
+            placeholderTextColor={color.textMuted}
+            style={styles.subName}
+          />
+        ) : null}
         <Text style={styles.coords}>
           {spot.position.latitude.toFixed(5)},{' '}
           {spot.position.longitude.toFixed(5)}
@@ -472,7 +500,16 @@ function makeStyles(color: Theme['color']) {
       marginTop: space.xs,
     },
 
-    reframeRow: {
+    subName: {
+    color: color.text,
+    fontSize: type.body,
+    borderBottomWidth: 1,
+    borderBottomColor: color.border,
+    paddingVertical: 4,
+    marginTop: 2,
+  },
+
+  reframeRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: space.md,

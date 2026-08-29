@@ -425,6 +425,30 @@ export function useSpots(circuitId: CircuitId) {
     [reload],
   );
 
+  /**
+   * Name one way of shooting a place.
+   *
+   * Only the sub-name. Renaming the *place* is the edit form's job and
+   * applies to every way at once, which is the distinction the two fields
+   * exist to keep.
+   */
+  const renameWay = useCallback(
+    async (id: SpotId, subName: string) => {
+      const existing = await repositories.spots.get(id);
+      if (!existing) return;
+      const trimmed = subName.trim();
+      await repositories.spots.save({
+        ...existing,
+        // Empty clears it back to null rather than storing a blank string,
+        // so 'unnamed' has one representation and not two.
+        subName: trimmed === '' ? null : trimmed,
+        updatedAt: nowUtc(),
+      });
+      await reload();
+    },
+    [reload],
+  );
+
   const removePhoto = useCallback(
     async (id: MediaId) => {
       await repositories.media.softDelete(id);
@@ -521,6 +545,7 @@ export function useSpots(circuitId: CircuitId) {
     addPhoto,
     setKeyImage,
     setMediaFocal,
+    renameWay,
     removePhoto,
     asGeoJson,
     reload,

@@ -65,12 +65,20 @@ export default function NavigatorPanel({
   network,
   barriers = [],
   fix,
+  atVenue = true,
   status,
   now,
   onClose,
 }: {
   stop: PlanStop;
   spot: Spot | null;
+  /**
+   * Whether the fix is actually at this circuit.
+   *
+   * False from home, where a route would be a hundred-kilometre straight
+   * line drawn in the same blue as a real footpath.
+   */
+  atVenue?: boolean;
   network: WalkNetwork;
   /** Lines a walk may not cross — the racing surface. */
   barriers?: readonly (readonly (readonly [number, number])[])[];
@@ -163,6 +171,25 @@ export default function NavigatorPanel({
               : `${relativeMinutes(departAt - nowMinute)} · be there ${stop.arriveAt}`}
           </Text>
         </View>
+      )}
+
+      {/*
+        Away from the circuit there is no route to give.
+
+        Shown before the permission notices because it outranks them: with a
+        perfectly good fix a hundred kilometres away, the honest answer is
+        still that this cannot help yet. The walking network stops at the
+        venue, so anything drawn from here would be a straight line across
+        three countries in the same blue as a real footpath.
+
+        The spot, its notes and the plan all still work. Only the live
+        directions wait until you arrive.
+      */}
+      {!atVenue && fix !== null && (
+        <Text style={styles.notice}>
+          You are not at the circuit yet, so there is no walking route to
+          give. This will start working when you arrive.
+        </Text>
       )}
 
       {status === 'denied' && (
