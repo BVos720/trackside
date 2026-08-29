@@ -1416,6 +1416,182 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
         }
       });
     }
+    /*
+      Cast shadows, computed from the elevation model.
+
+      ── Why not a shader ─────────────────────────────────────────────
+      Hillshade already answers "which way does this slope face", and that
+      is not the question. A photographer wants to know whether the hill
+      *behind* them will put the corner in shade at six — which is about one
+      piece of ground blocking the sun from another, and hillshade cannot
+      express it at all.
+
+      The usual answer is a shadow map: render the terrain from the sun and
+      compare depths. MapLibre does not hand out its terrain mesh, so there
+      is nothing to render from that point of view.
+
+      But the elevation is already in memory for the mesh, and
+      queryTerrainElevation reads it. So the horizon test is done directly:
+      sample a grid once, then for each cell walk toward the sun and ask
+      whether anything along the way rises above the line to it. That is the
+      definition of a shadow, computed rather than approximated.
+
+      Cheap because the grid is sampled once and reused: the walk is array
+      arithmetic, and only the sun moving invalidates it — not the camera.
+    */
+    var SHADOW_N = 128;
+    var shadowGrid = null;
+    var shadowCanvas = null;
+    var lastShadowKey = "";
+
+    function buildHeightGrid(map) {
+      var w = BOUNDS[0][0], s0 = BOUNDS[0][1], e = BOUNDS[1][0], n = BOUNDS[1][1];
+      var g = new Float32Array(SHADOW_N * SHADOW_N);
+      var found = 0;
+      for (var j = 0; j < SHADOW_N; j++) {
+        var lat = s0 + ((n - s0) * j) / (SHADOW_N - 1);
+        for (var i = 0; i < SHADOW_N; i++) {
+          var lng = w + ((e - w) * i) / (SHADOW_N - 1);
+          var h = 0;
+          try { h = map.queryTerrainElevation({ lng: lng, lat: lat }); } catch (err) { h = null; }
+          if (typeof h === "number" && isFinite(h)) { found++; } else { h = 0; }
+          g[j * SHADOW_N + i] = h;
+        }
+      }
+      // A grid that is mostly holes would produce confident nonsense.
+      return found > SHADOW_N * SHADOW_N * 0.5 ? g : null;
+    }
+
+    function computeShadowMask(grid, azimuth, altitude) {
+      var w = BOUNDS[0][0], s0 = BOUNDS[0][1], e = BOUNDS[1][0], n = BOUNDS[1][1];
+      var midLat = (s0 + n) / 2;
+      // Metres per grid step, which differ in x and y away from the equator.
+      var mx = ((e - w) * 111320 * Math.cos((midLat * Math.PI) / 180)) / (SHADOW_N - 1);
+      var my = ((n - s0) * 110540) / (SHADOW_N - 1);
+
+      // Toward the sun. Azimuth is degrees east of north, so north is +y.
+      var a = (azimuth * Math.PI) / 180;
+      var dx = Math.sin(a);
+      var dy = Math.cos(a);
+      var tanAlt = Math.tan((altitude * Math.PI) / 180);
+
+      var out = new Uint8ClampedArray(SHADOW_N * SHADOW_N);
+      var steps = Math.round(SHADOW_N * 0.75);
+
+      for (var j = 0; j < SHADOW_N; j++) {
+        for (var i = 0; i < SHADOW_N; i++) {
+          var h0 = grid[j * SHADOW_N + i];
+          var shaded = 0;
+          for (var k = 1; k <= steps; k++) {
+            var x = i + dx * k;
+            var y = j + dy * k;
+            if (x < 0 || y < 0 || x > SHADOW_N - 1 || y > SHADOW_N - 1) break;
+            // Metres travelled horizontally, and how high the ray has climbed.
+            var dist = Math.sqrt(Math.pow(dx * k * mx, 2) + Math.pow(dy * k * my, 2));
+            var rayH = h0 + dist * tanAlt;
+            var terrainH = grid[Math.round(y) * SHADOW_N + Math.round(x)];
+            if (terrainH > rayH) { shaded = 1; break; }
+          }
+          out[j * SHADOW_N + i] = shaded;
+        }
+      }
+      return out;
+    }
+
+    function shadowDataUrl(mask, altitude) {
+      if (!shadowCanvas) {
+        shadowCanvas = document.createElement("canvas");
+        shadowCanvas.width = SHADOW_N;
+        shadowCanvas.height = SHADOW_N;
+      }
+      var ctx = shadowCanvas.getContext("2d");
+      var img = ctx.createImageData(SHADOW_N, SHADOW_N);
+
+      /*
+        Long shadows are darker, which is not artistic licence.
+
+        With the sun low, the shaded ground is lit only by sky and the
+        contrast is at its strongest; near midday a shadow is a slight
+        cooling. Tying depth to altitude also makes the whole thing fade out
+        on its own at dusk rather than needing a cutoff.
+      */
+      var strength = Math.max(0, Math.min(1, (35 - altitude) / 35)) * 0.55;
+
+      for (var p = 0; p < mask.length; p++) {
+        // Rows run north-up in the grid and top-down in the image.
+        var row = SHADOW_N - 1 - Math.floor(p / SHADOW_N);
+        var col = p % SHADOW_N;
+        var q = (row * SHADOW_N + col) * 4;
+        img.data[q] = 6;
+        img.data[q + 1] = 10;
+        img.data[q + 2] = 20;
+        img.data[q + 3] = mask[p] ? Math.round(255 * strength) : 0;
+      }
+      ctx.putImageData(img, 0, 0);
+      return shadowCanvas.toDataURL();
+    }
+
+    function refreshShadows(map) {
+      if (window.__shadows === false) return;
+      var sun = window.__sun;
+      if (!sun) return;
+
+      // Nothing casts a shadow once the sun is down, and a very low sun
+      // produces shadows longer than the extract, which is just a dark map.
+      if (sun.altitude < 3) {
+        if (map.getLayer("terrain-shadows")) {
+          map.setPaintProperty("terrain-shadows", "raster-opacity", 0);
+        }
+        return;
+      }
+
+      // Recomputed only when the sun has actually moved. Three degrees is
+      // about twelve minutes, and finer than the eye can see in a shadow.
+      var key = Math.round(sun.azimuth / 3) + ":" + Math.round(sun.altitude / 3);
+      if (key === lastShadowKey) return;
+
+      if (!shadowGrid) {
+        shadowGrid = buildHeightGrid(map);
+        if (!shadowGrid) return;
+      }
+      lastShadowKey = key;
+
+      var mask = computeShadowMask(shadowGrid, sun.azimuth, sun.altitude);
+      var url = shadowDataUrl(mask, sun.altitude);
+
+      var coords = [
+        [BOUNDS[0][0], BOUNDS[1][1]],
+        [BOUNDS[1][0], BOUNDS[1][1]],
+        [BOUNDS[1][0], BOUNDS[0][1]],
+        [BOUNDS[0][0], BOUNDS[0][1]]
+      ];
+
+      var src = map.getSource("shadow-src");
+      if (src) {
+        src.updateImage({ url: url, coordinates: coords });
+        map.setPaintProperty("terrain-shadows", "raster-opacity", 1);
+        return;
+      }
+
+      map.addSource("shadow-src", { type: "image", url: url, coordinates: coords });
+      /*
+        Under the labels and the circuit, over the ground.
+
+        A shadow falls on the landscape, not on the names of things. Putting
+        it above them would make corner names go dim as the afternoon wore
+        on, which is the sort of realism nobody asked for.
+      */
+      var before = map.getLayer("corner-labels") ? "corner-labels" : undefined;
+      map.addLayer(
+        {
+          id: "terrain-shadows",
+          type: "raster",
+          source: "shadow-src",
+          paint: { "raster-opacity": 1, "raster-fade-duration": 0 }
+        },
+        before
+      );
+    }
     function addMistLayer(map) {
       if (map.getLayer("mist")) return;
       var data = mistGeometry(BOUNDS);
@@ -1758,6 +1934,7 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
 
         applyGround();
         applyMist();
+        if (window.__map) refreshShadows(window.__map);
         /*
           Paired with applyGround, and that pairing is the fix for a real bug.
 
@@ -1946,6 +2123,7 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
             addCloudLayer(map);
             refreshGroundLevels(map);
             applyMist();
+            refreshShadows(map);
             post({ stage: "ground-coloured" });
             applySun();
             drawSky();
