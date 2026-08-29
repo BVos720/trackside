@@ -503,11 +503,117 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
           // Biased upward: a uniform spread bunches everything at the
           // horizon once projected.
           alt: Math.pow(rnd(), 0.7) * 88,
-          mag: rnd()
+          mag: rnd(),
+          /*
+            Each star twinkles on its own clock.
+
+            A shared phase makes the whole sky pulse together, which reads
+            as a failing screen rather than as air. The rate varies too:
+            real scintillation is faster for stars low down, where you are
+            looking through more atmosphere, and this at least does not
+            make them all identical.
+          */
+          phase: rnd() * Math.PI * 2,
+          rate: 0.6 + rnd() * 2.2
         });
       }
+
+      /*
+        The Milky Way: a dense band, not a texture.
+
+        Drawn as several thousand faint stars crowded around one great
+        circle rather than as a painted smear, because that is what it is —
+        and because it then behaves like the rest of the sky for free. It
+        sits still against the compass, it rises and sets with everything
+        else, and it needs no separate projection.
+
+        The band is tilted across the sky rather than following the horizon.
+        Anything parallel to the horizon reads as haze; the tilt is what
+        makes it legible as a band of stars.
+      */
+      for (var j = 0; j < 2600; j++) {
+        var along = rnd() * 360;
+        // Gaussian-ish spread off the centre line, so it has a bright core
+        // that frays at the edges instead of a hard rectangle.
+        var across = (rnd() + rnd() + rnd() - 1.5) * 11;
+        var tilt = 32;
+        var altitude =
+          38 + across + Math.sin((along * Math.PI) / 180) * tilt;
+        if (altitude < 2 || altitude > 88) continue;
+        out.push({
+          az: along,
+          alt: altitude,
+          // Faint: the band is made of stars too dim to resolve, and any
+          // one of them standing out would break the illusion of many.
+          mag: rnd() * 0.28,
+          phase: rnd() * Math.PI * 2,
+          rate: 0.4 + rnd() * 1.2,
+          milky: true
+        });
+      }
+
       return out;
     })();
+
+    /*
+      Shooting stars, on their own slow clock.
+
+      One every twenty seconds or so, which is roughly a good dark-sky
+      night and — more to the point — rare enough to still be worth seeing.
+      A sky with a meteor every second is a screensaver.
+
+      Each is derived from its index and the clock rather than spawned and
+      tracked, so there is no list to grow, nothing to leak, and a dropped
+      frame cannot leave one stranded halfway across the sky.
+    */
+    var METEOR_PERIOD = 20;
+    var METEOR_LIFE = 1.1;
+
+    function drawMeteors(g, tSec, night) {
+      if (night <= 0) return;
+
+      // Two overlapping sequences, offset by half a period, so two can be
+      // in flight at once without either being predictable.
+      for (var lane = 0; lane < 2; lane++) {
+        var t = tSec + lane * METEOR_PERIOD * 0.5;
+        var index = Math.floor(t / METEOR_PERIOD);
+        var life = (t % METEOR_PERIOD) / METEOR_LIFE;
+        if (life > 1) continue;
+
+        // Seeded from the index: the same meteor every time that index
+        // comes round, which keeps it stateless.
+        var seed = Math.sin(index * 127.1 + lane * 311.7) * 43758.5453;
+        var r1 = seed - Math.floor(seed);
+        var seed2 = Math.sin(index * 269.5 + lane * 183.3) * 43758.5453;
+        var r2 = seed2 - Math.floor(seed2);
+
+        var az = r1 * 360;
+        var alt = 30 + r2 * 50;
+        // Downward and sideways, as they actually travel.
+        var travel = 26 + r1 * 18;
+        var drift = (r2 - 0.5) * 30;
+
+        var head = project(az + drift * life, alt - travel * life);
+        var tail = project(
+          az + drift * Math.max(0, life - 0.12),
+          alt - travel * Math.max(0, life - 0.12)
+        );
+        if (!head || !tail) continue;
+
+        // Brightest in the middle of the flight: they arrive and fade
+        // rather than switching on and off.
+        var fade = Math.sin(life * Math.PI);
+        var grad = g.createLinearGradient(tail.x, tail.y, head.x, head.y);
+        grad.addColorStop(0, "rgba(200,220,255,0)");
+        grad.addColorStop(1, "rgba(255,255,255," + (0.9 * fade * night).toFixed(3) + ")");
+        g.strokeStyle = grad;
+        g.lineWidth = 1.6;
+        g.beginPath();
+        g.moveTo(tail.x, tail.y);
+        g.lineTo(head.x, head.y);
+        g.stroke();
+      }
+    }
 
     var skyCanvas = null;
 
@@ -675,7 +781,23 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
       */
       var w = window.__weather || { cover: 0, rain: 0 };
       var mistNow = window.__mist || { density: 0 };
-      var moving = w.cover > 0 || w.rain > 0 || mistNow.density > 0;
+
+      /*
+        Night counts as movement now.
+
+        Stars twinkle and meteors cross, so a clear night is no longer a
+        still picture — and this loop was the only thing redrawing the sky
+        between camera moves. Without it the twinkle would advance one frame
+        each time the map happened to repaint, which is worse than not
+        twinkling at all.
+
+        Daylight still costs nothing: there are no stars to animate, so the
+        condition is false and the loop never starts.
+      */
+      var sunNow = window.__sun;
+      var isNight = !!sunNow && sunNow.altitude < -2 && window.__stars !== false;
+
+      var moving = w.cover > 0 || w.rain > 0 || mistNow.density > 0 || isNight;
 
       if (!moving) {
         if (weatherLoop !== null) {
@@ -1863,12 +1985,27 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
         var p = project(st.az, st.alt);
         if (!p || p.y < 0 || p.y > h) continue;
         var r = 0.6 + st.mag * 1.1;
-        g.globalAlpha = night * (0.35 + st.mag * 0.65);
-        g.fillStyle = "#EAF0FF";
+        /*
+          Twinkle.
+
+          A shallow oscillation, not a blink: scintillation is a wobble in
+          brightness of a few tens of percent, and anything deeper reads as
+          a fault. Brighter stars twinkle proportionally less, which is
+          both true and what stops the sky looking like static.
+        */
+        var flicker =
+          1 - (0.34 - st.mag * 0.2) * (0.5 + 0.5 * Math.sin(tSec * st.rate + st.phase));
+        g.globalAlpha = night * (0.35 + st.mag * 0.65) * flicker;
+        // The band runs cooler than the foreground stars, which is roughly
+        // true and reads as depth rather than as one flat field.
+        g.fillStyle = st.milky ? "#C6D4F2" : "#EAF0FF";
         g.beginPath();
         g.arc(p.x, p.y, r, 0, Math.PI * 2);
         g.fill();
       }
+
+      g.globalAlpha = 1;
+      drawMeteors(g, tSec, night);
 
       var moon = window.__moon;
       if (moon && moon.altitude > -2) {
