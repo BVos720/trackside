@@ -147,6 +147,7 @@ export default function MapScreen({
   here,
   standAt = null,
   onLeaveFirstPerson,
+  onTerrainModeChange,
   heading = null,
   controlsTop = 0,
   position,
@@ -171,6 +172,15 @@ export default function MapScreen({
   /** Stand at a spot and look around, or null for the usual view. */
   standAt?: { lon: number; lat: number; bearing: number | null } | null;
   onLeaveFirstPerson?: () => void;
+  /**
+   * Which map is on screen, reported upward.
+   *
+   * The 3D flag lives here because this screen owns the switch, but two
+   * things outside it depend on the answer — whether to offer a view that
+   * only exists in 3D, and whether to leave one. Reporting it is a smaller
+   * change than lifting the state and making this screen controlled.
+   */
+  onTerrainModeChange?: (terrain3d: boolean) => void;
   /** Compass bearing in degrees from north, or null when unknown. */
   heading?: number | null;
   /**
@@ -252,6 +262,9 @@ export default function MapScreen({
   const [is3D, setIs3D] = useState(false);
 
   const [terrain3d, setTerrain3d] = useState(false);
+  useEffect(() => {
+    onTerrainModeChange?.(terrain3d);
+  }, [terrain3d, onTerrainModeChange]);
 
   /**
    * The spots inside a tapped stack, and which of them is lit.
@@ -300,6 +313,18 @@ export default function MapScreen({
       }
     })();
   }, []);
+
+  /*
+    Switching to the flat map leaves the first-person view.
+
+    Standing somewhere is a fact about the 3D camera. Keep it while the
+    flat map is showing and the state says you are at a fence post while
+    the screen shows an overhead plan — and worse, pressing 3D again drops
+    you back into a view you had already left.
+  */
+  useEffect(() => {
+    if (!terrain3d && standAt !== null) onLeaveFirstPerson?.();
+  }, [terrain3d, standAt, onLeaveFirstPerson]);
 
   /** Same reasoning as the scenery flag above: read on mount, no subscription. */
   const [rainEnabled, setRainEnabled] = useState(true);

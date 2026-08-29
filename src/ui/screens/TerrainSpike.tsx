@@ -1849,13 +1849,46 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
     */
     window.__fpv = null;
 
+    /** Layers that are in the way when you are standing among them. */
+    var FPV_HIDDEN = ["trees", "ground-detail"];
+
     window.__enterFirstPerson = function (json) {
       try {
         var o = JSON.parse(json);
         var map = window.__map;
         if (!map) return;
 
-        window.__fpv = { lon: o.lon, lat: o.lat };
+        window.__fpv = { lon: o.lon, lat: o.lat, maxZoom: map.getMaxZoom() };
+
+        /*
+          Eye height, which needs the zoom ceiling lifted.
+
+          MapLibre's camera sits a distance from the point it is centred on
+          that is set by zoom, and at pitch 85 its height above the ground is
+          that distance times cos(85). Zoom 18.5 works out at 24m — floating
+          over the treetops, which is exactly what it looked like. Zoom 22 is
+          2.1m, which is a person.
+
+          The venue ceiling is 18 because that is as far as the basemap has
+          anything to say, and it is the right limit for browsing. Standing
+          somewhere is a different act, so the ceiling is lifted for the
+          duration and put back on the way out.
+        */
+        map.setMaxZoom(23);
+
+        /*
+          Scenery off while standing.
+
+          The tree sprites are billboards sized for looking *down* at a wood.
+          From inside one at eye height they are enormous, they turn to face
+          you wherever you look, and they hide the thing you came to see. Real
+          trees would block the view too — but these are not trees, they are
+          markers saying "woodland here", and a marker that obscures the
+          subject has stopped doing its job.
+        */
+        FPV_HIDDEN.forEach(function (id) {
+          if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", "none");
+        });
 
         // Feet planted: rotate and tilt, never pan.
         map.dragPan.disable();
@@ -1866,7 +1899,8 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
 
         map.easeTo({
           center: [o.lon, o.lat],
-          zoom: 18.5,
+          // See above: 22 is about two metres off the ground.
+          zoom: 22,
           pitch: 85,
           /*
             Facing the way the photograph was taken, when that is recorded.
@@ -1888,9 +1922,18 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
     window.__exitFirstPerson = function () {
       var map = window.__map;
       if (!map) return;
+      var was = window.__fpv;
       window.__fpv = null;
       map.dragPan.enable();
+
+      FPV_HIDDEN.forEach(function (id) {
+        if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", "visible");
+      });
+
+      // Back under the ceiling before restoring it, or the camera would sit
+      // above a limit the map is about to start enforcing.
       map.easeTo({ zoom: 14, pitch: 60, duration: 700 });
+      map.setMaxZoom(was && was.maxZoom ? was.maxZoom : 18);
     };
 
     /*

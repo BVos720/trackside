@@ -5,7 +5,7 @@
  * Editing is a deliberate second step, which also means a mis-tap on the map
  * cannot silently change a saved spot.
  */
-import { useMemo, useRef } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import {
   Animated,
   Image,
@@ -74,7 +74,8 @@ export default function SpotOverview({
   /** Step to the previous (-1) or next (+1) way, wrapping at both ends. */
   onStepWay: (delta: number) => void;
   /** Record another way of shooting this same place. */
-  onAddWay: () => void;
+  /** Record another way of shooting this place, under the given sub-name. */
+  onAddWay: (subName: string) => void;
   /** 1–5, or null to clear it back to unrated. */
   onRate: (value: number | null) => void;
   /** Stand at this spot in the 3D view and look around. */
@@ -82,6 +83,15 @@ export default function SpotOverview({
   /** Name this way of shooting. Empty clears it back to unnamed. */
   onRenameWay?: (subName: string) => void;
 }) {
+  /*
+    Naming happens before the way exists, not after.
+
+    An inline field rather than a prompt dialog: Alert.prompt is iOS-only,
+    and a modal for one short string is heavier than the thing it collects.
+  */
+  const [namingWay, setNamingWay] = useState(false);
+  const [newWayName, setNewWayName] = useState('');
+
   const { color } = useTheme();
   const styles = useMemo(() => makeStyles(color), [color]);
 
@@ -320,12 +330,39 @@ export default function SpotOverview({
           </Pressable>
         ) : null}
 
-        <Pressable
-          onPress={onAddWay}
-          style={({ pressed }) => [styles.addWay, pressed && styles.pressed]}
-        >
-          <Text style={styles.addWayText}>+  Another way of shooting this</Text>
-        </Pressable>
+        {namingWay ? (
+          <View>
+            <TextInput
+              value={newWayName}
+              onChangeText={setNewWayName}
+              placeholder={`${spot.name} — name this way`}
+              placeholderTextColor={color.textMuted}
+              style={styles.subName}
+              autoFocus
+            />
+            <View style={styles.wayAddRow}>
+              <Pressable
+                onPress={() => { setNamingWay(false); setNewWayName(''); }}
+                style={({ pressed }) => [styles.addWay, styles.wayAddHalf, pressed && styles.pressed]}
+              >
+                <Text style={styles.addWayText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => { onAddWay(newWayName); setNamingWay(false); setNewWayName(''); }}
+                style={({ pressed }) => [styles.addWay, styles.wayAddHalf, pressed && styles.pressed]}
+              >
+                <Text style={styles.addWayText}>Add</Text>
+              </Pressable>
+            </View>
+          </View>
+        ) : (
+          <Pressable
+            onPress={() => setNamingWay(true)}
+            style={({ pressed }) => [styles.addWay, pressed && styles.pressed]}
+          >
+            <Text style={styles.addWayText}>+  Another way of shooting this</Text>
+          </Pressable>
+        )}
 
         <View style={styles.factRow}>
           <Fact
@@ -451,6 +488,7 @@ function Fact({
   value: string;
   muted?: boolean;
 }) {
+
   const { color } = useTheme();
   const styles = useMemo(() => makeStyles(color), [color]);
 
@@ -528,6 +566,9 @@ function makeStyles(color: Theme['color']) {
     paddingVertical: 4,
     marginTop: 2,
   },
+
+  wayAddRow: { flexDirection: 'row', gap: space.sm },
+  wayAddHalf: { flex: 1 },
 
   reframeRow: {
     flexDirection: 'row',

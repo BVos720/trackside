@@ -539,6 +539,9 @@ function AppShell() {
    * spot or switching venue all bring the camera back on their own. A view
    * with no exit is the failure mode worth designing against.
    */
+  /** Whether the map is showing terrain, reported by MapScreen. */
+  const [terrain3d, setTerrain3d] = useState(false);
+
   const [standingAt, setStandingAt] = useState<{
     lon: number;
     lat: number;
@@ -1138,6 +1141,7 @@ function AppShell() {
               spots={visibleGeoJson}
               standAt={standingAt}
               onLeaveFirstPerson={() => setStandingAt(null)}
+              onTerrainModeChange={setTerrain3d}
               route={routeGeoJson}
               here={fix?.position ?? null}
               heading={heading}
@@ -1292,9 +1296,9 @@ function AppShell() {
                   const next = ways[(i + delta + ways.length) % ways.length]!;
                   setSheet({ kind: 'overview', id: next.id });
                 }}
-                onAddWay={() => {
+                onAddWay={(subName) => {
                   void (async () => {
-                    const way = await addWay(activeSpot.id);
+                    const way = await addWay(activeSpot.id, subName);
                     // Straight to the new one: adding a way and leaving the
                     // old one on screen looks like nothing happened.
                     if (way) setSheet({ kind: 'overview', id: way.id });
@@ -1302,18 +1306,30 @@ function AppShell() {
                 }}
                 onRate={(value) => void rateSpot(activeSpot.id, value)}
                 onRenameWay={(subName) => void renameWay(activeSpot.id, subName)}
-                onStandHere={() => {
-                  setStandingAt({
-                    lon: activeSpot.position.longitude,
-                    lat: activeSpot.position.latitude,
-                    // Arrive facing the way the photograph was taken, when
-                    // that is recorded. Nothing else on a spot says which
-                    // way to look.
-                    bearing: activeSpot.shootingBearing,
-                  });
-                  // The sheet would cover the view it just opened.
-                  setSheet({ kind: 'none' });
-                }}
+                /*
+                  Only offered in 3D, because it is a 3D view.
+
+                  The flat map has no camera to stand with — pitch is zero
+                  and there is no terrain — so the button would either do
+                  nothing or silently switch modes on somebody who asked
+                  for neither. Absent is clearer than either.
+                */
+                onStandHere={
+                  !terrain3d
+                    ? undefined
+                    : () => {
+                        setStandingAt({
+                          lon: activeSpot.position.longitude,
+                          lat: activeSpot.position.latitude,
+                          // Arrive facing the way the photograph was taken,
+                          // when that is recorded. Nothing else on a spot
+                          // says which way to look.
+                          bearing: activeSpot.shootingBearing,
+                        });
+                        // The sheet would cover the view it just opened.
+                        setSheet({ kind: 'none' });
+                      }
+                }
                 media={activeMedia}
                 mediaUris={mediaUris}
                 onEdit={() => setSheet({ kind: 'edit', id: activeSpot.id })}

@@ -243,7 +243,7 @@ export function useSpots(circuitId: CircuitId) {
    * point adding a way and leaving the old one on screen.
    */
   const addWay = useCallback(
-    async (id: SpotId) => {
+    async (id: SpotId, subName: string) => {
       const source = await repositories.spots.get(id);
       if (!source) return null;
 
@@ -269,14 +269,18 @@ export function useSpots(circuitId: CircuitId) {
         ...created,
         groupId,
         /*
-          The place keeps its name; the way gets a blank one.
+          Named at the moment it is created.
 
-          Copying the source's subName would label the new way as the old
-          one — "long lens" twice over — which is worse than unnamed,
-          because it reads as a duplicate rather than as something to fill
-          in. Empty is a prompt.
+          A way of shooting is only worth separating from the others
+          because it is different, and the name is what says how. Creating
+          it blank and hoping somebody fills it in later leaves a carousel
+          of identically-named entries, which is the pile the sub-name
+          exists to prevent.
+
+          The place's own name is untouched: Bruxelles stays Bruxelles, and
+          this is the "extreme panning" half.
         */
-        subName: null,
+        subName: subName.trim() === '' ? null : subName.trim(),
         accessNotes: source.accessNotes,
         uses: source.uses,
         nearestMarshalPostId: source.nearestMarshalPostId,
