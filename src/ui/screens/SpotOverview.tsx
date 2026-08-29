@@ -179,7 +179,27 @@ export default function SpotOverview({
         <View style={styles.grabber} />
       </Pressable>
 
-      <ScrollView style={styles.body} contentContainerStyle={styles.bodyContent}>
+      {/*
+        The keyboard must not sit over the field being typed into.
+
+        Same pair as EventScreen and EventsScreen use, and for the same
+        reasons. `automaticallyAdjustKeyboardInsets` is the iOS-native answer:
+        the scroll view insets its own content by the keyboard height, so the
+        focused field scrolls into view and everything below stays reachable.
+        Ignored on Android, where softwareKeyboardLayoutMode handles it at the
+        window level.
+
+        `keyboardShouldPersistTaps` is the other half. Without it the first
+        tap after typing only dismisses the keyboard — so Add, sitting
+        directly under the field you have just filled in, would quietly need
+        pressing twice.
+      */}
+      <ScrollView
+        style={styles.body}
+        contentContainerStyle={styles.bodyContent}
+        automaticallyAdjustKeyboardInsets
+        keyboardShouldPersistTaps="handled"
+      >
         {/* Key picture leads — full-bleed, no border or shadow (§5.13). */}
         {keyUri ? (
           <Image source={{ uri: keyUri }} style={styles.hero} resizeMode="contain" />

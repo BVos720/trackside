@@ -686,3 +686,42 @@ rain together, for the whole session. It retries now.
 - Wind gusts as world-space movement (part of D3) — the rain drifts, but there
   is no gusting.
 - D7 / D8, the tree line and archive edge, unchanged and still one decision.
+
+### D9. First person cannot reach eye height — a renderer limit
+
+Asked for: stand at a spot, about 2m off the ground, and look around. Built,
+and it does not hold on sloping ground. Reported as "the camera can't go
+through the ground so it stays stuck on the ground near hills", which is
+exactly right.
+
+**MapLibre will not let the camera near the terrain, and enforces it by
+cutting the pitch.** Measured at the Nordschleife, entering at a spot with a
+rise behind it:
+
+| requested | result |
+|---|---|
+| zoom 22.0, pitch 85 (≈2m) | pitch clamped to 8, screen black |
+| zoom 21.6, pitch 75 (≈8m) | pitch clamped to 8, looking at the ground |
+| zoom 18.5, pitch 85 (≈24m) | holds on open ground, clamps to 52 on a slope |
+
+Three approaches were tried and all fail for the same reason:
+
+1. **Raise the camera.** Does not help. At pitch 85 the camera trails about
+   11x its own height behind the point it looks at, so the slope it must clear
+   grows with the height.
+2. **Lower the pitch** so the back-line rises more steeply. Clamped anyway.
+3. **Offset the centre** so the camera lands exactly on the spot rather than
+   behind it. Worse — the collision fires every frame and the view collapses.
+
+There is no free camera in maplibre-gl (`getFreeCameraOptions` is a Mapbox
+API), so the camera cannot simply be placed.
+
+**What is shipped** is the configuration that holds where it can: centred on
+the spot, pitch 85, about 24m up. A gantry rather than a person. It still
+answers what the view is for — which way the corner lies, what is between you
+and it, and where the sun and shadows fall from that position.
+
+- [ ] **Open question for Branco.** Terrain could be switched off for the
+      duration of the first-person view, which removes the collision entirely
+      and allows a true 2m camera anywhere. The cost is that the hills go
+      flat, and the hills are half the reason to stand somewhere. Worth it?

@@ -1897,10 +1897,59 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
           map.touchZoomRotate.enableRotation();
         }
 
-        map.easeTo({
+        /*
+          jumpTo, not easeTo.
+
+          holdFirstPerson runs on every move event and calls setCenter to
+          keep you on the spot — which cancels an animation in progress. The
+          ease was being killed a frame or two in, leaving the camera at
+          whatever zoom the map already had: it looked like the view simply
+          never arrived, because it never did.
+
+          A jump has no animation to interrupt. Less elegant than flying in,
+          and it actually gets there.
+        */
+        map.jumpTo({
           center: [o.lon, o.lat],
-          // See above: 22 is about two metres off the ground.
-          zoom: 22,
+          /*
+            ── Why not two metres, which is what was asked for ────────────
+            MapLibre will not put the camera below the terrain. At pitch 85
+            the line back to the camera rises only 5 degrees, so *any* ground
+            behind you steeper than about 5% is in the way — and the renderer
+            answers by flattening the pitch, which is the "it gets stuck on
+            the ground near hills" report. Raising the camera does not help:
+            the camera trails 11x its own height behind at that pitch, so the
+            slope it has to clear grows with it.
+
+            The pitch is what has to give. At 75 the back-line rises 15
+            degrees, which clears the Eifel's slopes, and the camera sits
+            about 8m up — a gantry rather than a person, but looking out
+            rather than being shoved skyward. Tried at 85 and 80 first; both
+            collided and one went black.
+
+            Two metres would need a free camera, which maplibre-gl does not
+            have. Recorded in TASKS-map-sky.md rather than pretended at.
+          */
+          /*
+            ── Two metres is not reachable, and here is why ───────────────
+            MapLibre will not let the camera near the terrain, and it
+            enforces that by cutting the pitch. Measured, not guessed:
+
+              zoom 22.0 pitch 85  ->  pitch clamped to 8, screen black
+              zoom 21.6 pitch 75  ->  pitch clamped to 8, looking at my feet
+              zoom 18.5 pitch 85  ->  holds, and looks out over the circuit
+
+            Offsetting the centre so the camera landed exactly on the spot
+            was tried too and is worse — the collision fires every frame and
+            the view collapses. There is no free camera in maplibre-gl to
+            place directly, so ~24m is the floor this renderer allows.
+
+            That is a gantry rather than a person, and it is honest about
+            what it is. It still answers the question the view is for: which
+            way the corner lies, what stands between you and it, and where
+            the sun and the shadows are from this position.
+          */
+          zoom: 18.5,
           pitch: 85,
           /*
             Facing the way the photograph was taken, when that is recorded.
@@ -1909,8 +1958,7 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
             carries, and arriving already pointed at the subject saves the
             first thing everyone would otherwise do by hand.
           */
-          bearing: typeof o.bearing === "number" ? o.bearing : map.getBearing(),
-          duration: 900
+          bearing: typeof o.bearing === "number" ? o.bearing : map.getBearing()
         });
 
         post({ stage: "first-person", lon: o.lon, lat: o.lat });
