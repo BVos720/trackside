@@ -301,7 +301,7 @@ Each waypoint should support multiple photos. Add a `+` button to add more photo
 - [ ] Build filter UI for the list view.
 - [ ] Add filter controls to the spot view (if photos are grouped on a waypoint).
 
-#### F3. Image center definition
+#### F3. Image center definition — DONE 29 Aug (e731b3c)
 
 When choosing an image for a waypoint, allow the user to define the center point. The image fills the square with the defined center in the center of the display.
 
@@ -309,7 +309,7 @@ When choosing an image for a waypoint, allow the user to define the center point
 - [ ] Store the center coordinates on the image.
 - [ ] Render the image with the defined center positioned centrally.
 
-#### F4. Time slider enhancements
+#### F4. Time slider enhancements — DONE 29 Aug (000828d, 5dc71fc)
 
 - Add a gradient to the time slider to show the day/night cycle visually.
 - Show weather status on the slider: small clouds and rain icons at appropriate times.
@@ -325,7 +325,7 @@ A separate list view showing all waypoints, with filters by date, name, and rati
 - [ ] Wire filters to the data model.
 - [ ] Make it the secondary view alongside the spot carousel (F1).
 
-#### F6. Trees always visible with render-distance option
+#### F6. Scenery render distance — DONE 29 Aug (3981d73); "always visible" is D7/D8, still open
 
 Trees and scenery should be visible from any altitude, but add a setting to decrease render distance for performance.
 
@@ -342,7 +342,7 @@ Allow the user to draw lines on the map, and the app snaps to the closest roads,
 - [ ] Design drawing UI (e.g., long-press to draw, snap-to-roads algorithm).
 - [ ] Integrate with the circuit editor or create a new workflow.
 
-#### F8. Graphics settings and presets
+#### F8. Graphics settings and presets — DONE 29 Aug (3981d73)
 
 With dynamic lighting (sun, shadows, etc.), add graphics settings:
 
@@ -353,7 +353,7 @@ With dynamic lighting (sun, shadows, etc.), add graphics settings:
 - [ ] Build settings UI in the profile screen.
 - [ ] Wire each setting to the renderer (shadows, rain toggle already done; extend for others).
 
-#### F9. Visible sun indicator on map
+#### F9. Visible sun and small compass — DONE 29 Aug (sun: 5f4a1c2-ish, compass: ca93394)
 
 Replace the sun dial with:
 
