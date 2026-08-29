@@ -1592,6 +1592,19 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
         if (map.getLayer("terrain-shadows")) {
           map.setPaintProperty("terrain-shadows", "raster-opacity", 0);
         }
+        /*
+          Forget the cached position on the way down.
+
+          Without this, hiding at dusk leaves lastShadowKey holding the last
+          daylight sun. Scrub back to a similar time and the key matches, the
+          function returns early as 'nothing has changed', and the layer stays
+          at zero opacity — shadows gone for good until the sun happens to
+          move three degrees from wherever it was hidden.
+
+          Scrubbing the time slider through a night and back is the ordinary
+          way to use this view, so it is the ordinary way to hit it.
+        */
+        lastShadowKey = "";
         return;
       }
 
