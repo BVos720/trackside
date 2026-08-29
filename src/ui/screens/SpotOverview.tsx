@@ -576,8 +576,15 @@ function makeStyles(color: Theme['color']) {
     gap: space.md,
     marginTop: space.sm,
   },
+  /*
+   * The same shape the map card uses, not a square.
+   *
+   * This preview says "this is how it appears in lists and on the map",
+   * so it has to be that shape or it is telling you about a crop nobody
+   * will ever see.
+   */
   reframe: {
-    width: 64,
+    width: 96,
     height: 64,
     borderRadius: radius.sm,
     backgroundColor: color.surfaceRaised,

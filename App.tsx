@@ -853,6 +853,26 @@ function AppShell() {
   const activeMedia = activeId ? (media[activeId] ?? []) : [];
   const sheetOpen = sheet.kind !== 'none';
 
+  /**
+   * Focal points, keyed by storage key so they travel with the URIs.
+   *
+   * Every square or fixed-shape rendering of a photo needs to know which
+   * part to keep. Derived rather than stored separately: the media rows
+   * already carry it, and a second source would drift the moment one was
+   * updated without the other.
+   */
+  const mediaFocal = useMemo(() => {
+    const out: Record<string, { x: number; y: number }> = {};
+    for (const rows of Object.values(media)) {
+      for (const m of rows) {
+        if (!m.storageKey) continue;
+        if (m.focalX === null || m.focalY === null) continue;
+        out[m.storageKey] = { x: m.focalX, y: m.focalY };
+      }
+    }
+    return out;
+  }, [media]);
+
   /** Resolve storage keys to displayable URIs — bytes never live on the row. */
   useEffect(() => {
     let cancelled = false;
@@ -1130,6 +1150,7 @@ function AppShell() {
               // the mode toggle starts below it.
               controlsTop={activeEvent ? 48 : 0}
               mediaUris={mediaUris}
+              mediaFocal={mediaFocal}
               position={circuitPosition}
               placing={where === 'map' && (placing || moving !== null)}
               onMapTap={(at) => {

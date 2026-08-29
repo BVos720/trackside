@@ -69,6 +69,7 @@ import {
   type VenueKey,
 } from '../map/style';
 import { moonState, solarPosition } from '../../core/logic/sun';
+import FocalImage from '../FocalImage';
 import { SCENERY_DATA_URIS } from '../map/scenerySprites';
 import { TILE_ASSETS } from './MapScreen';
 
@@ -2706,6 +2707,7 @@ export default function TerrainSpike({
   onOpenSpot,
   onMapTap,
   mediaUris = {},
+  mediaFocal = {},
   sunAt,
   weather,
   stars = true,
@@ -2727,6 +2729,8 @@ export default function TerrainSpike({
   onMapTap?: (latitude: number, longitude: number) => void;
   /** Local file URIs by media key, for the reference photo on each card. */
   mediaUris?: Record<string, string>;
+  /** Which part of each photo the card should keep, by storage key. */
+  mediaFocal?: Record<string, { x: number; y: number }>;
   /**
    * The instant to light the map for — the shared map clock.
    *
@@ -3218,6 +3222,7 @@ export default function TerrainSpike({
             key={mk.id}
             mark={mk}
             uri={mk.key ? mediaUris[mk.key] : undefined}
+            focal={mk.key ? mediaFocal[mk.key] : undefined}
             onPress={() => {
               // A hub is not a waypoint. It answers "what is under here",
               // which is the list, not one spot's sheet.
@@ -3338,88 +3343,43 @@ type Mark = {
  * wide and tall the card is to centre it over the pin and sit it above.
  */
 /**
- * A waypoint's card, sized to the photograph it is showing.
+ * A waypoint's card.
  *
- * ── Why this is not a fixed box ───────────────────────────────────────────
- * The card used to be 124x54 with the photo letterboxed inside it. That slot
- * is 2.3:1, and a reference photo almost never is — so an ordinary landscape
- * frame came out as a thin strip with bars either side, and a portrait one
- * was reduced to a sliver. The photograph is the point of the card: it is how
- * you recognise the corner without opening anything.
+ * ── Why a preset shape, and not the photograph's own ─────────────────────
+ * Sizing the card to each picture was tried and is worse in the one way
+ * that matters here: the cards sit *on the map*, above their pins, and a
+ * row of them at different heights covers different amounts of circuit
+ * depending on what happens to be photographed. A portrait shot would
+ * blot out the corner it is describing.
  *
- * So the height follows the picture. The width is fixed, because a row of
- * cards at different widths reads as clutter, and the height is whatever that
- * width implies for this image's own proportions.
+ * So the shape is fixed and the *content* moves instead. Which part of the
+ * photograph survives the crop is the photographer's choice, made once on
+ * the spot sheet and honoured everywhere — see core/logic/focalCrop.ts.
+ * That matters for exactly the case that prompted it: a car low in the
+ * frame is not something a centre crop can be trusted with.
  *
- * Clamped at both ends. A panorama would otherwise become a hairline and a
- * tall portrait would become a column taller than the map, and neither is
- * recognisable — which is the one thing the card has to be.
+ * 3:2 rather than the old 2.3:1, because that is the shape a camera
+ * actually produces. The old slot was so wide that a normal frame had to
+ * be shrunk to fit it, which is why photographs arrived as a strip with
+ * black either side.
  */
-/** What a 3:2 landscape frame comes to at this width — the common case. */
-const CALLOUT_IMG_H = 83;
-const CALLOUT_MIN_IMG_H = 62;
-/*
-  186 is a 2:3 portrait at this width, uncropped.
-
-  The ceiling exists for the extremes — a stitched panorama or a full-height
-  crop — not for ordinary portrait photographs, which are exactly what a
-  photographer will have plenty of. Setting it below 186 would quietly crop
-  every one of them, which is the behaviour this replaced.
-*/
-const CALLOUT_MAX_IMG_H = 186;
-
 function Callout({
   mark,
   uri,
+  focal,
   onPress,
 }: {
   mark: Mark;
   uri: string | undefined;
+  focal: { x: number; y: number } | undefined;
   onPress: () => void;
 }) {
-  const [imageHeight, setImageHeight] = useState(CALLOUT_IMG_H);
-  /**
-   * The card's real height, measured rather than assumed.
-   *
-   * It has to sit *above* the pin, so its own height is needed to place it —
-   * and that is no longer a constant now the picture decides it. Measuring is
-   * simpler than predicting: the name below can wrap, and paddings change with
-   * the theme.
-   */
-  const [cardHeight, setCardHeight] = useState(CALLOUT_H);
-
-  useEffect(() => {
-    if (!uri) {
-      setImageHeight(CALLOUT_IMG_H);
-      return;
-    }
-    let cancelled = false;
-    Image.getSize(
-      uri,
-      (w, h) => {
-        if (cancelled || w <= 0 || h <= 0) return;
-        const scaled = (CALLOUT_W * h) / w;
-        setImageHeight(
-          Math.max(CALLOUT_MIN_IMG_H, Math.min(CALLOUT_MAX_IMG_H, scaled)),
-        );
-      },
-      () => {
-        // Unmeasurable: keep the default rather than collapsing the card.
-        if (!cancelled) setImageHeight(CALLOUT_IMG_H);
-      },
-    );
-    return () => {
-      cancelled = true;
-    };
-  }, [uri]);
-
   return (
     <Pressable
       onPress={onPress}
-      onLayout={(e) => setCardHeight(e.nativeEvent.layout.height)}
       style={[
         styles.callout,
-        { left: mark.x - CALLOUT_W / 2, top: mark.y - cardHeight - 16 },
+        { left: mark.x - CALLOUT_W / 2, top: mark.y - CALLOUT_H - 16 },
         mark.dim === 1 && styles.calloutDim,
       ]}
     >
@@ -3428,21 +3388,7 @@ function Callout({
           <Text style={styles.calloutStackCount}>{mark.count ?? 0}</Text>
         </View>
       ) : uri ? (
-        <Image
-          source={{ uri }}
-          /*
-            cover, now that the box is the right shape.
-
-            contain was correct while the slot was 2.3:1 — cropping a
-            reference photo to fit a shape it was never framed for destroys
-            the very thing it is showing. The box now matches the photo's own
-            proportions, so there is nothing left to crop and cover simply
-            fills it exactly, without the letterbox bars contain leaves behind
-            at the rounding.
-          */
-          style={[styles.calloutImage, { height: imageHeight }]}
-          resizeMode="cover"
-        />
+        <FocalImage uri={uri} focal={focal ?? null} style={styles.calloutImage} />
       ) : (
         <View style={[styles.calloutImage, styles.calloutEmpty]}>
           <Text style={styles.calloutEmptyText}>no photo</Text>
@@ -3456,7 +3402,22 @@ function Callout({
 }
 
 const CALLOUT_W = 124;
-const CALLOUT_H = 78;
+/**
+ * The photo slot: 3:2, which is the shape a camera produces.
+ *
+ * The old slot was 124x54 — 2.3:1 — so an ordinary frame had to shrink to
+ * fit it and arrived as a strip with black either side. At 3:2 the picture
+ * fills the slot, and which part of it survives is the focal point's job
+ * rather than a centre crop's.
+ */
+const CALLOUT_IMG_H = 83;
+/**
+ * The whole card: the photo slot plus the name under it.
+ *
+ * Used to place the card above its pin, so it has to match what the card
+ * actually measures or the cards drift off their waypoints.
+ */
+const CALLOUT_H = CALLOUT_IMG_H + 24;
 
 /** Matches the flat map: below this, cards overlap into an unreadable pile. */
 const CALLOUT_MIN_ZOOM = 13;

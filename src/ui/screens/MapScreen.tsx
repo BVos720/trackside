@@ -139,6 +139,7 @@ export default function MapScreen({
   venue = 'nordschleife' as VenueKey,
   spots,
   mediaUris = {},
+  mediaFocal = {},
   onMapTap,
   onSpotTap,
   onOpenTerrainView,
@@ -152,6 +153,8 @@ export default function MapScreen({
   venue?: VenueKey;
   spots?: unknown;
   mediaUris?: Record<string, string>;
+  /** Which part of each photo to keep, by storage key. */
+  mediaFocal?: Record<string, { x: number; y: number }>;
   onMapTap?: (lngLat: { latitude: number; longitude: number }) => void;
   onSpotTap?: (id: string) => void;
   /** Open the terrain map. This is what the 3D button does now. */
@@ -1097,6 +1100,7 @@ export default function MapScreen({
             onOpenSpot={onSpotTap}
             // The page cannot read the device's files, so the photos stay here.
             mediaUris={mediaUris}
+          mediaFocal={mediaFocal}
             // The same clock the dial and the sky strip use, so scrubbing the
             // time re-lights the terrain instead of only moving a dial.
             sunAt={clock.now}
