@@ -3213,51 +3213,23 @@ export default function TerrainSpike({
         overlapping into an unreadable pile.
       */}
       {markZoom >= CALLOUT_MIN_ZOOM &&
-        marks.map((mk) => {
-          const uri = mk.key ? mediaUris[mk.key] : undefined;
-          return (
-            <Pressable
-              key={mk.id}
-              onPress={() => {
-                // A hub is not a waypoint. It answers "what is under here",
-                // which is the list, not one spot's sheet.
-                if (mk.kind === "stack") {
-                  setStack(mk.members ?? []);
-                  highlight(null);
-                  return;
-                }
-                onOpenSpot?.(mk.id);
-              }}
-              style={[
-                styles.callout,
-                { left: mk.x - CALLOUT_W / 2, top: mk.y - CALLOUT_H - 16 },
-                mk.dim === 1 && styles.calloutDim,
-              ]}
-            >
-              {mk.kind === "stack" ? (
-                <View style={[styles.calloutImage, styles.calloutStack]}>
-                  <Text style={styles.calloutStackCount}>{mk.count ?? 0}</Text>
-                </View>
-              ) : uri ? (
-                <Image
-                  source={{ uri }}
-                  style={styles.calloutImage}
-                  // contain, not the default cover: a reference photo that
-                  // has been re-cropped to fit is no longer the framing the
-                  // waypoint is about.
-                  resizeMode="contain"
-                />
-              ) : (
-                <View style={[styles.calloutImage, styles.calloutEmpty]}>
-                  <Text style={styles.calloutEmptyText}>no photo</Text>
-                </View>
-              )}
-              <Text style={styles.calloutName} numberOfLines={1}>
-                {mk.name}
-              </Text>
-            </Pressable>
-          );
-        })}
+        marks.map((mk) => (
+          <Callout
+            key={mk.id}
+            mark={mk}
+            uri={mk.key ? mediaUris[mk.key] : undefined}
+            onPress={() => {
+              // A hub is not a waypoint. It answers "what is under here",
+              // which is the list, not one spot's sheet.
+              if (mk.kind === "stack") {
+                setStack(mk.members ?? []);
+                highlight(null);
+                return;
+              }
+              onOpenSpot?.(mk.id);
+            }}
+          />
+        ))}
 
       {stack !== null && (
         <View style={styles.stackPanel}>
@@ -3365,6 +3337,124 @@ type Mark = {
  * The overlay positions each card by its top-left corner, so it has to know how
  * wide and tall the card is to centre it over the pin and sit it above.
  */
+/**
+ * A waypoint's card, sized to the photograph it is showing.
+ *
+ * ── Why this is not a fixed box ───────────────────────────────────────────
+ * The card used to be 124x54 with the photo letterboxed inside it. That slot
+ * is 2.3:1, and a reference photo almost never is — so an ordinary landscape
+ * frame came out as a thin strip with bars either side, and a portrait one
+ * was reduced to a sliver. The photograph is the point of the card: it is how
+ * you recognise the corner without opening anything.
+ *
+ * So the height follows the picture. The width is fixed, because a row of
+ * cards at different widths reads as clutter, and the height is whatever that
+ * width implies for this image's own proportions.
+ *
+ * Clamped at both ends. A panorama would otherwise become a hairline and a
+ * tall portrait would become a column taller than the map, and neither is
+ * recognisable — which is the one thing the card has to be.
+ */
+/** What a 3:2 landscape frame comes to at this width — the common case. */
+const CALLOUT_IMG_H = 83;
+const CALLOUT_MIN_IMG_H = 62;
+/*
+  186 is a 2:3 portrait at this width, uncropped.
+
+  The ceiling exists for the extremes — a stitched panorama or a full-height
+  crop — not for ordinary portrait photographs, which are exactly what a
+  photographer will have plenty of. Setting it below 186 would quietly crop
+  every one of them, which is the behaviour this replaced.
+*/
+const CALLOUT_MAX_IMG_H = 186;
+
+function Callout({
+  mark,
+  uri,
+  onPress,
+}: {
+  mark: Mark;
+  uri: string | undefined;
+  onPress: () => void;
+}) {
+  const [imageHeight, setImageHeight] = useState(CALLOUT_IMG_H);
+  /**
+   * The card's real height, measured rather than assumed.
+   *
+   * It has to sit *above* the pin, so its own height is needed to place it —
+   * and that is no longer a constant now the picture decides it. Measuring is
+   * simpler than predicting: the name below can wrap, and paddings change with
+   * the theme.
+   */
+  const [cardHeight, setCardHeight] = useState(CALLOUT_H);
+
+  useEffect(() => {
+    if (!uri) {
+      setImageHeight(CALLOUT_IMG_H);
+      return;
+    }
+    let cancelled = false;
+    Image.getSize(
+      uri,
+      (w, h) => {
+        if (cancelled || w <= 0 || h <= 0) return;
+        const scaled = (CALLOUT_W * h) / w;
+        setImageHeight(
+          Math.max(CALLOUT_MIN_IMG_H, Math.min(CALLOUT_MAX_IMG_H, scaled)),
+        );
+      },
+      () => {
+        // Unmeasurable: keep the default rather than collapsing the card.
+        if (!cancelled) setImageHeight(CALLOUT_IMG_H);
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [uri]);
+
+  return (
+    <Pressable
+      onPress={onPress}
+      onLayout={(e) => setCardHeight(e.nativeEvent.layout.height)}
+      style={[
+        styles.callout,
+        { left: mark.x - CALLOUT_W / 2, top: mark.y - cardHeight - 16 },
+        mark.dim === 1 && styles.calloutDim,
+      ]}
+    >
+      {mark.kind === "stack" ? (
+        <View style={[styles.calloutImage, styles.calloutStack]}>
+          <Text style={styles.calloutStackCount}>{mark.count ?? 0}</Text>
+        </View>
+      ) : uri ? (
+        <Image
+          source={{ uri }}
+          /*
+            cover, now that the box is the right shape.
+
+            contain was correct while the slot was 2.3:1 — cropping a
+            reference photo to fit a shape it was never framed for destroys
+            the very thing it is showing. The box now matches the photo's own
+            proportions, so there is nothing left to crop and cover simply
+            fills it exactly, without the letterbox bars contain leaves behind
+            at the rounding.
+          */
+          style={[styles.calloutImage, { height: imageHeight }]}
+          resizeMode="cover"
+        />
+      ) : (
+        <View style={[styles.calloutImage, styles.calloutEmpty]}>
+          <Text style={styles.calloutEmptyText}>no photo</Text>
+        </View>
+      )}
+      <Text style={styles.calloutName} numberOfLines={1}>
+        {mark.name}
+      </Text>
+    </Pressable>
+  );
+}
+
 const CALLOUT_W = 124;
 const CALLOUT_H = 78;
 
@@ -3382,7 +3472,13 @@ const styles = StyleSheet.create({
   callout: {
     position: 'absolute',
     width: CALLOUT_W,
-    height: CALLOUT_H,
+    /*
+     * No fixed height: the photograph sets it.
+     *
+     * CALLOUT_H survives as the value used before the image has been measured
+     * and as the fallback when it cannot be, so a card never appears with no
+     * height at all while the size is being read.
+     */
     borderRadius: 8,
     backgroundColor: 'rgba(11,13,16,0.96)',
     borderWidth: 1,
@@ -3390,7 +3486,15 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   calloutDim: { opacity: 0.45 },
-  calloutImage: { width: '100%', height: 54 },
+  /*
+   * The default shape, before the photograph has been measured.
+   *
+   * Also the shape the stack badge and the 'no photo' box keep, so a card
+   * with nothing to show is the same size as the common case rather than a
+   * different one — a row of cards that changes height for the empty ones
+   * reads as broken rather than as informative.
+   */
+  calloutImage: { width: '100%', height: CALLOUT_IMG_H },
   calloutEmpty: {
     backgroundColor: '#141922',
     alignItems: 'center',
