@@ -83,6 +83,61 @@ export default function EntryListScreen({
   const styles = useMemo(() => makeStyles(color), [color]);
 
   const [raw, setRaw] = useState('');
+
+  /*
+    One car, typed in.
+
+    Pasting is the fast path when a list exists, and there is often no list
+    at all — a club meeting, a test day, or the three cars that turned up
+    late and were written on the back of the timing sheet. Making those go
+    through the parser would mean typing a line in a format the parser
+    happens to read, which is a worse thing to ask of somebody than four
+    labelled fields.
+  */
+  const [addNumber, setAddNumber] = useState('');
+  const [addClass, setAddClass] = useState('');
+  const [addTeam, setAddTeam] = useState('');
+  const [addDrivers, setAddDrivers] = useState('');
+
+  const canAddByHand = addNumber.trim() !== '';
+
+  const addByHand = () => {
+    const number = addNumber.trim();
+    // The number is the one field that identifies a car on track, and the
+    // only one worth refusing without.
+    if (number === '') {
+      setStatus('A car needs a number.');
+      return;
+    }
+
+    const drivers = addDrivers
+      .split(/[,/]/)
+      .map((d) => d.trim())
+      .filter((d) => d !== '');
+
+    onCommit([
+      {
+        number,
+        className: addClass.trim() === '' ? null : addClass.trim(),
+        team: addTeam.trim() === '' ? null : addTeam.trim(),
+        drivers,
+        /*
+          `source` normally holds the line a row was read from, so the
+          review screen can show its working. There is no line here, and
+          saying so is more useful than echoing back what was just typed —
+          it is the difference between "this is what I read" and "this is
+          what you told me".
+        */
+        source: 'Added by hand',
+      },
+    ]);
+
+    setAddNumber('');
+    setAddClass('');
+    setAddTeam('');
+    setAddDrivers('');
+    setStatus(`Added #${number}.`);
+  };
   const [rows, setRows] = useState<ReviewRow[]>([]);
   const [editing, setEditing] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
@@ -247,6 +302,62 @@ export default function EntryListScreen({
           No field yet. Paste the entry list below to get one.
         </Text>
       )}
+
+      {/*
+        Above Import, because it is the smaller and more common act.
+
+        Pasting a list happens once a weekend; adding the car that turned
+        up unannounced happens all day.
+      */}
+      <Collapsible title="Add a car" hint="One at a time, by hand">
+        <View style={styles.handRow}>
+          <TextInput
+            value={addNumber}
+            onChangeText={setAddNumber}
+            placeholder="No."
+            placeholderTextColor={color.textMuted}
+            style={[styles.handField, styles.handNumber]}
+            keyboardType="default"
+          />
+          <TextInput
+            value={addClass}
+            onChangeText={setAddClass}
+            placeholder="Class"
+            placeholderTextColor={color.textMuted}
+            style={[styles.handField, styles.handGrow]}
+          />
+        </View>
+
+        <TextInput
+          value={addTeam}
+          onChangeText={setAddTeam}
+          placeholder="Team"
+          placeholderTextColor={color.textMuted}
+          style={styles.handField}
+        />
+
+        <TextInput
+          value={addDrivers}
+          onChangeText={setAddDrivers}
+          placeholder="Drivers, separated by / or ,"
+          placeholderTextColor={color.textMuted}
+          style={styles.handField}
+        />
+
+        <Pressable
+          onPress={addByHand}
+          disabled={!canAddByHand}
+          style={({ pressed }) => [
+            styles.handAdd,
+            !canAddByHand && styles.handAddOff,
+            pressed && styles.pressed,
+          ]}
+        >
+          <Text style={styles.handAddText}>
+            {canAddByHand ? `Add #${addNumber.trim()}` : 'Add'}
+          </Text>
+        </Pressable>
+      </Collapsible>
 
       <Collapsible title="Import" hint="Paste the entry list">
         <TextInput
@@ -561,7 +672,32 @@ function makeStyles(color: Theme['color']) {
       letterSpacing: 1.5,
       marginTop: space.lg,
     },
-    help: {
+    handRow: { flexDirection: 'row', gap: space.sm },
+  handField: {
+    backgroundColor: color.surfaceRaised,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: color.border,
+    paddingHorizontal: space.md,
+    paddingVertical: space.sm,
+    color: color.text,
+    fontSize: type.body,
+    marginBottom: space.sm,
+  },
+  /* The number is short and always present, so it gets a fixed slot. */
+  handNumber: { width: 92 },
+  handGrow: { flex: 1 },
+  handAdd: {
+    backgroundColor: color.accent,
+    borderRadius: radius.md,
+    paddingVertical: space.md,
+    alignItems: 'center',
+  },
+  /* Dimmed rather than hidden, so the button explains what is missing. */
+  handAddOff: { opacity: 0.4 },
+  handAddText: { color: color.onAccent, fontSize: type.body, fontWeight: weight.bold },
+
+  help: {
       color: color.textMuted,
       fontSize: type.label,
       marginTop: space.xs,
