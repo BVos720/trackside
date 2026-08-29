@@ -352,8 +352,11 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
         var w = JSON.parse(json);
         window.__weather = {
           cover: Math.max(0, Math.min(100, w.cover || 0)),
-          rain: Math.max(0, w.rain || 0)
+          rain: Math.max(0, w.rain || 0),
+          // 0-1, sent by the native side or absent. See mistDensity below.
+          mist: typeof w.mist === 'number' ? Math.max(0, Math.min(1, w.mist)) : null
         };
+        applyMist();
         pumpWeather();
       } catch (e) {}
     };
@@ -716,6 +719,313 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
       weatherLoop = requestAnimationFrame(step);
     }
 
+    /*
+      Volumetric weather, drawn as real geometry in the world.
+
+      ── Why this is a custom WebGL layer ──────────────────────────────
+      Everything else in the sky is painted on a canvas over the map, which
+      is fine for stars: they are infinitely far away and nothing can be in
+      front of them. Mist is the opposite — it sits *in* the landscape, at a
+      height, with hills poking out of it — and an overlay can only ever be
+      a wash across the whole screen.
+
+      MapLibre custom layers turn out to be depth-tested against the terrain
+      mesh, which was the open question and is the thing that makes this
+      work: a slab drawn below a ridge is genuinely hidden by it. Verified
+      before building on it, by drawing an opaque quad at 50m over the Eifel
+      and confirming it was invisible.
+
+      Coordinates are mercator, with altitude in metres via
+      MercatorCoordinate.fromLngLat, so the geometry is anchored to the
+      ground rather than to the viewport and stays put as the camera moves.
+    */
+    var MIST_LAYERS = 14;
+
+    /*
+      The extract, as a value the page can reuse.
+
+      Same array the camera is clamped to, so the mist covers exactly the
+      ground the map will ever show and not a metre more.
+    */
+    var BOUNDS = ${maxBounds};
+
+    window.__mist = { base: 0, thickness: 0, density: 0 };
+
+    function mistGeometry(bounds) {
+      /*
+        A stack of horizontal sheets rather than one slab.
+
+        Depth is what makes fog read as a volume: looking along it you see
+        through many sheets and it thickens, looking down you see through
+        few and it thins — which is exactly how real valley fog behaves.
+        One slab, however soft, always looks like a sheet of paper.
+      */
+      var out = [];
+      var w = bounds[0][0], sLat = bounds[0][1], e = bounds[1][0], n = bounds[1][1];
+      for (var i = 0; i < MIST_LAYERS; i++) {
+        var t = i / (MIST_LAYERS - 1);
+        var a = maplibregl.MercatorCoordinate.fromLngLat([w, sLat], 0);
+        var b = maplibregl.MercatorCoordinate.fromLngLat([e, sLat], 0);
+        var c = maplibregl.MercatorCoordinate.fromLngLat([e, n], 0);
+        var d = maplibregl.MercatorCoordinate.fromLngLat([w, n], 0);
+        // t travels with the vertex so the shader knows how high up this
+        // sheet is without a uniform per draw call.
+        out.push(
+          a.x, a.y, t, b.x, b.y, t, c.x, c.y, t,
+          a.x, a.y, t, c.x, c.y, t, d.x, d.y, t
+        );
+      }
+      return new Float32Array(out);
+    }
+
+    function makeProgram(gl, vsSrc, fsSrc) {
+      function compile(type, src) {
+        var sh = gl.createShader(type);
+        gl.shaderSource(sh, src);
+        gl.compileShader(sh);
+        if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) {
+          throw new Error(gl.getShaderInfoLog(sh) || "shader failed");
+        }
+        return sh;
+      }
+      var p = gl.createProgram();
+      gl.attachShader(p, compile(gl.VERTEX_SHADER, vsSrc));
+      gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fsSrc));
+      gl.linkProgram(p);
+      if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
+        throw new Error(gl.getProgramInfoLog(p) || "link failed");
+      }
+      return p;
+    }
+
+    var MIST_VS = [
+      "#version 300 es",
+      "in vec3 a_pos;",
+      "uniform mat4 u_matrix;",
+      "uniform float u_base;",
+      "uniform float u_thickness;",
+      "uniform float u_mercPerMetre;",
+      "out vec2 v_world;",
+      "out float v_t;",
+      "void main() {",
+      "  v_t = a_pos.z;",
+      "  v_world = a_pos.xy;",
+      "  float metres = u_base + a_pos.z * u_thickness;",
+      "  gl_Position = u_matrix * vec4(a_pos.xy, metres * u_mercPerMetre, 1.0);",
+      "}"
+    ].join("\\n");
+
+    var MIST_FS = [
+      "#version 300 es",
+      "precision highp float;",
+      "in vec2 v_world;",
+      "in float v_t;",
+      "uniform float u_density;",
+      "uniform float u_time;",
+      "uniform vec3 u_tint;",
+      "out vec4 o;",
+      // Value noise. Cheap, and fog has no detail worth a gradient noise.
+      "float hash(vec2 p) {",
+      "  return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);",
+      "}",
+      "float noise(vec2 p) {",
+      "  vec2 i = floor(p); vec2 f = fract(p);",
+      "  f = f * f * (3.0 - 2.0 * f);",
+      "  return mix(mix(hash(i), hash(i + vec2(1,0)), f.x),",
+      "             mix(hash(i + vec2(0,1)), hash(i + vec2(1,1)), f.x), f.y);",
+      "}",
+      "float fbm(vec2 p) {",
+      "  return 0.55 * noise(p) + 0.30 * noise(p * 2.1) + 0.15 * noise(p * 4.3);",
+      "}",
+      "void main() {",
+"// mercator units are tiny; scale hard to get valley-sized features",
+      "// a venue spans ~0.0004 mercator units, so the scale has to be large",
+      "// for the noise to have features the size of a valley rather than one",
+      "// flat cell across the whole map",
+      "  vec2 p = v_world * 22000.0 + vec2(u_time * 0.020, u_time * 0.013);",
+      "  float n = fbm(p);",
+"// thickest at the bottom so it settles rather than floats",
+      "  float height = 1.0 - smoothstep(0.35, 1.0, v_t);",
+      "  float a = u_density * height * smoothstep(0.28, 0.70, n) * 0.34;",
+      "  if (a <= 0.002) discard;",
+      "  o = vec4(u_tint, a);",
+      "}"
+    ].join("\\n");
+
+    /*
+      Where the mist sits, read off the terrain itself.
+
+      A fixed altitude cannot work across venues: 400m fills the Eifel's
+      valleys and is a kilometre above Zandvoort, which is sand dunes at sea
+      level. So the levels are percentiles of the actual ground in view —
+      the mist tops out below the high ground wherever it is, and the peaks
+      stay clear because they are *defined* as the ground above it.
+
+      Sampled on a coarse grid because this is a level, not a surface. The
+      DEM is already in memory for the mesh, so queryTerrainElevation is a
+      lookup rather than a fetch.
+    */
+    function mistLevels(map) {
+      var w = BOUNDS[0][0], s0 = BOUNDS[0][1], e = BOUNDS[1][0], n = BOUNDS[1][1];
+      var heights = [];
+      var N = 16;
+      for (var i = 0; i <= N; i++) {
+        for (var j = 0; j <= N; j++) {
+          var lng = w + ((e - w) * i) / N;
+          var lat = s0 + ((n - s0) * j) / N;
+          var h = null;
+          try { h = map.queryTerrainElevation({ lng: lng, lat: lat }); } catch (err) { h = null; }
+          if (typeof h === 'number' && isFinite(h)) heights.push(h);
+        }
+      }
+      if (heights.length < 8) return null;
+      heights.sort(function (a, b) { return a - b; });
+      function at(p) { return heights[Math.min(heights.length - 1, Math.floor(p * heights.length))]; }
+
+      /*
+        Sitting on the landscape, not hiding inside it.
+
+        The obvious reading of valley fog is base at the valley floor, top
+        below the ridges — and it looks like almost nothing, because then
+        most of the fog's volume is buried inside hills and only the slivers
+        over open valleys are ever drawn.
+
+        These percentiles put the sheet *above* most of the ground instead,
+        so it reads as a layer lying over the landscape with the high ground
+        standing out of it. The top percentile is the real control: it is
+        literally the definition of 'high peaks' here — whatever stands above
+        it stays clear, at any venue, without a hard-coded altitude.
+      */
+      var floor = at(0.55);
+      var top = at(0.93);
+      // Never a zero-thickness sheet on flat ground: at Zandvoort every
+      // percentile is within a few metres, and fog there is still fog.
+      var thickness = Math.max(60, top - floor);
+      return { base: floor, thickness: thickness };
+    }
+
+    function refreshMistLevels(map) {
+      var levels = mistLevels(map);
+      if (!levels) return;
+      var current = window.__mist || { density: 0 };
+      window.__mist = {
+        base: levels.base,
+        thickness: levels.thickness,
+        density: current.density
+      };
+      map.triggerRepaint();
+    }
+
+    /*
+      When there is fog, and how much.
+
+      Valley fog is a still, damp, cold-ground phenomenon: it forms overnight
+      and burns off after sunrise. Those are the conditions this can actually
+      infer from what the forecast gives us — hour of day and rainfall — and
+      it deliberately does not pretend to more. Drawing fog at two in the
+      afternoon in July because the humidity was high would be inventing
+      weather, and the whole point of the sky here is that it is real.
+
+      An explicit value from the native side always wins, so a future
+      forecast field can simply replace this guess.
+    */
+    function mistDensity() {
+      var w = window.__weather || {};
+      if (typeof w.mist === 'number') return w.mist;
+
+      var sun = window.__sun;
+      if (!sun) return 0;
+
+      // Thickest before dawn, thinning as the sun climbs, gone by the time it
+      // is properly up. Nothing below the horizon burns anything off.
+      var alt = sun.altitude;
+      var overnight = 1 - Math.max(0, Math.min(1, (alt + 2) / 10));
+
+      // Rain and fog rarely coexist: falling rain stirs the air and wets it
+      // from above rather than letting it settle.
+      var wet = Math.max(0, Math.min(1, (w.rain || 0) / 1.5));
+
+      return overnight * (1 - wet) * 0.9;
+    }
+
+    function applyMist() {
+      var current = window.__mist || { base: 0, thickness: 0, density: 0 };
+      window.__mist = {
+        base: current.base,
+        thickness: current.thickness,
+        density: mistDensity()
+      };
+      if (window.__map) window.__map.triggerRepaint();
+    }
+
+    function addMistLayer(map) {
+      if (map.getLayer("mist")) return;
+      var data = mistGeometry(BOUNDS);
+
+      map.addLayer({
+        id: "mist",
+        type: "custom",
+        renderingMode: "3d",
+        onAdd: function (m, gl) {
+          this.prog = makeProgram(gl, MIST_VS, MIST_FS);
+          this.aPos = gl.getAttribLocation(this.prog, "a_pos");
+          this.uMatrix = gl.getUniformLocation(this.prog, "u_matrix");
+          this.uBase = gl.getUniformLocation(this.prog, "u_base");
+          this.uThickness = gl.getUniformLocation(this.prog, "u_thickness");
+          this.uMerc = gl.getUniformLocation(this.prog, "u_mercPerMetre");
+          this.uDensity = gl.getUniformLocation(this.prog, "u_density");
+          this.uTime = gl.getUniformLocation(this.prog, "u_time");
+          this.uTint = gl.getUniformLocation(this.prog, "u_tint");
+          this.buf = gl.createBuffer();
+          gl.bindBuffer(gl.ARRAY_BUFFER, this.buf);
+          gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
+          this.count = data.length / 3;
+        },
+        render: function (gl, args) {
+          var mist = window.__mist || { density: 0 };
+          if (!mist.density) return;
+
+          gl.useProgram(this.prog);
+          var matrix = args.defaultProjectionData
+            ? args.defaultProjectionData.mainMatrix
+            : args.modelViewProjectionMatrix;
+          gl.uniformMatrix4fv(this.uMatrix, false, matrix);
+          gl.uniform1f(this.uBase, mist.base);
+          gl.uniform1f(this.uThickness, mist.thickness);
+          // Altitude in mercator units is latitude-dependent, and the
+          // library already knows the conversion.
+          gl.uniform1f(
+            this.uMerc,
+            maplibregl.MercatorCoordinate.fromLngLat(map.getCenter(), 1).z -
+              maplibregl.MercatorCoordinate.fromLngLat(map.getCenter(), 0).z
+          );
+          gl.uniform1f(this.uDensity, mist.density);
+          gl.uniform1f(this.uTime, Date.now() / 1000);
+          var t = daylight();
+          // Lit by the same sun as everything else: grey-blue before dawn,
+          // near-white once it is up.
+          gl.uniform3f(this.uTint, 0.42 + 0.5 * t, 0.46 + 0.48 * t, 0.52 + 0.42 * t);
+
+          gl.bindBuffer(gl.ARRAY_BUFFER, this.buf);
+          gl.enableVertexAttribArray(this.aPos);
+          gl.vertexAttribPointer(this.aPos, 3, gl.FLOAT, false, 0, 0);
+
+          gl.enable(gl.BLEND);
+          gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+          gl.enable(gl.DEPTH_TEST);
+          // Tested against the terrain but never written, so the sheets do
+          // not occlude each other and the stack accumulates.
+          gl.depthMask(false);
+          gl.disable(gl.CULL_FACE);
+          gl.drawArrays(gl.TRIANGLES, 0, this.count);
+        }
+      });
+
+      map.on("move", function () { map.triggerRepaint(); });
+      // The DEM arrives asynchronously, so the first read can be empty. Once
+      // the map is idle the tiles are there and the levels are real.
+      map.once("idle", function () { refreshMistLevels(map); });
+    }
     function drawSky() {
       var map = window.__map;
       if (!map) return;
@@ -916,6 +1226,7 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
         });
 
         applyGround();
+        applyMist();
         /*
           Paired with applyGround, and that pairing is the fix for a real bug.
 
@@ -1099,6 +1410,8 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
           try {
             applyGround();
             fadeMask();
+            addMistLayer(map);
+            applyMist();
             post({ stage: "ground-coloured" });
             applySun();
             drawSky();
