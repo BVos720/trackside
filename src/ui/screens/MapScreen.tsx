@@ -486,6 +486,17 @@ export default function MapScreen({
     [spots],
   );
 
+  /**
+   * What a source shows when it has nothing to show.
+   *
+   * Constant, so React sees the same object every render and the source is
+   * not re-set on each pass.
+   */
+  const EMPTY = useMemo(
+    () => ({ type: 'FeatureCollection' as const, features: [] }),
+    [],
+  );
+
   /** The route, sieved for the same reason and with the same consequence. */
   const safeRoute = useMemo(
     () =>
@@ -857,8 +868,22 @@ export default function MapScreen({
           "no path here, this is a bearing", and drawing it like a footpath
           would claim knowledge the data does not have.
         */}
-        {safeRoute != null && (
-          <GeoJSONSource key="nav-route" id="nav-route" data={safeRoute as never}>
+        {/*
+          Always mounted, empty when there is no route.
+
+          These used to appear and disappear with the navigation state, which
+          means a GeoJSONSource being created and destroyed inside a mounting
+          transaction — the same situation that produced MapLibre's
+          "`id` cannot be changed" throw documented above, and the same one
+          the SIGABRT in setShape: comes out of. A source that is always there
+          and sometimes empty cannot be caught mid-mount, and an empty
+          FeatureCollection draws exactly nothing.
+        */}
+                  <GeoJSONSource
+            key="nav-route"
+            id="nav-route"
+            data={(safeRoute ?? EMPTY) as never}
+          >
             <Layer
               id="nav-route-network"
               type="line"
@@ -888,7 +913,6 @@ export default function MapScreen({
               }}
             />
           </GeoJSONSource>
-        )}
 
         {/*
           You are here, and which way you are facing.
@@ -897,23 +921,28 @@ export default function MapScreen({
           exists — an arrow pointing nowhere in particular is worse than no
           arrow, because it still looks like an assertion.
         */}
-        {drawableHere && (
-          <GeoJSONSource
+        {/* Same reasoning as the route source above. */}
+                  <GeoJSONSource
             key="nav-here"
             id="nav-here"
             data={
               {
                 type: 'FeatureCollection',
-                features: [
-                  {
-                    type: 'Feature',
-                    properties: { heading: heading ?? 0 },
-                    geometry: {
-                      type: 'Point',
-                      coordinates: [drawableHere.longitude, drawableHere.latitude],
-                    },
-                  },
-                ],
+                features: drawableHere
+                  ? [
+                      {
+                        type: 'Feature',
+                        properties: { heading: heading ?? 0 },
+                        geometry: {
+                          type: 'Point',
+                          coordinates: [
+                            drawableHere.longitude,
+                            drawableHere.latitude,
+                          ],
+                        },
+                      },
+                    ]
+                  : [],
               } as never
             }
           >
@@ -980,7 +1009,6 @@ export default function MapScreen({
               }}
             />
           </GeoJSONSource>
-        )}
 
         {/*
           Callouts. `ViewAnnotation` anchors a real RN view to a coordinate and
