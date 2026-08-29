@@ -45,7 +45,6 @@ export default function SpotOverview({
   onAddWay,
   onRate,
   onRenameWay,
-  onStandHere,
 }: {
   /** The way of shooting currently on screen — always one of `members`. */
   spot: Spot;
@@ -78,8 +77,6 @@ export default function SpotOverview({
   onAddWay: (subName: string) => void;
   /** 1–5, or null to clear it back to unrated. */
   onRate: (value: number | null) => void;
-  /** Stand at this spot in the 3D view and look around. */
-  onStandHere?: () => void;
   /** Name this way of shooting. Empty clears it back to unnamed. */
   onRenameWay?: (subName: string) => void;
 }) {
@@ -333,23 +330,6 @@ export default function SpotOverview({
           looking at. Putting them together would make it far too easy to reach
           for Delete meaning "remove this way" and take the place with it.
         */}
-        {/*
-          What you would actually see from here.
-
-          Next to "another way of shooting this" because both are about the
-          place rather than this one photograph, and because they answer the
-          same question: is this position any good. One asks it of a picture
-          already taken, the other of the view itself.
-        */}
-        {onStandHere ? (
-          <Pressable
-            onPress={onStandHere}
-            style={({ pressed }) => [styles.addWay, pressed && styles.pressed]}
-          >
-            <Text style={styles.addWayText}>Stand here and look around</Text>
-          </Pressable>
-        ) : null}
-
         {namingWay ? (
           <View>
             <TextInput

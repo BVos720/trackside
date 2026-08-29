@@ -687,7 +687,7 @@ rain together, for the whole session. It retries now.
   is no gusting.
 - D7 / D8, the tree line and archive edge, unchanged and still one decision.
 
-### D9. First person cannot reach eye height — a renderer limit
+### D9. First person — built, could not reach eye height, removed
 
 Asked for: stand at a spot, about 2m off the ground, and look around. Built,
 and it does not hold on sloping ground. Reported as "the camera can't go
@@ -725,3 +725,13 @@ and it, and where the sun and shadows fall from that position.
       duration of the first-person view, which removes the collision entirely
       and allows a true 2m camera anywhere. The cost is that the hills go
       flat, and the hills are half the reason to stand somewhere. Worth it?
+
+**Removed 29 August.** Branco's call, and the right one: offered the choice
+between a 24m camera that behaves like a drone or switching terrain off to
+get a true 2m camera over flat ground, and neither is the thing that was
+asked for. A view that is nearly what you wanted is worse than no view,
+because it still occupies the button and still has to be explained.
+
+The measurements above are kept because they are the useful part. If a free
+camera ever lands in maplibre-gl — or if the app ever renders terrain itself
+— this becomes straightforward and the groundwork is written down.

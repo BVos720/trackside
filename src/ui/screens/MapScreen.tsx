@@ -145,9 +145,6 @@ export default function MapScreen({
   placing = false,
   route,
   here,
-  standAt = null,
-  onLeaveFirstPerson,
-  onTerrainModeChange,
   heading = null,
   controlsTop = 0,
   position,
@@ -169,18 +166,6 @@ export default function MapScreen({
   route?: unknown;
   /** Live position, whenever there is a fix. */
   here?: { latitude: number; longitude: number } | null;
-  /** Stand at a spot and look around, or null for the usual view. */
-  standAt?: { lon: number; lat: number; bearing: number | null } | null;
-  onLeaveFirstPerson?: () => void;
-  /**
-   * Which map is on screen, reported upward.
-   *
-   * The 3D flag lives here because this screen owns the switch, but two
-   * things outside it depend on the answer — whether to offer a view that
-   * only exists in 3D, and whether to leave one. Reporting it is a smaller
-   * change than lifting the state and making this screen controlled.
-   */
-  onTerrainModeChange?: (terrain3d: boolean) => void;
   /** Compass bearing in degrees from north, or null when unknown. */
   heading?: number | null;
   /**
@@ -262,9 +247,6 @@ export default function MapScreen({
   const [is3D, setIs3D] = useState(false);
 
   const [terrain3d, setTerrain3d] = useState(false);
-  useEffect(() => {
-    onTerrainModeChange?.(terrain3d);
-  }, [terrain3d, onTerrainModeChange]);
 
   /**
    * The spots inside a tapped stack, and which of them is lit.
@@ -313,18 +295,6 @@ export default function MapScreen({
       }
     })();
   }, []);
-
-  /*
-    Switching to the flat map leaves the first-person view.
-
-    Standing somewhere is a fact about the 3D camera. Keep it while the
-    flat map is showing and the state says you are at a fence post while
-    the screen shows an overhead plan — and worse, pressing 3D again drops
-    you back into a view you had already left.
-  */
-  useEffect(() => {
-    if (!terrain3d && standAt !== null) onLeaveFirstPerson?.();
-  }, [terrain3d, standAt, onLeaveFirstPerson]);
 
   /** Same reasoning as the scenery flag above: read on mount, no subscription. */
   const [rainEnabled, setRainEnabled] = useState(true);
@@ -1134,7 +1104,6 @@ export default function MapScreen({
           // information rather than atmosphere.
           stars={starsEnabled}
           shadows={shadowsEnabled}
-          standAt={standAt}
           // Real cover and rainfall for this circuit and this hour.
           /*
             Rain zeroed rather than the forecast withheld.
@@ -1160,32 +1129,6 @@ export default function MapScreen({
             }}
           />
       </View>
-      )}
-      {/*
-        The way back out.
-
-        A first-person view has no obvious exit — every gesture turns your
-        head rather than taking you anywhere — so the control has to be
-        explicit. Centred at the top, clear of the sky the view is for.
-      */}
-      {standAt !== null && (
-        <Pressable
-          onPress={onLeaveFirstPerson}
-          style={({ pressed }) => [
-            styles.leaveFirstPerson,
-            /*
-              Below the 2D/3D button, not across the top.
-
-              Centred at the top it landed between the venue card and the
-              site ruler and overlapped both. This column already holds the
-              view controls, and 64 clears the 56pt button above it.
-            */
-            { top: insets.top + MENU_CLEARANCE + controlsTop + 64 },
-            pressed && styles.pressed,
-          ]}
-        >
-          <Text style={styles.leaveFirstPersonText}>Back to the map</Text>
-        </Pressable>
       )}
 
       {stack !== null && (
@@ -1448,24 +1391,6 @@ function makeStyles(color: Theme['color']) {
      * to know the other exists, and so hiding it changes nothing about the
      * layout of the controls stacked above.
      */
-    leaveFirstPerson: {
-      position: 'absolute',
-      // Left column with the other view controls, rather than centred over
-      // the two cards that already occupy the top of the screen.
-      left: space.md,
-      paddingHorizontal: space.lg,
-      paddingVertical: space.sm,
-      borderRadius: radius.md,
-      backgroundColor: 'rgba(11,13,16,0.92)',
-      borderWidth: 1,
-      borderColor: color.border,
-    },
-    leaveFirstPersonText: {
-      color: color.text,
-      fontSize: type.label,
-      fontWeight: weight.bold,
-    },
-
     terrainLayer: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
     /*
      * Hidden, not unmounted — see the note at the mount site.

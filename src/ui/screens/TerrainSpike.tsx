@@ -1821,187 +1821,6 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
       */
       map.on("idle", function () { refreshGroundLevels(map); });
     }
-    /*
-      Standing at a spot and looking around.
-
-      ── What this is, and what it is not ─────────────────────────────
-      A real first-person camera would sit at eye height at the fence post.
-      maplibre-gl has no free camera — getFreeCameraOptions is a Mapbox API
-      and does not exist here — so the camera is always some distance above
-      the point it is centred on, and how far is a function of zoom.
-
-      What that leaves is close enough to be worth having: centre on the
-      spot, pitch right over so the view is nearly horizontal, and zoom in
-      until the camera is low. You get the sightline — which way the corner
-      is, what stands between you and it, where the sun will be over your
-      shoulder — which is the whole reason to want this.
-
-      Dragging rotates instead of panning. That is the part that makes it
-      feel like standing somewhere rather than looking at a map: your feet
-      stay put and your head turns. Panning is disabled outright rather than
-      merely discouraged, because a pan here would walk you off the spot
-      without ever saying so.
-
-      The basemap has no tiles at this zoom and will look soft. That is
-      honest — there is no more detail to have — and it does not matter,
-      because everything being read here is the shape of the land and the
-      position of the sun, both of which are still exact.
-    */
-    window.__fpv = null;
-
-    /** Layers that are in the way when you are standing among them. */
-    var FPV_HIDDEN = ["trees", "ground-detail"];
-
-    window.__enterFirstPerson = function (json) {
-      try {
-        var o = JSON.parse(json);
-        var map = window.__map;
-        if (!map) return;
-
-        window.__fpv = { lon: o.lon, lat: o.lat, maxZoom: map.getMaxZoom() };
-
-        /*
-          Eye height, which needs the zoom ceiling lifted.
-
-          MapLibre's camera sits a distance from the point it is centred on
-          that is set by zoom, and at pitch 85 its height above the ground is
-          that distance times cos(85). Zoom 18.5 works out at 24m — floating
-          over the treetops, which is exactly what it looked like. Zoom 22 is
-          2.1m, which is a person.
-
-          The venue ceiling is 18 because that is as far as the basemap has
-          anything to say, and it is the right limit for browsing. Standing
-          somewhere is a different act, so the ceiling is lifted for the
-          duration and put back on the way out.
-        */
-        map.setMaxZoom(23);
-
-        /*
-          Scenery off while standing.
-
-          The tree sprites are billboards sized for looking *down* at a wood.
-          From inside one at eye height they are enormous, they turn to face
-          you wherever you look, and they hide the thing you came to see. Real
-          trees would block the view too — but these are not trees, they are
-          markers saying "woodland here", and a marker that obscures the
-          subject has stopped doing its job.
-        */
-        FPV_HIDDEN.forEach(function (id) {
-          if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", "none");
-        });
-
-        // Feet planted: rotate and tilt, never pan.
-        map.dragPan.disable();
-        map.dragRotate.enable();
-        if (map.touchZoomRotate && map.touchZoomRotate.enableRotation) {
-          map.touchZoomRotate.enableRotation();
-        }
-
-        /*
-          jumpTo, not easeTo.
-
-          holdFirstPerson runs on every move event and calls setCenter to
-          keep you on the spot — which cancels an animation in progress. The
-          ease was being killed a frame or two in, leaving the camera at
-          whatever zoom the map already had: it looked like the view simply
-          never arrived, because it never did.
-
-          A jump has no animation to interrupt. Less elegant than flying in,
-          and it actually gets there.
-        */
-        map.jumpTo({
-          center: [o.lon, o.lat],
-          /*
-            ── Why not two metres, which is what was asked for ────────────
-            MapLibre will not put the camera below the terrain. At pitch 85
-            the line back to the camera rises only 5 degrees, so *any* ground
-            behind you steeper than about 5% is in the way — and the renderer
-            answers by flattening the pitch, which is the "it gets stuck on
-            the ground near hills" report. Raising the camera does not help:
-            the camera trails 11x its own height behind at that pitch, so the
-            slope it has to clear grows with it.
-
-            The pitch is what has to give. At 75 the back-line rises 15
-            degrees, which clears the Eifel's slopes, and the camera sits
-            about 8m up — a gantry rather than a person, but looking out
-            rather than being shoved skyward. Tried at 85 and 80 first; both
-            collided and one went black.
-
-            Two metres would need a free camera, which maplibre-gl does not
-            have. Recorded in TASKS-map-sky.md rather than pretended at.
-          */
-          /*
-            ── Two metres is not reachable, and here is why ───────────────
-            MapLibre will not let the camera near the terrain, and it
-            enforces that by cutting the pitch. Measured, not guessed:
-
-              zoom 22.0 pitch 85  ->  pitch clamped to 8, screen black
-              zoom 21.6 pitch 75  ->  pitch clamped to 8, looking at my feet
-              zoom 18.5 pitch 85  ->  holds, and looks out over the circuit
-
-            Offsetting the centre so the camera landed exactly on the spot
-            was tried too and is worse — the collision fires every frame and
-            the view collapses. There is no free camera in maplibre-gl to
-            place directly, so ~24m is the floor this renderer allows.
-
-            That is a gantry rather than a person, and it is honest about
-            what it is. It still answers the question the view is for: which
-            way the corner lies, what stands between you and it, and where
-            the sun and the shadows are from this position.
-          */
-          zoom: 18.5,
-          pitch: 85,
-          /*
-            Facing the way the photograph was taken, when that is recorded.
-
-            shootingBearing is the one piece of orientation a spot actually
-            carries, and arriving already pointed at the subject saves the
-            first thing everyone would otherwise do by hand.
-          */
-          bearing: typeof o.bearing === "number" ? o.bearing : map.getBearing()
-        });
-
-        post({ stage: "first-person", lon: o.lon, lat: o.lat });
-      } catch (e) {
-        fail("first-person", e);
-      }
-    };
-
-    window.__exitFirstPerson = function () {
-      var map = window.__map;
-      if (!map) return;
-      var was = window.__fpv;
-      window.__fpv = null;
-      map.dragPan.enable();
-
-      FPV_HIDDEN.forEach(function (id) {
-        if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", "visible");
-      });
-
-      // Back under the ceiling before restoring it, or the camera would sit
-      // above a limit the map is about to start enforcing.
-      map.easeTo({ zoom: 14, pitch: 60, duration: 700 });
-      map.setMaxZoom(was && was.maxZoom ? was.maxZoom : 18);
-    };
-
-    /*
-      Keeps you on the spot as the ground moves under you.
-
-      Rotating at this pitch swings the camera through a wide arc, and
-      MapLibre keeps the *centre of the screen* fixed rather than the point
-      you are standing on — so without this you drift off the fence post
-      while turning around. Re-centring on every rotation is what makes the
-      turn happen about you.
-    */
-    function holdFirstPerson() {
-      var fpv = window.__fpv;
-      if (!fpv) return;
-      var map = window.__map;
-      if (!map) return;
-      var c = map.getCenter();
-      if (Math.abs(c.lng - fpv.lon) < 1e-7 && Math.abs(c.lat - fpv.lat) < 1e-7) return;
-      map.setCenter([fpv.lon, fpv.lat]);
-    }
     function drawSky() {
       var map = window.__map;
       if (!map) return;
@@ -2316,12 +2135,13 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
             is something you look at, never somewhere you can wander off to.
           */
           /*
-            85 so the first-person view can actually look out.
+            85 rather than 82, for the sky.
 
-            At 82 the camera is still tilted enough down that a person
-            standing at a spot sees mostly the ground in front of them.
-            The last few degrees are the difference between looking at your
-            feet and looking at the corner.
+            Raised when the first-person view needed it and kept after that
+            was removed, because it earns its place on its own: the last few
+            degrees are most of the difference between a sliver of sky and
+            enough of it to see where the sun and the cloud deck actually
+            are.
           */
           maxPitch: 85,
           bearing: 20,
@@ -2825,8 +2645,6 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
           // the camera changes — turning is what makes it read as sky.
           map.on("move", drawSky);
           map.on("rotate", drawSky);
-          map.on("rotate", holdFirstPerson);
-          map.on("move", holdFirstPerson);
           // So a settings change can ask for a repaint without waiting for
           // the camera to move — turning stars off should be immediate.
           window.__redrawSky = drawSky;
@@ -2892,7 +2710,6 @@ export default function TerrainSpike({
   weather,
   stars = true,
   shadows = true,
-  standAt = null,
   onClose,
 }: {
   venue: VenueKey;
@@ -2928,14 +2745,6 @@ export default function TerrainSpike({
    * light at midnight".
    */
   stars?: boolean;
-  /**
-   * Where to stand, or null for the ordinary overhead view.
-   *
-   * `bearing` is the spot's recorded shooting direction when it has one,
-   * so you arrive already facing the subject rather than having to turn
-   * around first.
-   */
-  standAt?: { lon: number; lat: number; bearing: number | null } | null;
   /**
    * Draw cast shadows — the most expensive thing in this view.
    *
@@ -3144,30 +2953,6 @@ export default function TerrainSpike({
       `window.__setSun && window.__setSun('${JSON.stringify(payload)}'); true;`,
     );
   }, [venue, sunAt, pageEpoch, ready]);
-
-  /**
-   * Enter or leave the first-person view.
-   *
-   * Driven by a prop rather than an imperative call so the camera follows
-   * from the app's state: if the sheet closes or the spot goes away, the
-   * view comes back on its own rather than stranding somebody at a fence
-   * post with no way out.
-   */
-  useEffect(() => {
-    if (standAt) {
-      webRef.current?.injectJavaScript(
-        `window.__enterFirstPerson && window.__enterFirstPerson('${JSON.stringify({
-          lon: standAt.lon,
-          lat: standAt.lat,
-          bearing: standAt.bearing,
-        })}'); true;`,
-      );
-    } else {
-      webRef.current?.injectJavaScript(
-        `window.__exitFirstPerson && window.__exitFirstPerson(); true;`,
-      );
-    }
-  }, [standAt, pageEpoch]);
 
   /** Cast shadows on or off, recomputed on the page when re-enabled. */
   useEffect(() => {

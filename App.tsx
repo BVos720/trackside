@@ -532,22 +532,6 @@ function AppShell() {
     return () => clearInterval(id);
   }, [navStop]);
 
-  /**
-   * The spot you are standing at in the 3D view, or null.
-   *
-   * Held here rather than inside the map so closing the sheet, deleting the
-   * spot or switching venue all bring the camera back on their own. A view
-   * with no exit is the failure mode worth designing against.
-   */
-  /** Whether the map is showing terrain, reported by MapScreen. */
-  const [terrain3d, setTerrain3d] = useState(false);
-
-  const [standingAt, setStandingAt] = useState<{
-    lon: number;
-    lat: number;
-    bearing: number | null;
-  } | null>(null);
-
   const [placing, setPlacing] = useState(false);
   const [sheet, setSheet] = useState<SheetMode>({ kind: 'none' });
   const [moving, setMoving] = useState<MoveTarget>(null);
@@ -1139,9 +1123,6 @@ function AppShell() {
               key={venue}
               venue={venue}
               spots={visibleGeoJson}
-              standAt={standingAt}
-              onLeaveFirstPerson={() => setStandingAt(null)}
-              onTerrainModeChange={setTerrain3d}
               route={routeGeoJson}
               here={fix?.position ?? null}
               heading={heading}
@@ -1306,31 +1287,8 @@ function AppShell() {
                 }}
                 onRate={(value) => void rateSpot(activeSpot.id, value)}
                 onRenameWay={(subName) => void renameWay(activeSpot.id, subName)}
-                /*
-                  Only offered in 3D, because it is a 3D view.
-
-                  The flat map has no camera to stand with — pitch is zero
-                  and there is no terrain — so the button would either do
-                  nothing or silently switch modes on somebody who asked
-                  for neither. Absent is clearer than either.
-                */
-                onStandHere={
-                  !terrain3d
-                    ? undefined
-                    : () => {
-                        setStandingAt({
-                          lon: activeSpot.position.longitude,
-                          lat: activeSpot.position.latitude,
-                          // Arrive facing the way the photograph was taken,
-                          // when that is recorded. Nothing else on a spot
-                          // says which way to look.
-                          bearing: activeSpot.shootingBearing,
-                        });
-                        // The sheet would cover the view it just opened.
-                        setSheet({ kind: 'none' });
-                      }
-                }
                 media={activeMedia}
+
                 mediaUris={mediaUris}
                 onEdit={() => setSheet({ kind: 'edit', id: activeSpot.id })}
                 onMove={() => {
