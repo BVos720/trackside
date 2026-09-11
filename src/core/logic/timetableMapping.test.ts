@@ -220,3 +220,98 @@ describe('the layout the parser cannot read', () => {
     expect(sessions[1]!.start).toBe('11:00');
   });
 });
+
+describe('the shapes real timetables print', () => {
+  it('carries a day heading row onto the sessions beneath it', () => {
+    // Every sample prints the day as a row of its own, never as a column.
+    const grid = [
+      ['', 'SATURDAY 23 MAY', ''],
+      ['09:00', '09:30', 'PRACTICE'],
+      ['', 'SUNDAY 24 MAY', ''],
+      ['10:00', '11:00', 'RACE'],
+    ];
+    expect(applyTimetableMapping(grid, standard).map((s) => s.day)).toEqual([
+      'SATURDAY 23 MAY',
+      'SUNDAY 24 MAY',
+    ]);
+  });
+
+  it('lets a mapped day column win over a heading', () => {
+    const grid = [
+      ['SATURDAY 23 MAY', '', '', ''],
+      ['Sunday', '10:00', '11:00', 'RACE'],
+    ];
+    const sessions = applyTimetableMapping(
+      grid,
+      map([
+        [0, TimetableField.Day],
+        [1, TimetableField.Start],
+        [2, TimetableField.End],
+        [3, TimetableField.Title],
+      ]),
+    );
+    expect(sessions[0]!.day).toBe('Sunday');
+  });
+
+  it('reads the end from the start cell when both times share it', () => {
+    // ELMS: "08:30 13:00" is one column.
+    const grid = [['08:30 13:00', 'ELMS', 'MANDATORY SCRUTINEERING']];
+    const sessions = applyTimetableMapping(
+      grid,
+      map([
+        [0, TimetableField.Start],
+        [1, TimetableField.Title],
+        [2, TimetableField.Title],
+      ]),
+    );
+    expect(sessions[0]).toMatchObject({
+      start: '08:30',
+      end: '13:00',
+      title: 'ELMS — MANDATORY SCRUTINEERING',
+    });
+  });
+
+  it('prefers a mapped end column over a second time in the start cell', () => {
+    const grid = [['08:30 13:00', '14:00', 'SCRUTINEERING']];
+    expect(applyTimetableMapping(grid, standard)[0]!.end).toBe('14:00');
+  });
+
+  it('reads the whole line when only the start is pointed at', () => {
+    // Pasted text, or a PDF with no columns: one cell holds everything.
+    const grid = [['11:00 12:30 FIA WEC FREE PRACTICE 1 Track']];
+    expect(applyTimetableMapping(grid, map([[0, TimetableField.Start]]))[0]).toMatchObject({
+      start: '11:00',
+      end: '12:30',
+      title: 'FIA WEC FREE PRACTICE 1 Track',
+    });
+  });
+
+  it('drops a duration mark from a name part', () => {
+    const grid = [['09:00', '09:55', 'PROMOTER TEST', "Track 55'"]];
+    const sessions = applyTimetableMapping(
+      grid,
+      map([
+        [0, TimetableField.Start],
+        [1, TimetableField.End],
+        [2, TimetableField.Title],
+        [3, TimetableField.Location],
+      ]),
+    );
+    expect(sessions[0]!.title).toBe('PROMOTER TEST — Track');
+  });
+
+  it('joins name parts left to right, whatever order they were tapped in', () => {
+    const grid = [['09:00', '09:30', 'FIA WEC', 'FREE PRACTICE 1']];
+    const tappedBackwards: TimetableMapping = {
+      ...emptyTimetableMapping,
+      assignments: [
+        { row: 0, column: 3, field: TimetableField.Title },
+        { row: 0, column: 0, field: TimetableField.Start },
+        { row: 0, column: 2, field: TimetableField.Title },
+      ],
+    };
+    expect(applyTimetableMapping(grid, tappedBackwards)[0]!.title).toBe(
+      'FIA WEC — FREE PRACTICE 1',
+    );
+  });
+});

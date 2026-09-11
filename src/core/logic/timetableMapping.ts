@@ -22,7 +22,12 @@ import {
   isUsable as usable,
   type ColumnMapping,
 } from './columnMapping';
-import { classify, type TextSession } from './timetableText';
+import {
+  classify,
+  cleanTitle,
+  isDayHeading,
+  type TextSession,
+} from './timetableText';
 
 export const TimetableField = {
   /** The day heading this session runs on. */
@@ -78,6 +83,26 @@ const toMinutes = (hhmm: string): number => {
   return h * 60 + m;
 };
 
+const ALL_TIMES = /\d{1,2}[:.]\d{2}/g;
+
+/**
+ * The second clock time in a cell, or null.
+ *
+ * ELMS prints start and end as one column — "08:30 13:00" — so the column a
+ * person marks as the start also holds the end. Reading it from there is not
+ * a guess: it is the only other time in the cell they pointed at.
+ */
+function secondTime(cellText: string): string | null {
+  const times = (cellText.match(ALL_TIMES) ?? [])
+    .map(readTime)
+    .filter((t): t is string => t !== null);
+  return times[1] ?? null;
+}
+
+/** "Track 180'" → "Track": a duration mark is not part of a name. */
+const stripDuration = (value: string): string =>
+  value.replace(/\b\d{1,3}'/g, ' ').replace(/\s+/g, ' ').trim();
+
 /**
  * Apply a mapping to a grid of timetable rows.
  *
@@ -94,15 +119,43 @@ export function applyTimetableMapping(
 ): TextSession[] {
   if (mapping.assignments.length === 0) return [];
 
+  /*
+   * Left to right, whatever order the cells were tapped in.
+   *
+   * Name parts join in this order, and "ADMINISTRATIVE CHECKS — FIA WEC"
+   * because the session column happened to be tapped before the series
+   * column would be a name no document printed.
+   */
+  const assignments = [...mapping.assignments].sort(
+    (a, b) => a.row - b.row || a.column - b.column,
+  );
+  // Whether the person pointed at an end, or at any name at all. Without
+  // them the start cell is asked for both — see below.
+  const hasEnd = assignments.some((a) => a.field === TimetableField.End);
+  const hasName = assignments.some(
+    (a) => a.field === TimetableField.Title || a.field === TimetableField.Location,
+  );
+
   const out: TextSession[] = [];
+  /**
+   * The last day heading passed, carried onto the sessions under it.
+   *
+   * Every sample timetable prints the day as a heading *row* — "WEDNESDAY,
+   * MAY 6" — not as a column, so a Day assignment alone would leave a whole
+   * weekend on no day at all. The parser does exactly this with the same
+   * `isDayHeading` rule, and a mapped timetable must not know less than a
+   * parsed one.
+   */
+  let heading: string | null = null;
 
   for (const group of groupRows(grid, mapping)) {
     let day: string | null = null;
     let start: string | null = null;
+    let startCell = '';
     let end: string | null = null;
     const titleParts: string[] = [];
 
-    for (const a of mapping.assignments) {
+    for (const a of assignments) {
       const value = cellAt(group, a.row, a.column);
       if (value === '') continue;
       switch (a.field) {
@@ -110,7 +163,10 @@ export function applyTimetableMapping(
           if (day === null) day = value;
           break;
         case TimetableField.Start:
-          if (start === null) start = readTime(value);
+          if (start === null) {
+            start = readTime(value);
+            if (start !== null) startCell = value;
+          }
           break;
         case TimetableField.End:
           if (end === null) end = readTime(value);
@@ -119,16 +175,40 @@ export function applyTimetableMapping(
         case TimetableField.Location:
           // Location joins the title: nothing schedules on it, and "Track" or
           // "Pit building" is often the only thing distinguishing two rows.
-          titleParts.push(value);
+          titleParts.push(stripDuration(value));
           break;
         case TimetableField.Ignore:
           break;
       }
     }
 
-    if (start === null) continue;
+    if (start === null) {
+      const text = group
+        .map((cells) => cells.join(' '))
+        .join(' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+      if (isDayHeading(text)) heading = text;
+      continue;
+    }
 
-    const title = titleParts.join(' — ').replace(/\s+/g, ' ').trim();
+    // Both times in the one cell — ELMS prints "08:30 13:00" as one column.
+    if (end === null && !hasEnd) end = secondTime(startCell);
+
+    /*
+     * No name column at all: the rest of the start cell is the name.
+     *
+     * That is the shape of pasted text and of a PDF with no detectable
+     * columns — one cell per line, "11:00 12:30 FIA WEC FREE PRACTICE 1".
+     * Pointing at that cell as the start is pointing at all of it.
+     */
+    if (!hasName) titleParts.push(cleanTitle(startCell));
+
+    const title = titleParts
+      .filter((part) => part !== '')
+      .join(' — ')
+      .replace(/\s+/g, ' ')
+      .trim();
     // A session with no name is one nobody can act on, so it is not written.
     if (title === '') continue;
 
@@ -144,7 +224,7 @@ export function applyTimetableMapping(
     const kind = classify(title);
 
     out.push({
-      day,
+      day: day ?? heading,
       title,
       start,
       end: end ?? start,

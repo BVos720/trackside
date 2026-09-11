@@ -58,7 +58,7 @@ type WebViewProps = {
   source: { html: string; baseUrl?: string };
   originWhitelist: string[];
   onMessage: (event: { nativeEvent: { data: string } }) => void;
-  onShouldStartLoadWithRequest: () => boolean;
+  onShouldStartLoadWithRequest: (request: { url: string }) => boolean;
   javaScriptEnabled: boolean;
   onError: () => void;
 };
@@ -83,6 +83,31 @@ try {
  * rather than shown a button that explodes.
  */
 export const PDF_BRIDGE_SUPPORTED = WebViewComponent !== null;
+
+/** The address the page pretends to live at — see the WebView's `baseUrl`. */
+const PAGE_ORIGIN = 'https://trackside.invalid/';
+
+/**
+ * Whether a navigation is the page loading itself.
+ *
+ * ── Why this was the whole iPhone bug ─────────────────────────────────────
+ * iOS asks `onShouldStartLoadWithRequest` about *every* navigation, the first
+ * one included: `loadHTMLString:baseURL:` is a navigation to the base URL like
+ * any other, and react-native-webview hands it to this callback. Android's
+ * `loadDataWithBaseURL` never asks. So the callback that used to refuse
+ * everything worked on Android and, on an iPhone, cancelled the page before
+ * its first line ran — no stage report, no error, just "Reading…" until the
+ * timeout said it stopped after "not started". Every earlier fix (the data:
+ * import fallback, the stage reports) was aimed at a page that never loaded.
+ *
+ * Everything else is still refused. `about:blank` is let through because
+ * some WebKit builds report the initial document that way, and a blank page
+ * can fetch nothing.
+ */
+function isOwnPage(url: string): boolean {
+  const bare = url.replace(/\/+$/, '');
+  return bare === PAGE_ORIGIN.replace(/\/+$/, '') || url === 'about:blank';
+}
 
 /**
  * The page that does the work.
@@ -300,6 +325,7 @@ export function PdfBridge({
        * out, and a single overall timeout would either cut that off or wait far
        * too long for a step that was never going to return.
        */
+      console.warn(`[pdf] reader stalled after "${lastStage.current}"`);
       onError(
         `The PDF reader stopped responding after "${lastStage.current}". ` +
           'Paste the text instead.',
@@ -324,16 +350,24 @@ export function PdfBridge({
         stage?: string;
       };
 
-      // A progress report, not a result: note it and keep waiting.
+      // A progress report, not a result: note it and keep waiting. Logged,
+      // so it lands in Profile → Diagnostics — on a phone nobody can attach a
+      // debugger to, the last stage in that log is where it stopped.
       if (typeof result.stage === 'string') {
+        console.log(`[pdf] ${result.stage}`);
         lastStage.current = result.stage;
         armTimeout();
         return;
       }
 
       if (timer.current !== null) clearTimeout(timer.current);
-      if (result.ok && Array.isArray(result.rows)) onRows(result.rows);
-      else onError(result.error ?? 'The PDF could not be read.');
+      if (result.ok && Array.isArray(result.rows)) {
+        console.log(`[pdf] read ${result.rows.length} rows`);
+        onRows(result.rows);
+      } else {
+        console.warn(`[pdf] failed: ${result.error ?? 'no reason given'}`);
+        onError(result.error ?? 'The PDF could not be read.');
+      }
     } catch {
       if (timer.current !== null) clearTimeout(timer.current);
       onError('The PDF reader sent something unreadable.');
@@ -360,16 +394,18 @@ export function PdfBridge({
          * With an origin, the blob is same-origin and the real worker starts.
          * Nothing is ever fetched from this address — see
          * `onShouldStartLoadWithRequest` below, which refuses every
-         * navigation. It exists only so the page has an origin to be.
+         * navigation but the page's own first load. It exists only so the
+         * page has an origin to be.
          */
-        source={{ html, baseUrl: 'https://trackside.invalid/' }}
+        source={{ html, baseUrl: PAGE_ORIGIN }}
         originWhitelist={['*']}
         onMessage={onMessage}
-        // Nothing here loads a URL, so navigation is refused outright rather
-        // than trusted: the page is a script this file wrote, and a PDF that
-        // could talk it into fetching something would be an exfiltration path
-        // for a document that is often the user's own private planning.
-        onShouldStartLoadWithRequest={() => false}
+        // The page may load itself — iOS asks about that too, see
+        // `isOwnPage` — and nothing else may load at all: the page is a
+        // script this file wrote, and a PDF that could talk it into fetching
+        // something would be an exfiltration path for a document that is
+        // often the user's own private planning.
+        onShouldStartLoadWithRequest={(request) => isOwnPage(request.url)}
         javaScriptEnabled
         onError={() => onError('The PDF reader failed to start.')}
       />

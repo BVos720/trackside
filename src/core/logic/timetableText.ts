@@ -149,6 +149,21 @@ export function cleanTitle(line: string): string {
 }
 
 /**
+ * A table's own column header — "START - END DURATION CATEGORY SESSION".
+ *
+ * It carries no times, so the label rule below took it for a session name
+ * and prepended it to the first session under it: Spa Classic's opening
+ * session came out as "START END DURATION CATEGORY SESSION INT. — SPA-CLASSIC
+ * CLUB Session 1". Both words, as whole words, in English, French or German.
+ */
+function isColumnHeader(line: string): boolean {
+  return (
+    /\b(start|début|debut|beginn|anfang)\b/i.test(line) &&
+    /\b(end|fin|ende)\b/i.test(line)
+  );
+}
+
+/**
  * Parse extracted PDF lines into candidate sessions.
  *
  * Handles the one-line and name-on-previous-line shapes together: if a line
@@ -211,7 +226,12 @@ export function parseTimetableLines(lines: readonly string[]): TextParseResult {
       // Rejects on *any* time, not just a pair. "Sunrise: 06:04 / Sunset:
       // 21:03" separates its two times with a slash, so TIME_PAIR misses it and
       // it was being prepended to the first session of each day as a label.
-      if (prev !== '' && !HAS_TIME.test(prev) && !isDayHeading(prev)) {
+      if (
+        prev !== '' &&
+        !HAS_TIME.test(prev) &&
+        !isDayHeading(prev) &&
+        !isColumnHeader(prev)
+      ) {
         const label = cleanTitle(prev);
         // Guard against repeating a label the row already states, and against
         // extractor debris like the stray "st" from a superscript.

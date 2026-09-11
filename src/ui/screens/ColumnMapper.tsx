@@ -1,41 +1,38 @@
 /**
- * Say what each column is, and watch the entries appear.
+ * Say what each column is, and watch the records appear.
  *
- * The human half of TASKS-pdf-mapping.md. `pdfColumns.ts` proposes the grid;
- * this is where a person assigns meaning to it, which is the part that differs
+ * The human half of TASKS-pdf-mapping.md. `pdfColumns.ts` proposes the grid,
+ * `mappingGuess.ts` proposes what each column means, and this is where a
+ * person looks at both and corrects what is wrong — the part that differs
  * between every series and the part they answer at a glance.
  *
+ * ── It starts filled in ───────────────────────────────────────────────────
+ * It used to start empty on principle, which cost ten taps before the first
+ * car appeared on documents where the answer was plain from the cells. Now
+ * the machine's reading is already on the grid, labelled like any other
+ * choice, with the live preview underneath showing what it reads. Agreeing is
+ * one tap on Use; disagreeing is one tap on the cell that is wrong.
+ *
+ * ── One screen, two documents ─────────────────────────────────────────────
+ * Entry lists and timetables differ in their fields and in nothing else the
+ * screen cares about, so the difference is a `MapperSpec` (mapperSpecs.ts)
+ * rather than a second copy of this file.
+ *
  * ── The grid, not the page ────────────────────────────────────────────────
- * The plan's ideal is a rendered page with bands drawn over it. That needs
- * pdfjs, which runs on web and not on the phone (`PDF_SUPPORTED === false`),
- * so a page-render mapper would be a feature Branco could not use where he
- * uses the app. Showing the sliced grid instead works on both, and the grid
- * *is* the structure — the columns it shows are the columns the document has.
- * The page render stays worth doing on web (M1), as a nicer skin over this.
+ * The plan's ideal is a rendered page with bands drawn over it. Showing the
+ * sliced grid works on every platform, and the grid *is* the structure — the
+ * columns it shows are the columns the document has.
  *
- * ── It also works with no columns at all ──────────────────────────────────
- * Pasted text has no positions, and two of the five sample documents have no
- * consistent bands even as PDFs. Both arrive here as a single column of whole
- * lines, where the useful control is "how many rows make one car" — which is
- * exactly what reads the Spa Six Hours list that the parser loses seven cars
- * from.
- *
- * Nothing here writes anything. It hands a list of entries back, and the
- * editable review (EntryListScreen) is still the last word.
+ * Nothing here writes anything. It hands records back, and the editable
+ * review in the calling screen is still the last word.
  */
 import { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
-import type { TextEntry } from '../../core/logic/entryList';
 import {
-  EntryField,
-  applyMapping,
   assign,
-  describeMapping,
-  emptyMapping,
   fieldAt,
   isExcluded,
-  isUsable,
   toggleExcluded,
   type ColumnMapping,
 } from '../../core/logic/columnMapping';
@@ -46,6 +43,7 @@ import {
   describeMatch,
   matchTemplates,
 } from '../../core/logic/templateMatch';
+import type { MapperSpec } from './mapperSpecs';
 import {
   HIT_SIZE,
   radius,
@@ -59,24 +57,13 @@ import {
 /** How many rows to show as a sample. Enough to see the pattern, few enough to fit. */
 const SAMPLE = 6;
 
-const FIELDS: { field: EntryField; label: string }[] = [
-  { field: EntryField.Number, label: 'Number' },
-  { field: EntryField.ClassName, label: 'Class' },
-  { field: EntryField.Team, label: 'Team' },
-  { field: EntryField.Drivers, label: 'Drivers' },
-  { field: EntryField.Ignore, label: 'Ignore' },
-];
+function emptyMapping<F extends string>(): ColumnMapping<F> {
+  return { rowsPerEntry: 1, assignments: [], excluded: [] };
+}
 
-const SHORT: Record<EntryField, string> = {
-  [EntryField.Number]: 'No.',
-  [EntryField.ClassName]: 'Class',
-  [EntryField.Team]: 'Team',
-  [EntryField.Drivers]: 'Drivers',
-  [EntryField.Ignore]: '',
-};
-
-export default function ColumnMapper({
+export default function ColumnMapper<F extends string, R>({
   grid,
+  spec,
   onUse,
   onCancel,
   templates = [],
@@ -85,18 +72,22 @@ export default function ColumnMapper({
 }: {
   /** Rows sliced into cells — `gridOf(rows, findColumns(rows))`. */
   grid: readonly string[][];
-  /** Hand the mapped entries to the editable review. */
-  onUse: (entries: TextEntry[]) => void;
+  spec: MapperSpec<F, R>;
+  /** Hand the mapped records to the editable review. */
+  onUse: (records: R[]) => void;
   onCancel: () => void;
   /** Layouts saved from previous imports, most recently used first. */
   templates?: readonly MappingTemplate[];
-  onSaveTemplate?: (name: string, mapping: ColumnMapping) => void;
+  onSaveTemplate?: (name: string, mapping: ColumnMapping<F>) => void;
   onTemplateUsed?: (id: MappingTemplateId) => void;
 }) {
   const { color } = useTheme();
   const styles = useMemo(() => makeStyles(color), [color]);
 
-  const [mapping, setMapping] = useState<ColumnMapping>(emptyMapping);
+  /** The machine's reading, taken once when the grid arrives. */
+  const [initial] = useState(() => spec.guess(grid));
+  const guessed = initial.assignments.length > 0;
+  const [mapping, setMapping] = useState<ColumnMapping<F>>(initial);
   /** Which cell's field picker is open, as `row:column`. */
   const [picking, setPicking] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -104,17 +95,22 @@ export default function ColumnMapper({
   /** Set once a suggestion has been taken or dismissed, so it stops nagging. */
   const [suggestionHandled, setSuggestionHandled] = useState(false);
 
+  const [one, many] = spec.noun;
+
   /**
    * Layouts that might fit this document, best first.
    *
    * A suggestion and never an action. A template that has gone stale because
-   * the publisher moved a column produces plausible cars assembled from the
-   * wrong cells — so it fills the mapper in, the preview below shows what it
-   * reads, and the person still presses the button.
+   * the publisher moved a column produces plausible records assembled from
+   * the wrong cells — so it fills the mapper in, the preview below shows what
+   * it reads, and the person still presses the button.
    */
   const suggestion = useMemo(
-    () => (suggestionHandled ? null : (matchTemplates(grid, templates)[0] ?? null)),
-    [grid, templates, suggestionHandled],
+    () =>
+      suggestionHandled || !spec.templates
+        ? null
+        : (matchTemplates(grid, templates)[0] ?? null),
+    [grid, templates, suggestionHandled, spec.templates],
   );
 
   const columns = useMemo(
@@ -133,10 +129,13 @@ export default function ColumnMapper({
     [grid, mapping],
   );
 
-  const entries = useMemo(
-    () => (isUsable(mapping) ? applyMapping(grid, mapping) : []),
-    [grid, mapping],
+  const records = useMemo(
+    () => (spec.usable(mapping) ? spec.apply(grid, mapping) : []),
+    [grid, mapping, spec],
   );
+
+  const shortFor = (field: F | 'ignore') =>
+    spec.fields.find((f) => f.field === field)?.short ?? '';
 
   const stride = mapping.rowsPerEntry;
 
@@ -160,14 +159,14 @@ export default function ColumnMapper({
               onPress={() => setSuggestionHandled(true)}
               style={({ pressed }) => [styles.secondary, pressed && styles.pressed]}
             >
-              <Text style={styles.secondaryLabel}>Map by hand</Text>
+              <Text style={styles.secondaryLabel}>Not this one</Text>
             </Pressable>
             <Pressable
               onPress={() => {
                 const decoded = decodeMapping(suggestion.template.mapping);
                 // A layout written by an older build, or corrupted, must not
                 // take the screen down — mapping by hand is always there.
-                if (decoded) setMapping(decoded);
+                if (decoded) setMapping(decoded as unknown as ColumnMapping<F>);
                 onTemplateUsed?.(suggestion.template.id);
                 setSuggestionHandled(true);
               }}
@@ -179,15 +178,31 @@ export default function ColumnMapper({
         </View>
       )}
 
-      <Text style={styles.label}>CHOOSE COLUMNS</Text>
+      <View style={styles.labelRow}>
+        <Text style={styles.label}>CHOOSE COLUMNS</Text>
+        {mapping.assignments.length > 0 && (
+          <Pressable
+            onPress={() => {
+              setMapping(emptyMapping<F>());
+              setPicking(null);
+            }}
+            hitSlop={8}
+          >
+            <Text style={styles.link}>Start from empty</Text>
+          </Pressable>
+        )}
+      </View>
       <Text style={styles.help}>
-        Tap a cell and say what it is. Nothing is saved here — the entries go to
-        the review, where you can still correct them.
+        {guessed
+          ? `Filled in from what the columns look like. Tap any cell to change what it is — the ${many} underneath update as you go.`
+          : 'Tap a cell and say what it is.'}{' '}
+        Nothing is saved here: the {many} go to the review, where you can still
+        correct them.
       </Text>
 
       {/* ── how tall a record is ── */}
       <View style={styles.strideRow}>
-        <Text style={styles.strideLabel}>Rows per car</Text>
+        <Text style={styles.strideLabel}>Rows per {one}</Text>
         <Pressable
           onPress={() => setStride(stride - 1)}
           style={({ pressed }) => [styles.step, pressed && styles.pressed]}
@@ -204,8 +219,8 @@ export default function ColumnMapper({
       </View>
       {stride > 1 && (
         <Text style={styles.help}>
-          Each car spans {stride} rows. Assign a field on whichever row carries
-          it.
+          Each {one} spans {stride} rows. Assign a field on whichever row
+          carries it.
         </Text>
       )}
 
@@ -232,7 +247,7 @@ export default function ColumnMapper({
                       onPress={() => setPicking(open ? null : key)}
                       style={({ pressed }) => [
                         styles.cell,
-                        field !== EntryField.Ignore && styles.cellAssigned,
+                        field !== 'ignore' && styles.cellAssigned,
                         open && styles.cellPicking,
                         pressed && styles.pressed,
                       ]}
@@ -240,8 +255,8 @@ export default function ColumnMapper({
                       <Text style={styles.cellText} numberOfLines={1}>
                         {cells[c] ?? ''}
                       </Text>
-                      {field !== EntryField.Ignore && (
-                        <Text style={styles.cellField}>{SHORT[field]}</Text>
+                      {field !== 'ignore' && (
+                        <Text style={styles.cellField}>{shortFor(field)}</Text>
                       )}
                     </Pressable>
                   );
@@ -251,7 +266,7 @@ export default function ColumnMapper({
                   onPress={() => setMapping((m) => toggleExcluded(m, cells))}
                   style={({ pressed }) => [styles.notEntry, pressed && styles.pressed]}
                 >
-                  <Text style={styles.notEntryLabel}>Not a car</Text>
+                  <Text style={styles.notEntryLabel}>Not a {one}</Text>
                 </Pressable>
               </View>
             );
@@ -267,7 +282,7 @@ export default function ColumnMapper({
             {stride > 1 ? ` (row ${Number(picking.split(':')[0]) + 1})` : ''}
           </Text>
           <View style={styles.pickerRow}>
-            {FIELDS.map(({ field, label }) => {
+            {spec.fields.map(({ field, label }) => {
               const [r, c] = picking.split(':').map(Number) as [number, number];
               const on = fieldAt(mapping, r, c) === field;
               return (
@@ -296,30 +311,33 @@ export default function ColumnMapper({
       {mapping.excluded.length > 0 && (
         <Text style={styles.help}>
           {mapping.excluded.length} row shape
-          {mapping.excluded.length === 1 ? '' : 's'} marked as not cars — every
+          {mapping.excluded.length === 1 ? '' : 's'} marked as not {many} — every
           row that looks the same is skipped, on every page.
         </Text>
       )}
 
       {/* ── what it reads, live ── */}
       <Text style={styles.label}>READS</Text>
-      <Text style={styles.status}>{describeMapping(grid, mapping)}</Text>
+      <Text style={styles.status}>{spec.describe(grid, mapping)}</Text>
 
-      {entries.slice(0, 3).map((e, i) => (
-        <View key={i} style={styles.preview}>
-          <Text style={styles.previewNumber}>{e.number}</Text>
-          <View style={styles.previewBody}>
-            <Text style={styles.previewTitle} numberOfLines={1}>
-              {e.team ?? '—'}
-            </Text>
-            <Text style={styles.previewMeta} numberOfLines={1}>
-              {[e.className, e.drivers.join(' / ')].filter(Boolean).join(' · ') || ' '}
-            </Text>
+      {records.slice(0, 3).map((record, i) => {
+        const p = spec.preview(record);
+        return (
+          <View key={i} style={styles.preview}>
+            <Text style={styles.previewLead}>{p.lead}</Text>
+            <View style={styles.previewBody}>
+              <Text style={styles.previewTitle} numberOfLines={1}>
+                {p.title}
+              </Text>
+              <Text style={styles.previewMeta} numberOfLines={1}>
+                {p.meta || ' '}
+              </Text>
+            </View>
           </View>
-        </View>
-      ))}
+        );
+      })}
 
-      {onSaveTemplate && isUsable(mapping) && (
+      {onSaveTemplate && spec.templates && spec.usable(mapping) && (
         <View style={styles.saveBox}>
           {saving ? (
             <>
@@ -374,16 +392,16 @@ export default function ColumnMapper({
           <Text style={styles.secondaryLabel}>Cancel</Text>
         </Pressable>
         <Pressable
-          onPress={() => entries.length > 0 && onUse(entries)}
-          disabled={entries.length === 0}
+          onPress={() => records.length > 0 && onUse(records)}
+          disabled={records.length === 0}
           style={({ pressed }) => [
             styles.primary,
-            entries.length === 0 && styles.disabled,
+            records.length === 0 && styles.disabled,
             pressed && styles.pressed,
           ]}
         >
           <Text style={styles.primaryLabel}>
-            Use {entries.length} car{entries.length === 1 ? '' : 's'}
+            Use {records.length} {records.length === 1 ? one : many}
           </Text>
         </Pressable>
       </View>
@@ -396,6 +414,11 @@ function makeStyles(color: Theme['color']) {
     pressed: { opacity: 0.7 },
     disabled: { opacity: 0.4 },
 
+    labelRow: {
+      flexDirection: 'row',
+      alignItems: 'flex-end',
+      justifyContent: 'space-between',
+    },
     label: {
       color: color.textFaint,
       fontSize: type.label,
@@ -403,6 +426,7 @@ function makeStyles(color: Theme['color']) {
       letterSpacing: 1.5,
       marginTop: space.lg,
     },
+    link: { color: color.accent, fontSize: type.label, fontWeight: weight.bold },
     help: {
       color: color.textMuted,
       fontSize: type.label,
@@ -516,12 +540,12 @@ function makeStyles(color: Theme['color']) {
       borderRadius: radius.md,
       backgroundColor: color.surface,
     },
-    previewNumber: {
+    previewLead: {
       color: color.text,
       fontSize: type.label,
       fontWeight: weight.bold,
       fontVariant: ['tabular-nums'],
-      width: 36,
+      minWidth: 36,
     },
     previewBody: { flex: 1 },
     previewTitle: { color: color.text, fontSize: type.label, fontWeight: weight.bold },

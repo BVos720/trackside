@@ -2,9 +2,9 @@
  * The entry list — which cars are running, and which you have already shot.
  *
  * Two halves, like the timetable: the field itself, ticked off as you go
- * round the paddock; and underneath it, how the field got there. Pasted text
- * only for now — PDF extraction is not wired up on device yet (see
- * TASKS-pdf-mapping.md).
+ * round the paddock; and underneath it, how the field got there — pasted
+ * text through the parser, or a PDF straight into the column mapper, which
+ * opens already filled in by `mappingGuess.ts` (see TASKS-pdf-mapping.md).
  *
  * ── The review is editable, and that is the point ─────────────────────────
  * Same rule as TimetableScreen, spec §5.3: nothing is written until Add is
@@ -38,6 +38,7 @@ import { pickPdf } from '../../storage-local/pickPdf';
 import { PdfBridge, PDF_BRIDGE_SUPPORTED } from '../../storage-local/pdfBridge';
 import Collapsible from '../Collapsible';
 import ColumnMapper from './ColumnMapper';
+import { ENTRY_SPEC } from './mapperSpecs';
 import { useMappingTemplates } from '../state/useMappingTemplates';
 import {
   HIT_SIZE,
@@ -434,6 +435,7 @@ export default function EntryListScreen({
         {mapping !== null && (
           <ColumnMapper
             grid={mapping}
+            spec={ENTRY_SPEC}
             templates={layouts.templates}
             onSaveTemplate={(name, m) => void layouts.save(name, mapping, m)}
             onTemplateUsed={(id) => void layouts.touch(id)}

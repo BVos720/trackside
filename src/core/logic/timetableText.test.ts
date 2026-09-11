@@ -204,3 +204,21 @@ describe('parseTimetableLines — general', () => {
     expect(r.sessions[0]!.durationMinutes).toBe(240);
   });
 });
+
+describe('parseTimetableLines — column headers', () => {
+  it('does not take a table header as the first session\'s name', () => {
+    // Spa Classic's opening session used to read "START END DURATION
+    // CATEGORY SESSION INT. — SPA-CLASSIC CLUB Session 1".
+    const r = parseTimetableLines([
+      'START - END DURATION CATEGORY SESSION INT.',
+      '09:00 - 09:30 00:30 SPA-CLASSIC CLUB - Session 1 Private Practice 00:10',
+    ]);
+    expect(r.sessions[0]!.title).not.toMatch(/START|DURATION/);
+    expect(r.sessions[0]!.title).toMatch(/SPA-CLASSIC CLUB/);
+  });
+
+  it('still takes an ordinary label from the line above', () => {
+    const r = parseTimetableLines(['ELMS MANDATORY SCRUTINEERING', '08:30 13:00 Garages 1 & 2']);
+    expect(r.sessions[0]!.title).toMatch(/^ELMS MANDATORY SCRUTINEERING/);
+  });
+});

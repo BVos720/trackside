@@ -329,11 +329,51 @@ WebView because it is already a browser. Four things worth knowing:
   rows and one that failed to open look identical from outside, and the second
   must not be shown as "this document has no entries in it".
 
-> **UNVERIFIED ON DEVICE.** It typechecks and the suite is green, but nothing
-> here has run on the emulator. `react-native-webview` is a native module, so
-> it needs a fresh dev build: `npx expo run:android`, which per TASKS.md needs
-> **JDK 17** — Android Studio ships 25 and it dies at the CMake step. This is
-> the first thing to check on the next build.
+> **Why it never worked on an iPhone — found 11 September.** The WebView
+> was given `onShouldStartLoadWithRequest={() => false}` to refuse every
+> navigation. iOS asks that callback about the page's *own first load* too
+> (`loadHTMLString:baseURL:` is a navigation to the base URL, and
+> react-native-webview forwards it); Android's `loadDataWithBaseURL` never
+> asks. So on iOS the page was cancelled before its first line ran — no stage
+> report, no error, "Reading…" until the 25s timeout. The data:-URL fallback
+> and the stage reports were both aimed at a page that never loaded.
+>
+> Fixed by `isOwnPage`: the base URL (and `about:blank`) may load, nothing
+> else may. The same page, built by `buildHtml` around the real WEC timetable,
+> was run in Chromium with a stub bridge: every stage reports and 93 rows come
+> back. Stages now also go to `console`, so they land in Profile →
+> Diagnostics — if it still fails on a device, the last `[pdf]` line says
+> where. **Needs a rebuild to verify on the iPhone.**
+
+---
+
+## The hybrid, wired end to end — 11 September
+
+> "Should be a kind of hybrid between the user and an algorithm."
+
+P8 was ticked above but only the logic existed: the timetable screen had no
+mapper and no editable review, so "the parser recognised nothing" was still a
+shrug. Now both documents run the same three steps:
+
+1. **The algorithm reads first.** Timetables: `parseTimetableLines`, which
+   reads all three Spa documents. Entry lists from a PDF: straight to step 2,
+   as before.
+2. **The mapper opens pre-filled.** `core/logic/mappingGuess.ts` proposes what
+   each column is — the number column (skipping HTC2's row counter), team,
+   driver columns by how names are printed; start and end times (or both in
+   one cell, as ELMS prints them), name and place columns. Tested against the
+   real documents: WEC 35 cars and ELMS 47 with **no taps**, HTC2 car 7 not 3,
+   WEC timetable 64 sessions with days carried from the heading rows. A wrong
+   guess is one tap on that cell; "Start from empty" is there too.
+3. **An editable review is the last word.** `core/logic/timetableReview.ts`
+   (the timetable twin of `entryReview.ts`): every field correctable, delete,
+   "+ Add a session the list missed", unread lines as rows to fill in, and a
+   ticked row that cannot be written says why instead of vanishing.
+
+`ColumnMapper` is now one screen for both, driven by a `MapperSpec`
+(`ui/screens/mapperSpecs.ts`). `applyTimetableMapping` learned the three
+shapes real timetables print: day headings as rows, both times in one cell,
+and a whole line in one cell (paste) read from the start column alone.
 
 ---
 ## Honest costs
