@@ -1,3 +1,4 @@
+import { Text } from './Typography';
 /**
  * A section that folds away.
  *
@@ -13,9 +14,10 @@
  * usually the only question.
  */
 import { useMemo, useState, type ReactNode } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { radius, space, type, useTheme, weight, type Theme } from './theme';
+import { Entrance } from './Motion';
 
 export default function Collapsible({
   title,
@@ -39,10 +41,11 @@ export default function Collapsible({
   return (
     <View style={styles.root}>
       <Pressable
+        accessibilityRole="button"
+        accessibilityState={{ expanded: open }}
         onPress={() => setOpen((v) => !v)}
         style={({ pressed }) => [styles.header, pressed && styles.pressed]}
       >
-        <Text style={styles.chevron}>{open ? '▾' : '▸'}</Text>
         <View style={styles.titleBlock}>
           <Text style={styles.title}>{title}</Text>
           {!open && hint ? (
@@ -54,9 +57,10 @@ export default function Collapsible({
         {badge !== null && badge !== undefined && badge !== '' ? (
           <Text style={styles.badge}>{badge}</Text>
         ) : null}
+        <Text style={styles.chevron}>{open ? '−' : '+'}</Text>
       </Pressable>
 
-      {open && <View style={styles.body}>{children}</View>}
+      {open && <Entrance style={styles.body}>{children}</Entrance>}
     </View>
   );
 }
@@ -68,9 +72,11 @@ export default function Collapsible({
 function makeStyles(color: Theme['color']) {
   return StyleSheet.create({
     root: {
-      marginTop: space.sm,
+      marginTop: 12,
       borderRadius: radius.md,
       backgroundColor: color.surface,
+      borderWidth: 1,
+      borderColor: color.border,
       overflow: 'hidden',
     },
     pressed: { opacity: 0.7 },
@@ -79,16 +85,17 @@ function makeStyles(color: Theme['color']) {
       alignItems: 'center',
       gap: space.sm,
       // Gloves are the normal operating condition (§5.14).
-      minHeight: 56,
+      minHeight: 76,
+      paddingVertical: 14,
       paddingHorizontal: space.md,
     },
-    chevron: { color: color.textMuted, fontSize: 13, width: 14 },
+    chevron: { color: color.textMuted, fontSize: 20, width: 24, textAlign: 'center' },
     titleBlock: { flex: 1 },
     title: { color: color.text, fontSize: type.body, fontWeight: weight.bold },
-    hint: { color: color.textMuted, fontSize: type.label, marginTop: 1 },
+    hint: { color: color.textMuted, fontSize: 12, lineHeight: 18, marginTop: 5 },
     badge: {
       color: color.accent,
-      fontSize: type.body,
+      fontSize: 12,
       fontWeight: weight.bold,
       fontVariant: ['tabular-nums'],
     },
@@ -97,7 +104,7 @@ function makeStyles(color: Theme['color']) {
       paddingBottom: space.md,
       borderTopWidth: 1,
       borderTopColor: color.border,
-      paddingTop: space.sm,
+      paddingTop: space.md,
     },
   });
 }

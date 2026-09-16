@@ -1,3 +1,4 @@
+import { Text } from '../Typography';
 /**
  * The navigator — where you are, where you are going, and whether you are late.
  *
@@ -20,7 +21,7 @@
  * support, which is the same failure as inferring access (§0.2).
  */
 import { useMemo } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import type { PlanStop } from '../../core/domain/event';
 import type { Spot } from '../../core/domain/spot';

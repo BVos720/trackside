@@ -1,3 +1,4 @@
+import { Text } from '../Typography';
 /**
  * Circuit picker.
  *
@@ -6,7 +7,7 @@
  * platform split so `MapScreen.tsx` and `MapScreen.web.tsx` cannot drift.
  */
 import { useMemo, useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { radius, space, type, useTheme, weight, type Theme } from '../theme';
 import { VENUE_VIEW, type VenueKey } from './style';

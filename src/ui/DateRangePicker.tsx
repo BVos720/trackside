@@ -1,3 +1,4 @@
+import { Text } from './Typography';
 /**
  * Date range picker — a calendar, built from React Native primitives.
  *
@@ -20,7 +21,7 @@
  * is 11 October regardless of what the phone thinks the offset is.
  */
 import { useMemo, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { radius, space, type, useTheme, weight, type Theme } from './theme';
 

@@ -1,3 +1,4 @@
+import { Text, TextInput } from '../Typography';
 /**
  * Timetable import and manual entry — spec §5.3.
  *
@@ -27,14 +28,7 @@
  * the part only they can see, and has the last word on all of it.
  */
 import { useMemo, useState } from 'react';
-import {
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { gridOf } from '../../core/logic/columnMapping';
 import { findColumns } from '../../core/logic/pdfColumns';

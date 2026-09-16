@@ -1,3 +1,4 @@
+import { Text, TextInput } from '../Typography';
 /**
  * Spot detail — the read-only view you get from tapping a pin.
  *
@@ -6,17 +7,7 @@
  * cannot silently change a saved spot.
  */
 import { useMemo, useRef, useState } from 'react';
-import {
-  Animated,
-  Image,
-  PanResponder,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { Animated, Image, PanResponder, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { AccessClassification, type Spot } from '../../core/domain/spot';
 import type { Media } from '../../core/domain/media';

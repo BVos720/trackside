@@ -1,3 +1,4 @@
+import { Text } from '../Typography';
 /**
  * Map — web implementation (maplibre-gl).
  *
@@ -11,7 +12,8 @@
  * see here is the same basemap the device draws.
  */
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
-import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Image, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 // maplibre-gl 6.x is ESM with named exports and no default export — importing
 // it as `import maplibregl from 'maplibre-gl'` yields undefined at runtime.
 import { Map as MlMap, addProtocol } from 'maplibre-gl';
@@ -24,8 +26,14 @@ import { Protocol } from 'pmtiles';
 // screen draws its own chrome to match the trackside theme.
 
 import { clusterCallouts } from '../../core/logic/callouts';
-import { radius, space, type, useTheme, weight, type Theme } from '../theme';
+import { MENU_CLEARANCE, radius, space, type, useTheme, weight, type Theme } from '../theme';
 import CircuitRuler from '../map/CircuitRuler';
+import SkyControl from '../map/SkyControl';
+import SunDial from '../map/SunDial';
+import { useMapClock } from '../state/useMapClock';
+import { useVenueConditions } from '../state/useVenueConditions';
+import { useReducedMotion } from '../Motion';
+import { installWebAtmosphere } from '../map/webAtmosphere';
 import {
   OSM_ATTRIBUTION,
   TERRAIN_EXAGGERATION,
@@ -83,6 +91,9 @@ export default function MapScreen({
   route,
   here,
   heading = null,
+  controlsTop = 0,
+  controlsBottom = 84,
+  chromeVisible = true,
 }: {
   venue?: VenueKey;
   /** GeoJSON for the spots source; re-applied when it changes. */
@@ -107,9 +118,19 @@ export default function MapScreen({
   heading?: number | null;
   /** Accepted for parity with native; the web chrome does not stack. */
   controlsTop?: number;
+  controlsBottom?: number;
+  chromeVisible?: boolean;
 }) {
   const { color } = useTheme();
   const styles = useMemo(() => makeStyles(color), [color]);
+  const insets = useSafeAreaInsets();
+  const { height: viewportHeight } = useWindowDimensions();
+  const [skyHeight, setSkyHeight] = useState(100);
+  const clock = useMapClock();
+  const reducedMotion = useReducedMotion();
+  const position = useMemo(() => ({ longitude: VENUE_VIEW[venue].centre[0], latitude: VENUE_VIEW[venue].centre[1] }), [venue]);
+  const conditions = useVenueConditions(position, VENUE_VIEW[venue].timezone, clock.now);
+  const atmosphere = useRef<ReturnType<typeof installWebAtmosphere> | null>(null);
 
   /**
    * The spot singled out from a stack.
@@ -318,10 +339,27 @@ export default function MapScreen({
 
     return () => {
       observer.disconnect();
+      atmosphere.current?.dispose();
+      atmosphere.current = null;
       map.remove();
       mapRef.current = null;
     };
   }, [venue]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!ready || !map) return;
+    try {
+      atmosphere.current ??= installWebAtmosphere(map, VENUE_VIEW[venue].centre, VENUE_VIEW[venue].bounds);
+      const sun = solarPosition(clock.now, position);
+      atmosphere.current.update({ cover: conditions.cover, rain: conditions.rain, ...sun, epoch: clock.now.getTime() / 1000, enabled: is3d, reducedMotion });
+      if (map.getLayer('terrain-hillshade')) map.setPaintProperty('terrain-hillshade', 'hillshade-illumination-direction', illuminationFromSun(sun.altitude, sun.azimuth));
+      const daylight = Math.max(0, Math.min(1, (sun.altitude + 8) / 35));
+      const sunset = Math.max(0, 1 - Math.abs(sun.altitude - 2) / 12);
+      const tone = (night: number[], day: number[]) => `rgb(${night.map((v, i) => Math.round(v + (day[i]! - v) * daylight)).join(',')})`;
+      map.setSky({ 'sky-color': tone([5, 9, 18], [92, 147, 204]), 'horizon-color': tone([14, 19, 34], [168 + sunset * 70, 200 - sunset * 60, 232 - sunset * 135]), 'fog-color': tone([12, 17, 25], [150, 170, 188]), 'sky-horizon-blend': 0.6, 'atmosphere-blend': 0.8 });
+    } catch (error) { setError(`Atmosphere unavailable: ${error instanceof Error ? error.message : String(error)}`); }
+  }, [ready, venue, clock.now, conditions.cover, conditions.rain, is3d, reducedMotion, position]);
 
   /**
    * Push spot changes into the existing source.
@@ -467,7 +505,7 @@ export default function MapScreen({
 
     if (next) {
       // Light the terrain with the sun as it actually is right now (§5.12).
-      const sun = solarPosition(new Date(), {
+      const sun = solarPosition(clock.now, {
         latitude: centre.lat,
         longitude: centre.lng,
       });
@@ -553,7 +591,8 @@ export default function MapScreen({
         style={styles.canvas}
       />
 
-      <CircuitRuler venue={venue} />
+      {chromeVisible && <>
+      <CircuitRuler venue={venue} top={insets.top + MENU_CLEARANCE + controlsTop} />
 
       {/* No venue badge: the top-left menu trigger carries the circuit and
           active event, and both sat in the same corner. */}
@@ -563,6 +602,7 @@ export default function MapScreen({
         disabled={!ready}
         style={({ pressed }) => [
           styles.dimButton,
+          { top: insets.top + MENU_CLEARANCE + controlsTop },
           is3d && styles.dimButtonActive,
           pressed && styles.dimButtonPressed,
         ]}
@@ -572,14 +612,14 @@ export default function MapScreen({
         </Text>
       </Pressable>
 
-      {is3d && (
+      {is3d && insets.top + MENU_CLEARANCE + controlsTop + 260 < viewportHeight - insets.bottom - controlsBottom - skyHeight - 12 && (
         <>
           {/*
             Explicit camera controls. Drag-rotate and touch-pitch are enabled
             too, but gloves and a phone in one hand make precise dragging
             unrealistic — discrete buttons are the reliable path (§5.14).
           */}
-          <View style={styles.controls}>
+          <View style={[styles.controls, { top: insets.top + MENU_CLEARANCE + controlsTop + 64 }]}>
             <ControlRow>
               <ControlButton label="⟲" onPress={() => nudge({ bearing: -30 })} />
               <ControlButton label="⟳" onPress={() => nudge({ bearing: 30 })} />
@@ -597,13 +637,11 @@ export default function MapScreen({
             </ControlRow>
           </View>
 
-          <View style={styles.terrainNote} pointerEvents="none">
-            <Text style={styles.terrainNoteText}>
-              Terrain streams over the network — not available offline yet
-            </Text>
-          </View>
         </>
       )}
+      {insets.top + MENU_CLEARANCE + controlsTop + 244 < viewportHeight - insets.bottom - controlsBottom - skyHeight - 12 && <SunDial at={clock.now} position={position} top={insets.top + MENU_CLEARANCE + controlsTop + 64} heading={heading} />}
+      <SkyControl clock={clock} position={position} timeZone={VENUE_VIEW[venue].timezone} forecast={conditions.series} bottom={insets.bottom + controlsBottom} onHeightChange={setSkyHeight} />
+      </>}
 
       {(() => {
         const map = mapRef.current;
@@ -1076,7 +1114,7 @@ function makeStyles(color: Theme['color']) {
     dimButton: {
       position: 'absolute',
       top: space.md,
-      right: space.md,
+      left: space.md,
       width: 52,
       height: 52,
       alignItems: 'center',
@@ -1109,8 +1147,7 @@ function makeStyles(color: Theme['color']) {
 
     controls: {
       position: 'absolute',
-      right: space.md,
-      bottom: space.xl,
+      left: space.md,
       gap: space.xs,
     },
     controlRow: { flexDirection: 'row', gap: space.xs },

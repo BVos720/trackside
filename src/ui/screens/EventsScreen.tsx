@@ -1,3 +1,4 @@
+import { Text, TextInput } from '../Typography';
 /**
  * Events — pick a planning context, or make one.
  *
@@ -26,14 +27,7 @@
  * not quietly make it a Nürburgring event.
  */
 import { useMemo, useState } from 'react';
-import {
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { Event } from '../../core/domain/event';
@@ -41,6 +35,7 @@ import type { CircuitId, EventId } from '../../core/domain/ids';
 import type { ImportConflict, ImportMode } from '../../core/logic/importBundle';
 import { partitionEventsByFinished } from '../../core/logic/eventLifecycle';
 import Collapsible from '../Collapsible';
+import PageHeader from '../PageHeader';
 import DateRangePicker, { formatDateRange } from '../DateRangePicker';
 import {
   MENU_CLEARANCE,
@@ -226,8 +221,7 @@ export default function EventsScreen({
         { paddingTop: insets.top + MENU_CLEARANCE },
       ]}
     >
-      <Text style={styles.kicker}>EVENTS</Text>
-      <Text style={styles.venue}>{circuitLabel}</Text>
+      <PageHeader eyebrow="The season ahead" title="Your race weekends" description="A place for every session, every spot and everything you need trackside." />
 
       <Pressable
         onPress={() => onActivate(null)}
@@ -238,7 +232,7 @@ export default function EventsScreen({
         ]}
       >
         <View style={styles.rowText}>
-          <Text style={styles.rowTitle}>Default map</Text>
+          <Text style={styles.rowTitle}>Explore {circuitLabel}</Text>
           <Text style={styles.rowSub}>
             {spotCount} spot{spotCount === 1 ? '' : 's'} — everything here
           </Text>
@@ -302,6 +296,11 @@ export default function EventsScreen({
           Open an event for its timetable, plan and map.
         </Text>
       )}
+      {visibleEventList.length === 0 && !adding && <View style={styles.emptyCard}>
+        <Text style={styles.emptyNumber}>01 / THE NEXT WEEKEND</Text>
+        <Text style={styles.emptyTitle}>Great days start\nwith a little planning.</Text>
+        <Text style={styles.emptyBody}>Create a race weekend to bring your favourite spots, timetable and shooting plan together.</Text>
+      </View>}
 
       {!adding ? (
         <Pressable
@@ -311,7 +310,7 @@ export default function EventsScreen({
           }}
           style={({ pressed }) => [styles.primary, pressed && styles.pressed]}
         >
-          <Text style={styles.primaryLabel}>+ Add event</Text>
+          <Text style={styles.primaryLabel}>+ Plan a weekend</Text>
         </Pressable>
       ) : (
         <>
@@ -515,7 +514,11 @@ export default function EventsScreen({
 function makeStyles(color: Theme['color']) {
   return StyleSheet.create({
     root: { flex: 1, backgroundColor: color.background },
-    content: { padding: space.md, paddingBottom: space.xxl },
+    content: { padding: space.lg, paddingBottom: 64, width: '100%', maxWidth: 760, alignSelf: 'center' },
+    emptyCard: { marginTop: 24, padding: 24, borderRadius: 24, backgroundColor: color.surface, borderWidth: 1, borderColor: color.border },
+    emptyNumber: { color: color.accent, fontSize: 10, letterSpacing: 1.5, fontWeight: '700' },
+    emptyTitle: { color: color.text, fontSize: 34, lineHeight: 38, fontWeight: '700', marginTop: 20 },
+    emptyBody: { color: color.textMuted, fontSize: 14, lineHeight: 22, marginTop: 14 },
     pressed: { opacity: 0.7 },
     disabled: { opacity: 0.4 },
 
@@ -572,7 +575,8 @@ function makeStyles(color: Theme['color']) {
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
-      minHeight: 60,
+      minHeight: 84,
+      paddingVertical: 16,
       paddingHorizontal: space.md,
       borderRadius: radius.md,
       backgroundColor: color.surface,

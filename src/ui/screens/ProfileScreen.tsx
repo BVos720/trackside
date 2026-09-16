@@ -1,3 +1,4 @@
+import { Text, TextInput } from '../Typography';
 /**
  * Profile — "kind of like an account, but you don't have to make an account."
  *
@@ -58,18 +59,7 @@
  * that dropdown immediately rather than only after a remount.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  PanResponder,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Switch,
-  Text,
-  TextInput,
-  View,
-  type GestureResponderEvent,
-  type LayoutChangeEvent,
-} from 'react-native';
+import { PanResponder, Pressable, ScrollView, StyleSheet, Switch, View, type GestureResponderEvent, type LayoutChangeEvent } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { deriveAccent } from '../../core/logic/accentColor';
@@ -102,6 +92,7 @@ import {
 } from '../../storage-local/appLog';
 import { resetApp } from '../../storage-local/resetApp';
 import Collapsible from '../Collapsible';
+import PageHeader from '../PageHeader';
 import {
   HIT_SIZE,
   MENU_CLEARANCE,
@@ -365,12 +356,7 @@ export default function ProfileScreen({
         { paddingTop: insets.top + MENU_CLEARANCE },
       ]}
     >
-      <Text style={styles.kicker}>PROFILE</Text>
-      <Text style={styles.title}>Local, not an account</Text>
-      <Text style={styles.subtitle}>
-        Nothing here leaves this device. There is no sign-in — just settings
-        for how the app looks and behaves, and the gear you shoot with.
-      </Text>
+      <PageHeader eyebrow="Your paddock" title={displayName ? `Make it yours, ${displayName}.` : 'A setup of your own.'} description="Your equipment, your preferences, your way of seeing the circuit. Saved on this device, with no account needed." />
 
       <Text style={styles.label}>NAME</Text>
       <TextInput
@@ -387,7 +373,6 @@ export default function ProfileScreen({
       <Collapsible
         title="Appearance"
         hint="Light, dark, and an accent colour"
-        initiallyOpen
       >
         <Text style={styles.help}>
           System follows the phone's own setting, and updates immediately if
@@ -1072,7 +1057,7 @@ const sliderStyles = StyleSheet.create({
 function makeStyles(color: Theme['color']) {
   return StyleSheet.create({
     root: { flex: 1, backgroundColor: color.background },
-    content: { padding: space.md, paddingBottom: space.xxl },
+    content: { padding: space.lg, paddingBottom: 64, width: '100%', maxWidth: 760, alignSelf: 'center' },
     pressed: { opacity: 0.7 },
 
     kicker: {

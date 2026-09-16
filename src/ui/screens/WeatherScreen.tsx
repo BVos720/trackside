@@ -1,3 +1,4 @@
+import { Text } from '../Typography';
 /**
  * Weather — the hourly forecast for the days you'll be at the circuit.
  *
@@ -21,7 +22,7 @@
  * tested there. This file only lays it out.
  */
 import { useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import {
   groupForecastByDay,

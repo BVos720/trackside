@@ -1,3 +1,4 @@
+import { Text, TextInput } from '../Typography';
 /**
  * Say what each column is, and watch the records appear.
  *
@@ -27,7 +28,7 @@
  * review in the calling screen is still the last word.
  */
 import { useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import {
   assign,

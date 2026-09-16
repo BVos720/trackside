@@ -1,3 +1,4 @@
+import { Text } from '../Typography';
 /**
  * Map — native implementation (@maplibre/maplibre-react-native).
  *
@@ -18,14 +19,7 @@
  * EAS.md.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import {
-  ActivityIndicator,
-  Image,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { ActivityIndicator, Image, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { Asset } from 'expo-asset';
 import { prepareGlyphs } from '../../storage-local/glyphs';
 import { localTerrainTemplate } from '../../storage-local/terrainCache';
@@ -148,6 +142,8 @@ export default function MapScreen({
   here,
   heading = null,
   controlsTop = 0,
+  chromeVisible = true,
+  controlsBottom = 84,
   position,
 }: {
   venue?: VenueKey;
@@ -180,11 +176,15 @@ export default function MapScreen({
    * height rather than the map guessing at it.
    */
   controlsTop?: number;
+  chromeVisible?: boolean;
+  controlsBottom?: number;
   /** The circuit's own coordinates — what `SunDial`/`SkyControl` compute the sun against. */
   position: LatLon;
 }) {
   const { color } = useTheme();
   const styles = useMemo(() => makeStyles(color), [color]);
+  const { height: viewportHeight } = useWindowDimensions();
+  const [skyHeight, setSkyHeight] = useState(100);
 
   /**
    * One clock, shared by the sun and the weather.
@@ -1092,6 +1092,7 @@ export default function MapScreen({
         pointerEvents={terrain3d ? "auto" : "none"}
       >
           <TerrainSpike
+            active={terrain3d}
             venue={venue}
             spots={shape}
             here={here}
@@ -1198,7 +1199,10 @@ export default function MapScreen({
         each platform reads that. Omitting the key says the same thing without
         the question.
       */}
+      {chromeVisible && <>
       <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={terrain3d ? 'Switch to 2D map' : 'Switch to 3D terrain'}
         // Only the state. The camera follows in an effect below, and the
         // reason is worth reading before moving it back here.
         /*
@@ -1270,7 +1274,7 @@ export default function MapScreen({
         </View>
       )}
 
-      <CircuitRuler venue={venue} top={insets.top + MENU_TOP} />
+      <CircuitRuler venue={venue} top={insets.top + MENU_CLEARANCE + controlsTop} />
 
       {/* No venue badge: the top-left menu trigger carries the circuit and
           active event, and both sat in the same corner. */}
@@ -1279,12 +1283,12 @@ export default function MapScreen({
         The sun, stacked below the ruler rather than sharing its exact corner
         — see `CIRCUIT_RULER_CLEARANCE`.
       */}
-      <SunDial
+      {insets.top + MENU_CLEARANCE + controlsTop + 244 < viewportHeight - insets.bottom - controlsBottom - skyHeight - 12 && <SunDial
         at={clock.now}
         position={position}
-        top={insets.top + MENU_TOP + CIRCUIT_RULER_CLEARANCE}
+        top={insets.top + MENU_CLEARANCE + controlsTop + 64}
         heading={dialHeading}
-      />
+      />}
 
       {/*
         Bottom-anchored rather than competing with the menu/ruler/sun cluster
@@ -1299,9 +1303,10 @@ export default function MapScreen({
         // The day's forecast, so the strip can say what the sky will be doing
         // as well as what the light will be.
         forecast={conditions.series}
-        bottom={insets.bottom + BOTTOM_BAR_CLEARANCE}
+        bottom={insets.bottom + controlsBottom}
+        onHeightChange={setSkyHeight}
       />
-
+      </>}
     </View>
   );
 }

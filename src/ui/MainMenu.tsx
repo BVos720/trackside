@@ -1,357 +1,111 @@
-/**
- * Top-left menu — the app's only navigation.
- *
- * The map is home; everything else is a destination reached from here. That
- * keeps the map full-bleed, which matters more on a phone at a circuit than a
- * persistent tab bar does — §5.14 wants the field view brutally legible, and a
- * bar eating 60pt of a 6" screen is 60pt not showing the track.
- *
- * The trigger doubles as the status line: it shows which circuit and which
- * event you are in, because those two facts change what every other screen is
- * about, and getting them wrong wastes a day.
- */
 import { useMemo } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-
 import { SpotUse } from '../core/domain/spot';
 import { VENUE_VIEW, type VenueKey } from './map/style';
-import {
-  MENU_HEIGHT,
-  MENU_TOP,
-  radius,
-  space,
-  type,
-  useTheme,
-  weight,
-  type Theme,
-} from './theme';
+import { MENU_HEIGHT, MENU_TOP, radius, space, useTheme, type Theme } from './theme';
+import { Text } from './Typography';
+import { Entrance, useReducedMotion } from './Motion';
 
-/**
- * The two things you can be at a circuit to do.
- *
- * Labelled by the activity rather than the noun — "Photography" and
- * "Spectating" read as what you are here for, which is the question the switch
- * is actually asking.
- */
-const USE_OPTIONS: { value: SpotUse; label: string }[] = [
-  { value: SpotUse.Photography, label: 'Photography' },
-  { value: SpotUse.Spectating, label: 'Spectating' },
+export type Destination = 'map' | 'list' | 'times' | 'events' | 'event' | 'plan' | 'circuit' | 'profile';
+const ITEMS: { key: Destination; label: string; hint: string; number: string }[] = [
+  { key: 'map', label: 'Explore the map', hint: 'Find your next perspective', number: '01' },
+  { key: 'events', label: 'Race weekends', hint: 'Timetables, gear and your plan', number: '02' },
+  { key: 'circuit', label: 'Circuits', hint: 'Choose your next destination', number: '03' },
+  { key: 'profile', label: 'Your paddock', hint: 'Profile, appearance and equipment', number: '04' },
 ];
 
-export type Destination =
-  | 'map'
-  | 'list'
-  | 'times'
-  | 'events'
-  | 'event'
-  | 'plan'
-  | 'circuit'
-  | 'profile';
-
-/**
- * Top-level destinations.
- *
- * Two destinations are deliberately absent.
- *
- * `plan` belongs to one event, so it is reached from inside that event. Listing
- * it here would offer a destination that means nothing until something else is
- * selected, and would need a "no event active" state on a menu row.
- *
- * `times` is a property of an event — a timetable is *this weekend's* running
- * order, not the circuit's — so it lives inside the event alongside the plan
- * it feeds. Sessions with no event to belong to have nothing to schedule
- * against.
- *
- * `list` sits on the map itself, bottom left. It is the one screen you open
- * *while* looking at the map — to find the spot you can see a pin for — so
- * putting it two taps deep in a menu was one tap too many for the thing you do
- * most.
- *
- * `profile` belongs here, unlike those three: it is not scoped to an event or
- * a spot, so there is no "which one" question a menu row would leave
- * unanswered.
- */
-const ITEMS: { key: Destination; label: string; hint: string }[] = [
-  { key: 'map', label: 'Map', hint: 'Waypoints and the circuit' },
-  { key: 'events', label: 'Events', hint: 'Pick a weekend, or start clean' },
-  { key: 'circuit', label: 'Circuit', hint: 'Switch venue' },
-  { key: 'profile', label: 'Profile', hint: 'Appearance, performance, gear' },
-];
-
-export default function MainMenu({
-  open,
-  onOpenChange,
-  venue,
-  eventName,
-  counts,
-  spotUse,
-  useCounts,
-  onSpotUseChange,
-  current,
-  onNavigate,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  venue: VenueKey;
-  /** Null means the default map — every spot at this circuit. */
-  eventName: string | null;
+export default function MainMenu({ open, onOpenChange, venue, eventName, counts, spotUse, useCounts, onSpotUseChange, current, onNavigate }: {
+  open: boolean; onOpenChange: (open: boolean) => void; venue: VenueKey; eventName: string | null;
   counts: { spots: number; sessions: number; events: number; stops: number };
-  /** Camera positions or watching positions — what the map is showing. */
-  spotUse: SpotUse;
-  /** How many spots each mode would show, for the switch's labels. */
-  useCounts: Record<SpotUse, number>;
-  onSpotUseChange: (use: SpotUse) => void;
-  /** Where you are now, so the menu can leave it out. */
-  current?: Destination;
-  onNavigate: (to: Destination) => void;
+  spotUse: SpotUse; useCounts: Record<SpotUse, number>; onSpotUseChange: (use: SpotUse) => void;
+  current?: Destination; onNavigate: (to: Destination) => void;
 }) {
   const insets = useSafeAreaInsets();
   const { color } = useTheme();
-  // `StyleSheet.create` freezes whatever it is given at call time, so the
-  // styles are rebuilt here — inside the render, keyed on the theme's colour
-  // object — rather than once at module import (see theme.ts's ThemeProvider
-  // doc comment for why that matters).
+  const reduced = useReducedMotion();
   const styles = useMemo(() => makeStyles(color), [color]);
-
-  const badge = (key: Destination): string | null => {
-    if (key === 'list' || key === 'map') return counts.spots ? String(counts.spots) : null;
-    if (key === 'times') return counts.sessions ? String(counts.sessions) : null;
-    if (key === 'events') return counts.events ? String(counts.events) : null;
-    if (key === 'plan') return counts.stops ? String(counts.stops) : null;
-    return null;
-  };
-
-  return (
-    <>
-      <Pressable
-        onPress={() => onOpenChange(true)}
-        style={({ pressed }) => [
-          styles.trigger,
-          // Below the status bar, not under the clock.
-          { top: insets.top + MENU_TOP },
-          pressed && styles.pressed,
-        ]}
-      >
-        <Text style={styles.glyph}>☰</Text>
-        <View style={styles.triggerText}>
-          <Text style={styles.triggerTitle} numberOfLines={1}>
-            {VENUE_VIEW[venue].label}
-          </Text>
-          <Text style={styles.triggerSub} numberOfLines={1}>
-            {eventName ?? 'Default map'}
-          </Text>
-        </View>
-      </Pressable>
-
-      <Modal
-        visible={open}
-        transparent
-        animationType="fade"
-        onRequestClose={() => onOpenChange(false)}
-      >
-        <Pressable style={styles.backdrop} onPress={() => onOpenChange(false)}>
-          {/* Swallow presses inside the sheet so it does not dismiss itself. */}
-          <Pressable style={styles.sheet} onPress={() => {}}>
-            <Text style={styles.venueTitle}>{VENUE_VIEW[venue].label}</Text>
-            <Text style={styles.venueSub}>
-              {eventName ?? 'Default map — all your spots here'}
-            </Text>
-
-            {/*
-              Why you are here, which is a different question from where.
-
-              A camera position and a place to watch from are rarely the same
-              place, so this changes what the map is *showing* rather than how
-              it looks. It sits in the menu rather than on the map because it is
-              set once for a weekend, not tapped between corners — and the map's
-              corner already holds as many controls as it can.
-
-              Each side carries its own count, so switching to an empty mode
-              reads as a choice rather than a map that has broken.
-            */}
-            <View style={styles.modeRow}>
-              {USE_OPTIONS.map((option) => {
-                const on = option.value === spotUse;
-                const count = useCounts[option.value];
-                return (
-                  <Pressable
-                    key={option.value}
-                    onPress={() => onSpotUseChange(option.value)}
-                    style={({ pressed }) => [
-                      styles.mode,
-                      on && styles.modeOn,
-                      pressed && styles.pressed,
-                    ]}
-                  >
-                    <Text style={[styles.modeLabel, on && styles.modeLabelOn]}>
-                      {option.label}
-                    </Text>
-                    <Text style={[styles.modeCount, on && styles.modeCountOn]}>
-                      {count} spot{count === 1 ? '' : 's'}
-                    </Text>
-                  </Pressable>
-                );
-              })}
+  const onMap = current === 'map' || current === 'list';
+  const navigate = (destination: Destination) => { onNavigate(destination); onOpenChange(false); };
+  return <>
+    <Pressable accessibilityRole="button" accessibilityLabel="Open navigation" accessibilityState={{ expanded: open }} onPress={() => onOpenChange(true)}
+      style={({ pressed }) => [styles.trigger, { top: insets.top + MENU_TOP }, onMap && styles.triggerOnMap, pressed && styles.pressed]}>
+      <View style={[styles.menuIcon, onMap && { backgroundColor: '#26322F' }]}><View style={[styles.menuLine, { backgroundColor: onMap ? '#F4F5F0' : color.text }]} /><View style={[styles.menuLine, { width: 12, backgroundColor: onMap ? '#F4F5F0' : color.text }]} /></View>
+      <View style={{ flexShrink: 1 }}>
+        <Text numberOfLines={1} style={[styles.triggerTitle, onMap && { color: '#F4F5F0' }]}>{VENUE_VIEW[venue].label}</Text>
+        <Text numberOfLines={1} style={[styles.triggerSub, onMap && { color: '#B0BBB9' }]}>{eventName ?? 'Your circuit collection'}</Text>
+      </View>
+    </Pressable>
+    <Modal visible={open} transparent animationType={reduced ? 'none' : 'fade'} onRequestClose={() => onOpenChange(false)} statusBarTranslucent>
+      <View style={styles.backdrop}>
+        <Pressable accessibilityRole="button" accessibilityLabel="Close navigation" style={StyleSheet.absoluteFill} onPress={() => onOpenChange(false)} />
+        <Entrance style={[styles.sheet, { paddingTop: Math.max(insets.top, 24), paddingBottom: Math.max(insets.bottom, 24) }]}>
+          <View style={styles.brandRow}>
+            <View style={styles.brand}><View style={styles.brandMark} /><Text style={styles.wordmark}>TRACKSIDE</Text></View>
+            <Pressable accessibilityRole="button" accessibilityLabel="Close navigation" onPress={() => onOpenChange(false)} style={styles.close}><Text style={styles.closeText}>×</Text></Pressable>
+          </View>
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 12 }}>
+            <Text style={styles.eyebrow}>YOUR FIELD GUIDE</Text>
+            <Text style={styles.headline}>{'Every angle.\nEvery weekend.'}</Text>
+            <View style={styles.context}>
+              <View style={styles.liveDot} /><View style={{ flex: 1 }}><Text style={styles.contextTitle}>{VENUE_VIEW[venue].label}</Text><Text style={styles.contextSub}>{eventName ?? 'Explore at your own pace'}</Text></View>
             </View>
-
-            <ScrollView style={styles.items}>
-              {/*
-                The screen you are on is not offered.
-
-                Tapping it would do nothing visible, which reads as a broken
-                menu rather than a no-op — and the menu already closes when
-                you tap outside it, so there is a way out that does not need
-                a row leading back to where you already are.
-
-                Filtered rather than disabled: a greyed row still occupies
-                the space and still invites a press. This is a short list on
-                a phone held one-handed, and the shortest version of it is
-                the best one.
-              */}
-              {ITEMS.filter((item) => item.key !== current).map((item) => {
-                const count = badge(item.key);
-                return (
-                  <Pressable
-                    key={item.key}
-                    onPress={() => {
-                      onNavigate(item.key);
-                      onOpenChange(false);
-                    }}
-                    style={({ pressed }) => [
-                      styles.item,
-                      pressed && styles.itemPressed,
-                    ]}
-                  >
-                    <View style={styles.itemText}>
-                      <Text style={styles.itemLabel}>{item.label}</Text>
-                      <Text style={styles.itemHint}>{item.hint}</Text>
-                    </View>
-                    {count && <Text style={styles.count}>{count}</Text>}
-                  </Pressable>
-                );
-              })}
-            </ScrollView>
-          </Pressable>
-        </Pressable>
-      </Modal>
-    </>
-  );
+            <View style={styles.items}>{ITEMS.map(item => {
+              const selected = item.key === current || (item.key === 'events' && (current === 'event' || current === 'plan' || current === 'times'));
+              return <Pressable key={item.key} accessibilityRole="button" accessibilityState={{ selected }} onPress={() => navigate(item.key)} style={({ pressed }) => [styles.item, selected && styles.itemSelected, pressed && styles.pressed]}>
+                <Text style={[styles.itemNumber, selected && { color: color.accent }]}>{item.number}</Text>
+                <View style={{ flex: 1 }}><Text style={styles.itemLabel}>{item.label}</Text><Text style={styles.itemHint}>{item.hint}</Text></View>
+                <Text style={{ color: selected ? color.accent : color.textFaint, fontSize: 20 }}>↗</Text>
+              </Pressable>;
+            })}</View>
+            {eventName && <Pressable accessibilityRole="button" onPress={() => navigate('event')} style={styles.eventLink}><Text style={styles.eventLinkText}>Back to {eventName}</Text><Text style={{ color: color.accent }}>→</Text></Pressable>}
+            <Text style={[styles.eyebrow, { marginTop: 28 }]}>AT THE CIRCUIT FOR</Text>
+            <View style={styles.modeRow}>{[{ value: SpotUse.Photography, label: 'Photography' }, { value: SpotUse.Spectating, label: 'Spectating' }].map(option => {
+              const selected = spotUse === option.value;
+              return <Pressable key={option.value} accessibilityRole="radio" accessibilityState={{ checked: selected }} onPress={() => onSpotUseChange(option.value)} style={({ pressed }) => [styles.mode, selected && styles.modeSelected, pressed && styles.pressed]}><Text style={[styles.modeLabel, selected && { color: color.accent }]}>{option.label}</Text><Text style={styles.modeCount}>{useCounts[option.value]} saved spots</Text></Pressable>;
+            })}</View>
+            <Text style={styles.footer}>{counts.spots} spots  /  {counts.events} weekends  /  Yours to explore</Text>
+          </ScrollView>
+        </Entrance>
+      </View>
+    </Modal>
+  </>;
 }
 
-/**
- * The floating trigger button rests directly on the map, not on app chrome —
- * the same "compass resting on the map" territory as `SunDial`/`SkyControl`,
- * which is why its backdrop below is already the literal
- * `'rgba(11,13,16,0.92)'` rather than a `color.*` token. The map's own
- * basemap (`src/ui/map/style.ts`) stays a fixed dark style regardless of the
- * app's theme (TASKS-profile.md B2 is explicit that theming the app chrome
- * must not theme the map), so anything permanently opaque-backed against it
- * has to stay fixed too: a light-mode `color.text` is near-black, and on top
- * of this same near-black backdrop it would vanish rather than merely clash.
- * These three tokens are that fix. The sheet below, once open, sits over its
- * own scrim rather than directly on map pixels, so it themes normally.
- */
-const ON_MAP_TEXT = '#F2F5F8';
-const ON_MAP_ACCENT = '#2E7DF6';
-const ON_MAP_BORDER = '#2A313B';
-
-/**
- * Built per-render from the current theme rather than once at import — see
- * the `styles` call site above and theme.ts's `ThemeProvider` doc comment.
- */
-function makeStyles(color: Theme['color']) {
-  return StyleSheet.create({
-    trigger: {
-      position: 'absolute',
-      left: space.md,
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: space.sm,
-      maxWidth: 260,
-      paddingLeft: space.md,
-      paddingRight: space.lg,
-      // Gloves are the normal operating condition (§5.14).
-      height: MENU_HEIGHT,
-      borderRadius: radius.md,
-      backgroundColor: 'rgba(11,13,16,0.92)',
-      borderWidth: 1,
-      borderColor: ON_MAP_BORDER,
-    },
-    pressed: { opacity: 0.7 },
-    glyph: { color: ON_MAP_TEXT, fontSize: 18, fontWeight: weight.bold },
-    triggerText: { flexShrink: 1 },
-    triggerTitle: {
-      color: ON_MAP_TEXT,
-      fontSize: type.body,
-      fontWeight: weight.bold,
-    },
-    triggerSub: { color: ON_MAP_ACCENT, fontSize: type.label },
-
-    backdrop: {
-      flex: 1,
-      backgroundColor: 'rgba(0,0,0,0.6)',
-      justifyContent: 'flex-end',
-    },
-    sheet: {
-      backgroundColor: color.surface,
-      borderTopLeftRadius: radius.lg,
-      borderTopRightRadius: radius.lg,
-      padding: space.md,
-      maxHeight: '80%',
-    },
-    venueTitle: {
-      color: color.text,
-      fontSize: type.title,
-      fontWeight: weight.bold,
-    },
-    venueSub: { color: color.textMuted, fontSize: type.label, marginTop: 2 },
-
-    modeRow: { flexDirection: 'row', gap: space.sm, marginTop: space.md },
-    /**
-     * Sized for §5.14 — a gloved thumb, in the rain, without looking carefully.
-     * 56pt is the floor for a control that changes what the whole map means.
-     */
-    mode: {
-      flex: 1,
-      minHeight: 56,
-      justifyContent: 'center',
-      paddingHorizontal: space.md,
-      borderRadius: radius.md,
-      backgroundColor: color.surfaceRaised,
-      borderWidth: 1,
-      borderColor: 'transparent',
-    },
-    modeOn: { borderColor: color.accent, backgroundColor: color.surface },
-    modeLabel: { color: color.textMuted, fontSize: type.body, fontWeight: weight.bold },
-    modeLabelOn: { color: color.text },
-    modeCount: { color: color.textFaint, fontSize: 11, marginTop: 2 },
-    modeCountOn: { color: color.accent },
-
-    items: { marginTop: space.md },
-    item: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      minHeight: 60,
-      paddingHorizontal: space.md,
-      borderRadius: radius.md,
-      backgroundColor: color.surfaceRaised,
-      marginBottom: space.sm,
-    },
-    itemPressed: { backgroundColor: color.accent },
-    itemText: { flex: 1 },
-    itemLabel: {
-      color: color.text,
-      fontSize: type.body,
-      fontWeight: weight.bold,
-    },
-    itemHint: { color: color.textFaint, fontSize: type.label, marginTop: 1 },
-    count: {
-      color: color.accent,
-      fontSize: type.body,
-      fontWeight: weight.bold,
-      fontVariant: ['tabular-nums'],
-    },
-  });
-}
+function makeStyles(color: Theme['color']) { return StyleSheet.create({
+  trigger: { position: 'absolute', left: space.md, height: MENU_HEIGHT, maxWidth: '72%', flexDirection: 'row', alignItems: 'center', gap: 12, paddingLeft: 8, paddingRight: 18, borderRadius: radius.md, backgroundColor: color.surface, borderWidth: 1, borderColor: color.border },
+  triggerOnMap: { backgroundColor: '#191F22', borderColor: '#354045' },
+  menuIcon: { width: 38, height: 38, borderRadius: 11, backgroundColor: color.surfaceRaised, justifyContent: 'center', alignItems: 'center', gap: 5 },
+  menuLine: { width: 18, height: 2, borderRadius: 2 },
+  triggerTitle: { color: color.text, fontSize: 14, fontWeight: '700' },
+  triggerSub: { color: color.textMuted, fontSize: 11, marginTop: 3 },
+  pressed: { opacity: 0.65 },
+  backdrop: { flex: 1, backgroundColor: 'rgba(5,12,10,0.65)', alignItems: 'flex-start' },
+  sheet: { width: '92%', maxWidth: 420, flex: 1, backgroundColor: color.background, paddingHorizontal: 24, borderTopRightRadius: 28, borderBottomRightRadius: 28 },
+  brandRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 28 },
+  brand: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  brandMark: { width: 9, height: 25, backgroundColor: color.accent, transform: [{ skewX: '-16deg' }] },
+  wordmark: { color: color.text, fontSize: 28, letterSpacing: 2, fontWeight: '700' },
+  close: { width: 44, height: 44, borderRadius: 22, backgroundColor: color.surfaceRaised, alignItems: 'center', justifyContent: 'center' },
+  closeText: { color: color.textMuted, fontSize: 24 },
+  eyebrow: { fontSize: 10, letterSpacing: 2, color: color.textMuted, fontWeight: '700' },
+  headline: { fontSize: 46, lineHeight: 47, color: color.text, fontWeight: '700', marginTop: 12, marginBottom: 24 },
+  context: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16, borderRadius: 16, backgroundColor: color.surface, borderWidth: 1, borderColor: color.border },
+  liveDot: { height: 7, width: 7, borderRadius: 4, backgroundColor: color.accent },
+  contextTitle: { fontSize: 14, fontWeight: '700', color: color.text },
+  contextSub: { fontSize: 12, lineHeight: 18, marginTop: 4, color: color.textMuted },
+  items: { marginTop: 24, gap: 4 },
+  item: { flexDirection: 'row', alignItems: 'center', gap: 14, minHeight: 78, paddingHorizontal: 14, paddingVertical: 14, borderRadius: 16 },
+  itemSelected: { backgroundColor: color.surfaceRaised },
+  itemNumber: { fontSize: 11, color: color.textFaint, fontVariant: ['tabular-nums'] },
+  itemLabel: { fontSize: 16, fontWeight: '700', color: color.text },
+  itemHint: { fontSize: 11, lineHeight: 17, color: color.textMuted, marginTop: 4 },
+  eventLink: { flexDirection: 'row', gap: 8, justifyContent: 'space-between', padding: 16, borderBottomWidth: 1, borderColor: color.border },
+  eventLinkText: { flex: 1, color: color.accent, fontSize: 13 },
+  modeRow: { flexDirection: 'row', gap: 8, marginTop: 12 },
+  mode: { flex: 1, padding: 14, minHeight: 68, justifyContent: 'center', borderRadius: 14, borderWidth: 1, borderColor: color.border },
+  modeSelected: { backgroundColor: color.surfaceRaised, borderColor: color.accent },
+  modeLabel: { fontSize: 12, fontWeight: '700', color: color.textMuted },
+  modeCount: { fontSize: 10, marginTop: 6, color: color.textMuted },
+  footer: { color: color.textFaint, fontSize: 10, lineHeight: 16, marginTop: 24 },
+}); }

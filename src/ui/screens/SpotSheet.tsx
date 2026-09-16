@@ -1,3 +1,4 @@
+import { Text, TextInput } from '../Typography';
 /**
  * Create / edit a spot — spec §5.1.
  *
@@ -9,19 +10,7 @@
  * because a hand-guessed bearing looks identical to a measured one downstream.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import {
-  Image,
-  Pressable,
-  Animated,
-  KeyboardAvoidingView,
-  PanResponder,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { Image, Pressable, Animated, KeyboardAvoidingView, PanResponder, Platform, ScrollView, StyleSheet, View } from 'react-native';
 
 import {
   AccessClassification,

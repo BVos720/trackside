@@ -1,3 +1,4 @@
+import { Text } from '../Typography';
 /**
  * The 24-hour light-quality strip, date row, and "Now" control — the primary
  * UI for scrubbing the map's clock, task A3/D1/D2.
@@ -68,15 +69,7 @@
  * background box (D4).
  */
 import { useCallback, useMemo, useRef, useState } from 'react';
-import {
-  PanResponder,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-  type GestureResponderEvent,
-  type LayoutChangeEvent,
-} from 'react-native';
+import { PanResponder, Pressable, StyleSheet, View, type GestureResponderEvent, type LayoutChangeEvent } from 'react-native';
 
 import type { LatLon } from '../../core/domain/common';
 import {
@@ -184,6 +177,7 @@ export default function SkyControl({
   bottom,
   timeZone,
   forecast = [],
+  onHeightChange,
 }: {
   clock: MapClock;
   position: LatLon;
@@ -200,6 +194,7 @@ export default function SkyControl({
    * marks.
    */
   forecast?: readonly HourlyForecastPoint[];
+  onHeightChange?: (height: number) => void;
 }) {
   const { color } = useTheme();
   const styles = useMemo(() => makeStyles(color), [color]);
@@ -388,6 +383,7 @@ export default function SkyControl({
 
   return (
     <View
+      onLayout={(event) => onHeightChange?.(event.nativeEvent.layout.height)}
       style={[
         styles.root,
         top === undefined ? null : { top },
@@ -527,11 +523,18 @@ function makeStyles(color: Theme['color']) {
       position: 'absolute',
       left: space.md,
       right: space.md,
+      padding: 14,
+      borderRadius: 20,
+      backgroundColor: color.surface,
+      borderWidth: 1,
+      borderColor: color.border,
     },
     header: {
       flexDirection: 'row',
       alignItems: 'center',
-      marginBottom: space.xs,
+      marginBottom: 12,
+      flexWrap: 'wrap',
+      rowGap: 8,
     },
     title: {
       ...textLegibility,
@@ -568,6 +571,8 @@ function makeStyles(color: Theme['color']) {
       marginLeft: 'auto',
       paddingHorizontal: space.sm,
       paddingVertical: space.xs,
+      minHeight: 36,
+      justifyContent: 'center',
       borderRadius: radius.sm,
       backgroundColor: color.surfaceRaised,
       borderWidth: 1,

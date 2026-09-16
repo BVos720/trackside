@@ -1,3 +1,4 @@
+import { Text } from '../Typography';
 /**
  * A throwaway: does a WebView render a terrain map on this phone?
  *
@@ -51,14 +52,7 @@
 import { Asset } from 'expo-asset';
 import { File } from 'expo-file-system';
 import { useEffect, useRef, useState } from 'react';
-import {
-  ActivityIndicator,
-  Image,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { ActivityIndicator, Image, Pressable, StyleSheet, View } from 'react-native';
 
 import { PDF_BRIDGE_SUPPORTED } from '../../storage-local/pdfBridge';
 import {
@@ -71,6 +65,9 @@ import {
 import { moonState, solarPosition } from '../../core/logic/sun';
 import FocalImage from '../FocalImage';
 import { SCENERY_DATA_URIS } from '../map/scenerySprites';
+import { cloudFragmentShader, rainFragmentShader, rainVertexShader } from '../map/atmosphereShaders';
+import { TERRAIN_SHADOW_FUNCTION } from '../../core/logic/terrainShadow';
+import { useReducedMotion } from '../Motion';
 import { TILE_ASSETS } from './MapScreen';
 
 /*
@@ -335,6 +332,12 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
     */
     window.__sun = null;
     window.__moon = null;
+    window.__sceneEpoch = Date.now() / 1000;
+    window.__sceneStarted = performance.now();
+    window.__reducedMotion = false;
+    function sceneSeconds() {
+      return window.__sceneEpoch + (window.__reducedMotion ? 0 : (performance.now() - window.__sceneStarted) / 1000);
+    }
 
     /*
       What the sky is doing, from the forecast.
@@ -358,6 +361,8 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
           mist: typeof w.mist === 'number' ? Math.max(0, Math.min(1, w.mist)) : null
         };
         applyMist();
+        lastShadowKey = "";
+        if (window.__map) refreshShadows(window.__map);
         pumpWeather();
       } catch (e) {}
     };
@@ -367,6 +372,10 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
         var payload = JSON.parse(json);
         window.__sun = payload.sun || payload;
         window.__moon = payload.moon || null;
+        if (typeof payload.epoch === 'number') {
+          window.__sceneEpoch = payload.epoch;
+          window.__sceneStarted = performance.now();
+        }
         applySun();
         drawSky();
       } catch (e) {}
@@ -797,7 +806,7 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
       var sunNow = window.__sun;
       var isNight = !!sunNow && sunNow.altitude < -2 && window.__stars !== false;
 
-      var moving = w.cover > 0 || w.rain > 0 || mistNow.density > 0 || isNight;
+      var moving = window.__active !== false && !window.__reducedMotion && !document.hidden && (w.cover > 0 || w.rain > 0 || mistNow.density > 0 || isNight);
 
       if (!moving) {
         if (weatherLoop !== null) {
@@ -809,15 +818,21 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
       }
       if (weatherLoop !== null) return;
 
-      var step = function () {
+      var lastWeatherFrame = 0;
+      var step = function (timestamp) {
+        weatherLoop = requestAnimationFrame(step);
+        if (timestamp - lastWeatherFrame < 33) return;
+        lastWeatherFrame = timestamp;
         drawSky();
         // The half that was missing: without this the custom layers hold
         // whatever frame the last camera move left them on.
         if (window.__map) window.__map.triggerRepaint();
-        weatherLoop = requestAnimationFrame(step);
       };
       weatherLoop = requestAnimationFrame(step);
     }
+    document.addEventListener('visibilitychange', pumpWeather);
+    window.__setReducedMotion = function (value) { window.__reducedMotion = value; pumpWeather(); if (window.__map) window.__map.triggerRepaint(); };
+    window.__setActive = function (value) { window.__active = value; pumpWeather(); };
 
     /*
       Volumetric weather, drawn as real geometry in the world.
@@ -1142,7 +1157,7 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
       — trivial next to the terrain mesh, and the cost is flat whether it is
       drizzling or pouring.
     */
-    var RAIN_DROPS = 14000;
+    var RAIN_DROPS = 7000;
 
     function rainGeometry(bounds) {
       var w = bounds[0][0], s0 = bounds[0][1], e = bounds[1][0], n = bounds[1][1];
@@ -1170,42 +1185,14 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
         // Two vertices per drop: the head and the tail of one streak. The
         // last component says which end this is, so the shader can offset
         // the tail upward without a second buffer.
-        out.push(m.x, m.y, phase, 0);
-        out.push(m.x, m.y, phase, 1);
+        // Two camera-facing triangles per drop, with a soft edge and tapered tail.
+        [0, 1, 2, 2, 1, 3].forEach(function (corner) { out.push(m.x, m.y, phase, corner); });
       }
       return new Float32Array(out);
     }
 
-    var RAIN_VS = [
-      "#version 300 es",
-      "in vec4 a_drop;",
-      "uniform mat4 u_matrix;",
-      "uniform float u_time;",
-      "uniform float u_top;",
-      "uniform float u_fall;",
-      "uniform float u_streak;",
-      "uniform float u_mercPerMetre;",
-      "uniform vec2 u_origin;",
-      "uniform float u_span;",
-      "void main() {",
-      "  float phase = a_drop.z;",
-      "  vec2 world = u_origin + a_drop.xy * u_span;",
-      "// each drop runs its own loop from the same clock, so nothing has to",
-      "// be stepped or stored between frames",
-      "  float t = fract(phase + u_time);",
-      "  float metres = u_top - t * u_fall + a_drop.w * u_streak;",
-      "  gl_Position = u_matrix * vec4(world, metres * u_mercPerMetre, 1.0);",
-      "}"
-    ].join("\\n");
-
-    var RAIN_FS = [
-      "#version 300 es",
-      "precision mediump float;",
-      "uniform float u_alpha;",
-      "uniform vec3 u_tint;",
-      "out vec4 o;",
-      "void main() { o = vec4(u_tint, u_alpha); }"
-    ].join("\\n");
+    var RAIN_VS = ${JSON.stringify(rainVertexShader)};
+    var RAIN_FS = ${JSON.stringify(rainFragmentShader)};
 
     function addRainLayer(map) {
       if (map.getLayer("rain3d")) return;
@@ -1218,6 +1205,7 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
         onAdd: function (m, gl) {
           this.prog = makeProgram(gl, RAIN_VS, RAIN_FS);
           this.aDrop = gl.getAttribLocation(this.prog, "a_drop");
+          this.uResolution = gl.getUniformLocation(this.prog, "u_resolution");
           this.uMatrix = gl.getUniformLocation(this.prog, "u_matrix");
           this.uTime = gl.getUniformLocation(this.prog, "u_time");
           this.uTop = gl.getUniformLocation(this.prog, "u_top");
@@ -1269,7 +1257,7 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
             reads as rain. The honest part is where it is and what is in
             front of it, not the terminal velocity.
           */
-          var top = g.base + g.thickness + 140;
+          var top = g.base + g.thickness + 240;
           /*
             The box follows the camera, sized to what is on screen.
 
@@ -1302,15 +1290,16 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
           gl.uniform1f(this.uSpan, span);
 
           gl.uniform1f(this.uTop, top);
-          gl.uniform1f(this.uFall, 240);
-          gl.uniform1f(this.uStreak, 11);
-          gl.uniform1f(this.uTime, (Date.now() / 1000) * 1.1);
+          gl.uniform1f(this.uFall, Math.max(360, g.thickness + 280));
+          gl.uniform1f(this.uStreak, 7 + Math.min(w.rain, 10) * 1.2);
+          gl.uniform1f(this.uTime, (sceneSeconds() % 3600) * 0.75);
+          gl.uniform2f(this.uResolution, gl.drawingBufferWidth, gl.drawingBufferHeight);
 
           var t = daylight();
           gl.uniform3f(this.uTint, 0.62 + 0.2 * t, 0.70 + 0.18 * t, 0.80 + 0.14 * t);
           // Heavier rain is denser rather than brighter, but alpha is the
           // only dial a fixed drop count gives, so it stands in for both.
-          gl.uniform1f(this.uAlpha, Math.min(0.5, 0.12 + w.rain * 0.10));
+          gl.uniform1f(this.uAlpha, Math.min(0.55, 0.20 + w.rain * 0.035) * (0.4 + t * 0.6));
 
           gl.bindBuffer(gl.ARRAY_BUFFER, this.buf);
           gl.enableVertexAttribArray(this.aDrop);
@@ -1319,8 +1308,13 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
           gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
           gl.enable(gl.DEPTH_TEST);
           gl.depthMask(false);
-          gl.drawArrays(gl.LINES, 0, this.count);
-        }
+          gl.disable(gl.CULL_FACE);
+          // Drizzle has fewer drops; storms fill the volume, not just brighter lines.
+          var visibleDrops = Math.max(100, Math.floor(RAIN_DROPS * Math.min(1, Math.sqrt(w.rain / 8))));
+          gl.drawArrays(gl.TRIANGLES, 0, visibleDrops * 6);
+          gl.depthMask(true);
+        },
+        onRemove: function (m, gl) { gl.deleteBuffer(this.buf); gl.deleteProgram(this.prog); }
       });
     }
     /*
@@ -1342,7 +1336,7 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
       its own height, which is what turns a stack of flat layers into
       something with an inside.
     */
-    var CLOUD_SHEETS = 26;
+    var CLOUD_SHEETS = 16;
 
     function cloudGeometry(bounds) {
       /*
@@ -1358,7 +1352,8 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
       var e = bounds[1][0] + pad, n = bounds[1][1] + pad;
       var out = [];
       for (var i = 0; i < CLOUD_SHEETS; i++) {
-        var t = i / (CLOUD_SHEETS - 1);
+        // The camera is below the deck: blend the farthest slices first.
+        var t = 1 - i / (CLOUD_SHEETS - 1);
         var a = maplibregl.MercatorCoordinate.fromLngLat([w, s0], 0);
         var b = maplibregl.MercatorCoordinate.fromLngLat([e, s0], 0);
         var c = maplibregl.MercatorCoordinate.fromLngLat([e, n], 0);
@@ -1388,58 +1383,7 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
       "}"
     ].join("\\n");
 
-    var CLOUD_FS = [
-      "#version 300 es",
-      "precision highp float;",
-      "in vec2 v_world;",
-      "in float v_t;",
-      "uniform float u_cover;",
-      "uniform float u_time;",
-      "uniform vec2 u_noiseOrigin;",
-      "uniform float u_visible;",
-      "uniform vec3 u_lit;",
-      "uniform vec3 u_shade;",
-      "out vec4 o;",
-      "float hash(vec2 p) {",
-      "  return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);",
-      "}",
-      "float noise(vec2 p) {",
-      "  vec2 i = floor(p); vec2 f = fract(p);",
-      "  f = f * f * (3.0 - 2.0 * f);",
-      "  return mix(mix(hash(i), hash(i + vec2(1,0)), f.x),",
-      "             mix(hash(i + vec2(0,1)), hash(i + vec2(1,1)), f.x), f.y);",
-      "}",
-      "float fbm(vec2 p) {",
-      "  float v = 0.0; float a = 0.5;",
-      "  for (int i = 0; i < 5; i++) { v += a * noise(p); p *= 2.03; a *= 0.5; }",
-      "  return v;",
-      "}",
-      "void main() {",
-      "// each sheet samples the field offset by its own height, which is what",
-      "// turns a stack of flat layers into something with an inside",
-      "// relative to the venue — see the note in the mist shader for why",
-      "  vec2 p = (v_world - u_noiseOrigin) * 9000.0 + vec2(u_time * 0.004, u_time * 0.0025);",
-      "  float n = fbm(p + vec2(v_t * 1.7, v_t * -1.1));",
-      "// rounded top and flat-ish base, which is the shape of fair-weather",
-      "// cloud and the thing that stops a slab reading as haze",
-      "  float profile = smoothstep(0.0, 0.22, v_t) * (1.0 - smoothstep(0.55, 1.0, v_t));",
-      "// cover maps onto the part of the range fbm actually occupies.",
-      "// fbm averages about 0.48 and seldom leaves 0.30-0.70, so a threshold",
-      "// taken straight from cover spends most of its travel outside the",
-      "// values the noise ever produces: everything below ~30% cover is a",
-      "// clear sky and everything above ~70% is solid overcast.",
-      "  float threshold = mix(0.68, 0.26, u_cover);",
-      "  float d = smoothstep(threshold, threshold + 0.11, n) * profile;",
-      "  if (d <= 0.004) discard;",
-      "// lit from above and shaded below: one cheap lerp does the job of a",
-      "// light march, and the eye only checks that the top is brighter",
-      "  vec3 col = mix(u_shade, u_lit, smoothstep(0.15, 0.75, v_t));",
-      "// per sheet, not per cloud. Twenty-six sheets at 0.30 accumulate to",
-      "// solid overcast whatever the forecast says: 1-(1-0.3)^26 is 1. The",
-      "// figure that matters is the total, and the blender does that sum.",
-      "  o = vec4(col, d * 0.14 * u_visible);",
-      "}"
-    ].join("\\n");
+    var CLOUD_FS = ${JSON.stringify(cloudFragmentShader)};
 
     function addCloudLayer(map) {
       if (map.getLayer("cloud3d")) return;
@@ -1462,6 +1406,7 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
           this.uShade = gl.getUniformLocation(this.prog, "u_shade");
           this.uNoiseOrigin = gl.getUniformLocation(this.prog, "u_noiseOrigin");
           this.uVisible = gl.getUniformLocation(this.prog, "u_visible");
+          this.uSun = gl.getUniformLocation(this.prog, "u_sun");
           this.buf = gl.createBuffer();
           gl.bindBuffer(gl.ARRAY_BUFFER, this.buf);
           gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
@@ -1498,11 +1443,12 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
             and more importantly it is always *above the hills*, which is the
             part that has to be true everywhere.
           */
-          gl.uniform1f(this.uThickness, 900);
-          var cno = maplibregl.MercatorCoordinate.fromLngLat(centre, 0);
+          gl.uniform1f(this.uThickness, 450 + Math.min(w.cover, 100) * 6);
+          // A fixed origin prevents the cloud field following every camera pan.
+          var cno = maplibregl.MercatorCoordinate.fromLngLat(${JSON.stringify(view.centre)}, 0);
           gl.uniform2f(this.uNoiseOrigin, cno.x, cno.y);
           gl.uniform1f(this.uCover, Math.max(0, Math.min(1, w.cover / 100)));
-          gl.uniform1f(this.uTime, Date.now() / 1000);
+          gl.uniform1f(this.uTime, sceneSeconds() % 86400);
 
           /*
             Cloud fades out once the camera climbs above it.
@@ -1560,8 +1506,12 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
           gl.uniform1f(this.uVisible, 1);
 
           var t = daylight();
-          gl.uniform3f(this.uLit, 0.30 + 0.68 * t, 0.33 + 0.65 * t, 0.38 + 0.60 * t);
-          gl.uniform3f(this.uShade, 0.16 + 0.38 * t, 0.18 + 0.40 * t, 0.22 + 0.44 * t);
+          var sun = window.__sun || { azimuth: 180, altitude: -18 };
+          var az = sun.azimuth * Math.PI / 180, alt = sun.altitude * Math.PI / 180;
+          gl.uniform3f(this.uSun, Math.sin(az) * Math.cos(alt), -Math.cos(az) * Math.cos(alt), Math.sin(alt));
+          var warmth = Math.max(0, 1 - Math.abs(sun.altitude - 3) / 12) * (1 - w.cover / 140);
+          gl.uniform3f(this.uLit, 0.18 + 0.78 * t, 0.22 + 0.72 * t - warmth * 0.16, 0.31 + 0.65 * t - warmth * 0.32);
+          gl.uniform3f(this.uShade, 0.08 + 0.32 * t, 0.12 + 0.35 * t, 0.20 + 0.39 * t);
 
           gl.bindBuffer(gl.ARRAY_BUFFER, this.buf);
           gl.enableVertexAttribArray(this.aPos);
@@ -1572,7 +1522,9 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
           gl.depthMask(false);
           gl.disable(gl.CULL_FACE);
           gl.drawArrays(gl.TRIANGLES, 0, this.count);
-        }
+          gl.depthMask(true);
+        },
+        onRemove: function (m, gl) { gl.deleteBuffer(this.buf); gl.deleteProgram(this.prog); }
       });
     }
     /*
@@ -1620,48 +1572,19 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
           var lng = w + ((e - w) * i) / (SHADOW_N - 1);
           var h = 0;
           try { h = map.queryTerrainElevation({ lng: lng, lat: lat }); } catch (err) { h = null; }
-          if (typeof h === "number" && isFinite(h)) { found++; } else { h = 0; }
+          if (typeof h === "number" && isFinite(h)) { found++; } else { h = NaN; }
           g[j * SHADOW_N + i] = h;
         }
       }
       // A grid that is mostly holes would produce confident nonsense.
-      return found > SHADOW_N * SHADOW_N * 0.5 ? g : null;
+      return found > SHADOW_N * SHADOW_N * 0.85 ? g : null;
     }
 
+    var traceTerrainShadows = ${TERRAIN_SHADOW_FUNCTION};
     function computeShadowMask(grid, azimuth, altitude) {
       var w = BOUNDS[0][0], s0 = BOUNDS[0][1], e = BOUNDS[1][0], n = BOUNDS[1][1];
       var midLat = (s0 + n) / 2;
-      // Metres per grid step, which differ in x and y away from the equator.
-      var mx = ((e - w) * 111320 * Math.cos((midLat * Math.PI) / 180)) / (SHADOW_N - 1);
-      var my = ((n - s0) * 110540) / (SHADOW_N - 1);
-
-      // Toward the sun. Azimuth is degrees east of north, so north is +y.
-      var a = (azimuth * Math.PI) / 180;
-      var dx = Math.sin(a);
-      var dy = Math.cos(a);
-      var tanAlt = Math.tan((altitude * Math.PI) / 180);
-
-      var out = new Uint8ClampedArray(SHADOW_N * SHADOW_N);
-      var steps = Math.round(SHADOW_N * 0.75);
-
-      for (var j = 0; j < SHADOW_N; j++) {
-        for (var i = 0; i < SHADOW_N; i++) {
-          var h0 = grid[j * SHADOW_N + i];
-          var shaded = 0;
-          for (var k = 1; k <= steps; k++) {
-            var x = i + dx * k;
-            var y = j + dy * k;
-            if (x < 0 || y < 0 || x > SHADOW_N - 1 || y > SHADOW_N - 1) break;
-            // Metres travelled horizontally, and how high the ray has climbed.
-            var dist = Math.sqrt(Math.pow(dx * k * mx, 2) + Math.pow(dy * k * my, 2));
-            var rayH = h0 + dist * tanAlt;
-            var terrainH = grid[Math.round(y) * SHADOW_N + Math.round(x)];
-            if (terrainH > rayH) { shaded = 1; break; }
-          }
-          out[j * SHADOW_N + i] = shaded;
-        }
-      }
-      return out;
+      return traceTerrainShadows(grid, SHADOW_N, (e - w) * 111320 * Math.cos(midLat * Math.PI / 180), (n - s0) * 110540, azimuth, altitude);
     }
 
     function shadowDataUrl(mask, altitude) {
@@ -1695,7 +1618,9 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
         strongest, while near midday a shadow is a slight cooling. The scale
         just needed to be an honest one.
       */
-      var strength = Math.max(0, Math.min(1, (50 - altitude) / 50)) * 0.9;
+      var cover = window.__weather ? window.__weather.cover / 100 : 0;
+      var horizonFade = Math.min(1, Math.max(0, altitude / 4));
+      var strength = (0.32 + Math.max(0, (50 - altitude) / 50) * 0.38) * horizonFade * (1 - cover * 0.85);
 
       for (var p = 0; p < mask.length; p++) {
         // Rows run north-up in the grid and top-down in the image.
@@ -1739,7 +1664,7 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
 
       // Nothing casts a shadow once the sun is down, and a very low sun
       // produces shadows longer than the extract, which is just a dark map.
-      if (sun.altitude < 3) {
+      if (sun.altitude <= 0) {
         if (map.getLayer("terrain-shadows")) {
           map.setPaintProperty("terrain-shadows", "raster-opacity", 0);
         }
@@ -1761,7 +1686,7 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
 
       // Recomputed only when the sun has actually moved. Three degrees is
       // about twelve minutes, and finer than the eye can see in a shadow.
-      var key = Math.round(sun.azimuth / 3) + ":" + Math.round(sun.altitude / 3);
+      var key = Math.round(sun.azimuth * 2) + ":" + Math.round(sun.altitude * 2);
       if (key === lastShadowKey) return;
 
       if (!shadowGrid) {
@@ -1806,7 +1731,7 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
           id: "terrain-shadows",
           type: "raster",
           source: "shadow-src",
-          paint: { "raster-opacity": 1, "raster-fade-duration": 0 }
+          paint: { "raster-opacity": 1, "raster-fade-duration": 160, "raster-resampling": "linear" }
         },
         before
       );
@@ -2018,7 +1943,8 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
       // Under the cloud, because cloud covers the sun — that is the single
       // most useful thing an overcast forecast can tell you.
       drawSun(g);
-      drawClouds(g, w, h, tSec);
+      // Use the canvas deck only if the volumetric layer is unavailable.
+      if (!window.__map || !window.__map.getLayer('cloud3d')) drawClouds(g, w, h, tSec);
       /*
         The canvas rain is gone; rain3d replaces it.
 
@@ -2362,8 +2288,8 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
             applyGround();
             fadeMask();
             addMistLayer(map);
-            addRainLayer(map);
             addCloudLayer(map);
+            addRainLayer(map);
             refreshGroundLevels(map);
             applyMist();
             refreshShadows(map);
@@ -2849,6 +2775,7 @@ export default function TerrainSpike({
   weather,
   stars = true,
   shadows = true,
+  active = true,
   onClose,
 }: {
   venue: VenueKey;
@@ -2894,6 +2821,8 @@ export default function TerrainSpike({
    * this is what is standing between the ground and the sun.
    */
   shadows?: boolean;
+  /** Hidden pre-warmed terrain must not run a continuous weather loop. */
+  active?: boolean;
   /**
    * Shown as a Back button when present.
    *
@@ -2902,6 +2831,7 @@ export default function TerrainSpike({
    */
   onClose?: () => void;
 }) {
+  const reducedMotion = useReducedMotion();
   const [log, setLog] = useState<string[]>([]);
   const [fps, setFps] = useState<number | null>(null);
 
@@ -3080,6 +3010,7 @@ export default function TerrainSpike({
     const site = { latitude: slat, longitude: slon };
     const moon = moonState(when, site);
     const payload = {
+      epoch: when.getTime() / 1000,
       sun: solarPosition(when, site),
       // Only what the page draws with. rise/set are Dates and belong to the
       // planner, not to a canvas.
@@ -3094,6 +3025,13 @@ export default function TerrainSpike({
       `window.__setSun && window.__setSun('${JSON.stringify(payload)}'); true;`,
     );
   }, [venue, sunAt, pageEpoch, ready]);
+
+  useEffect(() => {
+    webRef.current?.injectJavaScript(`window.__setReducedMotion && window.__setReducedMotion(${reducedMotion}); true;`);
+  }, [reducedMotion, pageEpoch, ready]);
+  useEffect(() => {
+    webRef.current?.injectJavaScript(`window.__setActive && window.__setActive(${active}); true;`);
+  }, [active, pageEpoch, ready]);
 
   /** Cast shadows on or off, recomputed on the page when re-enabled. */
   useEffect(() => {

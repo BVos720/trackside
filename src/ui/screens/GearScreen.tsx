@@ -1,3 +1,4 @@
+import { Text, TextInput } from '../Typography';
 /**
  * What you are carrying this weekend — `TASKS-profile.md` D4/D5.
  *
@@ -21,7 +22,7 @@
  * with a thumb" case §5.14 is about.
  */
 import { useMemo, useState } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { GearKind, bodies, lenses, type GearItem } from '../../core/domain/gear';
 import { searchGear } from '../../core/logic/gearSearch';

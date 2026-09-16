@@ -1,3 +1,4 @@
+import { Text, TextInput } from '../Typography';
 /**
  * The plan — an ordered route through spots, with times.
  *
@@ -20,14 +21,7 @@
  * a locked gate or a marshal saying no is invisible to any of it.
  */
 import { useMemo, useState } from 'react';
-import {
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { type Event, type PlanStop, eventDays } from '../../core/domain/event';

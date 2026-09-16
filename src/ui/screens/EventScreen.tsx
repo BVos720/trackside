@@ -1,3 +1,4 @@
+import { Text } from '../Typography';
 /**
  * One event, in one page.
  *
@@ -12,7 +13,7 @@
  * while you enter it.
  */
 import { useMemo } from 'react';
-import { ScrollView, StyleSheet, Text, View, Pressable } from 'react-native';
+import { ScrollView, StyleSheet, View, Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { type Event, type PlanStop, eventDays } from '../../core/domain/event';
@@ -31,6 +32,7 @@ import {
   type Theme,
 } from '../theme';
 import Collapsible from '../Collapsible';
+import PageHeader from '../PageHeader';
 import EntryListScreen, { type SavedEntryRow } from './EntryListScreen';
 import GearScreen from './GearScreen';
 import PlannerScreen from './PlannerScreen';
@@ -167,33 +169,24 @@ export default function EventScreen({
         <Text style={styles.back}>‹ Events</Text>
       </Pressable>
 
-      <Text style={styles.kicker}>EVENT</Text>
-      <Text style={styles.title}>{event.name}</Text>
-      <Text style={styles.subtitle}>
-        {circuitLabel}
-        {range ? ` · ${range}` : ''}
-      </Text>
-      <Text style={styles.subtitle}>
-        {event.spotIds.length} spot{event.spotIds.length === 1 ? '' : 's'} ·{' '}
-        {sessions.length} session{sessions.length === 1 ? '' : 's'} ·{' '}
-        {event.stops.length} planned
-      </Text>
+      <PageHeader eyebrow="Weekend headquarters" title={event.name} description={`${circuitLabel}${range ? ` · ${range}` : ''}`} />
+      <View style={styles.stats}>{[{ value: event.spotIds.length, label: 'SAVED SPOTS' }, { value: sessions.length, label: 'SESSIONS' }, { value: event.stops.length, label: 'PLAN STOPS' }].map(stat => <View key={stat.label} style={styles.stat}><Text style={styles.statValue}>{stat.value}</Text><Text style={styles.statLabel}>{stat.label}</Text></View>)}</View>
 
       <View style={{ flexDirection: 'row', gap: 8, marginTop: 16 }}>
         <Pressable
           onPress={onOpenMap}
           style={({ pressed }) => [styles.mapButton, pressed && styles.pressed, { flex: 1, marginTop: 0 }]}
         >
-          <Text style={styles.mapLabel}>Go to the map</Text>
+          <Text style={styles.mapLabel}>Explore map ↗</Text>
           <Text style={styles.mapHint}>This event's waypoints</Text>
         </Pressable>
 
         <Pressable
           onPress={onStartEvent}
-          style={({ pressed }) => [styles.mapButton, pressed && styles.pressed, { flex: 1, marginTop: 0, backgroundColor: '#F2A03D' }]}
+          style={({ pressed }) => [styles.mapButton, pressed && styles.pressed, { flex: 1, marginTop: 0, backgroundColor: color.surfaceRaised }]}
         >
-          <Text style={styles.mapLabel}>Start Event</Text>
-          <Text style={styles.mapHint}>Navigate to next spot</Text>
+          <Text style={[styles.mapLabel, { color: color.text }]}>Start your day →</Text>
+          <Text style={[styles.mapHint, { color: color.textMuted }]}>Navigate to next spot</Text>
         </Pressable>
       </View>
 
@@ -366,7 +359,11 @@ export default function EventScreen({
 function makeStyles(color: Theme['color']) {
   return StyleSheet.create({
     root: { flex: 1, backgroundColor: color.background },
-    content: { padding: space.md, paddingBottom: space.xxl },
+    content: { padding: space.lg, paddingBottom: 64, width: '100%', maxWidth: 760, alignSelf: 'center' },
+    stats: { flexDirection: 'row', borderWidth: 1, borderColor: color.border, borderRadius: 20, backgroundColor: color.surface, paddingVertical: 20 },
+    stat: { flex: 1, alignItems: 'center', gap: 6 },
+    statValue: { color: color.text, fontSize: 32, fontWeight: '700' },
+    statLabel: { color: color.textMuted, fontSize: 9, letterSpacing: 1 },
     pressed: { opacity: 0.7 },
 
     back: {
@@ -390,6 +387,8 @@ function makeStyles(color: Theme['color']) {
     subtitle: { color: color.textMuted, fontSize: type.label, marginTop: 2 },
 
     mapButton: {
+      minHeight: 100,
+      justifyContent: 'center',
       marginTop: space.md,
       padding: space.md,
       borderRadius: radius.md,
@@ -400,7 +399,7 @@ function makeStyles(color: Theme['color']) {
       fontSize: type.body,
       fontWeight: weight.bold,
     },
-    mapHint: { color: color.onAccent, fontSize: type.label, opacity: 0.8 },
+    mapHint: { color: color.onAccent, fontSize: 11, lineHeight: 17, marginTop: 8 },
 
     section: {
       marginTop: space.lg,

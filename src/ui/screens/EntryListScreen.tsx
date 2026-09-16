@@ -1,3 +1,4 @@
+import { Text, TextInput } from '../Typography';
 /**
  * The entry list — which cars are running, and which you have already shot.
  *
@@ -21,7 +22,7 @@
  * instead of a defect (see TASKS-pdf-mapping.md, section R).
  */
 import { useMemo, useState } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { parseEntryList, describeEntryParse, type TextEntry } from '../../core/logic/entryList';
 import {

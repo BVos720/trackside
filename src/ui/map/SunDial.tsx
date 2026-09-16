@@ -1,3 +1,4 @@
+import { Text } from '../Typography';
 /**
  * The sun, as a fixed on-screen dial — spec §5.2/§5.12, task A2/C2/D1.
  *
@@ -49,7 +50,7 @@
  * Branco named.
  */
 import { useMemo } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import type { LatLon } from '../../core/domain/common';
 import { LightQuality, lightQuality, solarPosition } from '../../core/logic/sun';
@@ -294,6 +295,11 @@ function makeStyles(color: Theme['color']) {
       right: space.md,
       width: RING_SIZE + space.sm * 2,
       alignItems: 'center',
+      backgroundColor: color.surface,
+      borderRadius: 18,
+      paddingVertical: 12,
+      borderWidth: 1,
+      borderColor: color.border,
     },
     title: {
       ...textLegibility,
@@ -322,7 +328,7 @@ function makeStyles(color: Theme['color']) {
       width: RING_SIZE,
       height: RING_SIZE,
       borderRadius: RING_RADIUS,
-      backgroundColor: 'rgba(11,13,16,0.86)',
+      backgroundColor: color.surface,
     },
     // Rotated by C2 as one unit — see the file header. Must stay a plain
     // wrapper with no padding/margin of its own so RING_RADIUS-based placement

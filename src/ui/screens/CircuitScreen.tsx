@@ -1,3 +1,4 @@
+import { Text } from '../Typography';
 /**
  * Circuit picker — a full list, not a dropdown.
  *
@@ -8,10 +9,12 @@
  */
 import { useMemo } from 'react';
 import { useEffect, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View, Pressable } from 'react-native';
+import { ScrollView, StyleSheet, View, Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { VENUE_VIEW, circuitMetricsFor, type VenueKey } from '../map/style';
+import PageHeader from '../PageHeader';
+import Collapsible from '../Collapsible';
 import {
   downloadTerrain,
   terrainStatus,
@@ -57,17 +60,18 @@ export default function CircuitScreen({
         { paddingTop: insets.top + MENU_CLEARANCE },
       ]}
     >
-      <Text style={styles.kicker}>CIRCUIT</Text>
-      <Text style={styles.title}>Where are you shooting?</Text>
+      <PageHeader eyebrow="Find your next perspective" title="See you at the circuit." description="From familiar corners to a new favourite. Choose a venue to explore your spots and plan your day." />
 
-      {VENUES.map((key) => {
+      {VENUES.map((key, index) => {
         const v = VENUE_VIEW[key];
         const m = circuitMetricsFor(key);
         const active = key === venue;
 
         return (
-          <View key={key}>
+          <View key={key} style={styles.venueCard}>
           <Pressable
+            accessibilityRole="button"
+            accessibilityState={{ selected: active }}
             onPress={() => onChange(key)}
             style={({ pressed }) => [
               styles.row,
@@ -75,28 +79,29 @@ export default function CircuitScreen({
               pressed && styles.pressed,
             ]}
           >
+            <Text style={styles.venueNumber}>{String(index + 1).padStart(2, '0')}</Text>
             <View style={styles.rowText}>
+              <Text style={styles.country}>{COUNTRY_NAME[v.country] ?? v.country}</Text>
               <Text style={styles.rowTitle}>{v.label}</Text>
               <Text style={styles.rowSub}>
-                {COUNTRY_NAME[v.country] ?? v.country}
                 {m
-                  ? ` · ${(m.surfaceMetres / 1000).toFixed(1)} km surface · ${(
+                  ? `${(m.surfaceMetres / 1000).toFixed(1)} km mapped surface · ${(
                       m.widthMetres / 1000
                     ).toFixed(1)} × ${(m.heightMetres / 1000).toFixed(1)} km site`
                   : ''}
               </Text>
             </View>
-            {active && <Text style={styles.tick}>✓</Text>}
+            <Text style={styles.tick}>{active ? '✓' : '↗'}</Text>
           </Pressable>
-          <TerrainRow venue={key} bounds={v.bounds} styles={styles} />
           </View>
         );
       })}
 
-      {/* Honest about the one that is not finished — see the WIP label. */}
+      <Collapsible title="Offline relief maps" hint="Download terrain shading for your next visit">
+        {VENUES.map(key => <View key={key} style={{ marginBottom: 16 }}><Text style={styles.country}>{VENUE_VIEW[key].label}</Text><TerrainRow venue={key} bounds={VENUE_VIEW[key].bounds} styles={styles} /></View>)}
+      </Collapsible>
       <Text style={styles.help}>
-        Le Mans is partial: the Mulsanne runs on public road, and which ways
-        make up the lap is a call for you, not the extractor.
+        Le Mans currently has partial circuit coverage. Distances show mapped surfaces, including pit lanes and layout variants.
       </Text>
     </ScrollView>
   );
@@ -192,7 +197,10 @@ function TerrainRow({
 function makeStyles(color: Theme['color']) {
   return StyleSheet.create({
     root: { flex: 1, backgroundColor: color.background },
-    content: { padding: space.md, paddingBottom: space.xxl },
+    content: { padding: space.lg, paddingBottom: 64, width: '100%', maxWidth: 760, alignSelf: 'center' },
+    venueCard: { marginBottom: 12 },
+    venueNumber: { fontSize: 13, color: color.textFaint, marginRight: 18, fontVariant: ['tabular-nums'] },
+    country: { color: color.textMuted, fontSize: 10, letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 6 },
     pressed: { opacity: 0.7 },
 
     kicker: {
@@ -214,13 +222,14 @@ function makeStyles(color: Theme['color']) {
       alignItems: 'center',
       justifyContent: 'space-between',
       // Gloves are the normal operating condition (§5.14).
-      minHeight: 64,
+      minHeight: 112,
+      paddingVertical: 20,
       paddingHorizontal: space.md,
       borderRadius: radius.md,
       backgroundColor: color.surface,
       marginBottom: space.sm,
       borderWidth: 1,
-      borderColor: 'transparent',
+      borderColor: color.border,
     },
     rowActive: { borderColor: color.accent },
     rowText: { flex: 1 },
@@ -242,8 +251,8 @@ function makeStyles(color: Theme['color']) {
       marginBottom: space.sm,
       marginHorizontal: space.md,
     },
-    rowTitle: { color: color.text, fontSize: type.body, fontWeight: weight.bold },
-    rowSub: { color: color.textMuted, fontSize: type.label, marginTop: 2 },
+    rowTitle: { color: color.text, fontSize: 27, fontWeight: weight.bold },
+    rowSub: { color: color.textMuted, fontSize: 11, lineHeight: 17, marginTop: 6 },
     tick: { color: color.accent, fontSize: 18, fontWeight: weight.bold },
 
     help: {

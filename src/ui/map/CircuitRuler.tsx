@@ -1,3 +1,4 @@
+import { Text } from '../Typography';
 /**
  * Circuit measurements, shown beside the map.
  *
@@ -16,8 +17,8 @@
  * It earns its place as a sanity check. Le Mans reading 2.60 x 3.89km is what
  * revealed the Mulsanne straight was missing from the geometry.
  */
-import { useMemo } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { useMemo, useState } from 'react';
+import { Modal, Pressable, StyleSheet, View } from 'react-native';
 
 import { radius, space, type, useTheme, weight, type Theme } from '../theme';
 import { circuitMetricsFor, type VenueKey } from './style';
@@ -37,6 +38,7 @@ export default function CircuitRuler({
   venue: VenueKey;
   top?: number;
 }) {
+  const [open, setOpen] = useState(false);
   const { color } = useTheme();
   const styles = useMemo(() => makeStyles(color), [color]);
 
@@ -48,9 +50,12 @@ export default function CircuitRuler({
   const longest = Math.max(m.widthMetres, m.heightMetres, 1);
 
   return (
+    <>
+    <Pressable accessibilityRole="button" accessibilityLabel="Circuit measurements" onPress={() => setOpen(true)} style={[styles.infoButton, { top: top ?? 84 }]}><Text style={styles.infoLabel}>Circuit info ↗</Text></Pressable>
+    <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
+    <Pressable onPress={() => setOpen(false)} style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
     <View
-      style={[styles.root, top === undefined ? null : { top }]}
-      pointerEvents="none"
+      style={[styles.root, { position: 'relative', top: 0, right: 0, width: '100%', maxWidth: 360, padding: 24 }]}
     >
       <Text style={styles.title}>SITE</Text>
 
@@ -62,7 +67,11 @@ export default function CircuitRuler({
       <Text style={styles.surfaceValue}>{distance(m.surfaceMetres)}</Text>
       {/* Not lap distance — see the note at the top of this file. */}
       <Text style={styles.surfaceHint}>incl. pit lane &amp; variants</Text>
+      <Text style={[styles.infoLabel, { marginTop: 24, textAlign: 'center' }]}>Tap to close</Text>
     </View>
+    </Pressable>
+    </Modal>
+    </>
   );
 }
 
@@ -96,6 +105,8 @@ function Bar({
 
 function makeStyles(color: Theme['color']) {
   return StyleSheet.create({
+    infoButton: { position: 'absolute', right: 16, minHeight: 48, justifyContent: 'center', paddingHorizontal: 14, borderRadius: 14, backgroundColor: color.surface, borderWidth: 1, borderColor: color.border },
+    infoLabel: { color: color.text, fontSize: 12, fontWeight: '700' },
     root: {
       position: 'absolute',
       right: space.md,
@@ -105,7 +116,7 @@ function makeStyles(color: Theme['color']) {
       width: 148,
       padding: space.sm,
       borderRadius: radius.md,
-      backgroundColor: 'rgba(11,13,16,0.86)',
+      backgroundColor: color.surface,
       borderWidth: 1,
       borderColor: color.border,
     },

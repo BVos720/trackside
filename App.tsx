@@ -1,6 +1,11 @@
+import { Text } from './src/ui/Typography';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useFonts } from 'expo-font';
+import { Inter_400Regular, Inter_600SemiBold } from '@expo-google-fonts/inter';
+import { BarlowCondensed_600SemiBold } from '@expo-google-fonts/barlow-condensed';
+import { Entrance } from './src/ui/Motion';
+import { Alert, Pressable, StyleSheet, View } from 'react-native';
 import {
   SafeAreaProvider,
   useSafeAreaInsets,
@@ -189,6 +194,8 @@ const CIRCUIT_CHOICES = (Object.keys(CIRCUIT_IDS) as VenueKey[]).map((v) => ({
 const PHOTO_COPY_TIMEOUT_MS = 20000;
 
 export default function App() {
+  const [fontsLoaded, fontError] = useFonts({ TracksideRegular: Inter_400Regular, TracksideBold: Inter_600SemiBold, TracksideDisplay: BarlowCondensed_600SemiBold });
+  if (!fontsLoaded && !fontError) return <View style={{ flex: 1, backgroundColor: '#101416', alignItems: 'center', justifyContent: 'center' }}><Text style={{ color: '#F4F5F0', fontSize: 24, letterSpacing: 4 }}>TRACKSIDE</Text></View>;
   return (
     /*
      * Outside every provider, deliberately.
@@ -255,13 +262,14 @@ function SafetyGate({ children }: { children: React.ReactNode }) {
 }
 
 function AppShell() {
-  const { color } = useTheme();
+  const { color, scheme } = useTheme();
   const styles = useMemo(() => makeStyles(color), [color]);
 
   const insets = useSafeAreaInsets();
   // Map is home; everything else is a destination reached from the menu.
   const [where, setWhere] = useState<Destination>('map');
   const [menuOpen, setMenuOpen] = useState(false);
+  const [mapActionsHeight, setMapActionsHeight] = useState(56);
   /** Peek or full — the list is a panel over the map, never a separate page. */
   const [listFull, setListFull] = useState(false);
   /** The stop being navigated to, if any. Null means the navigator is closed. */
@@ -1106,9 +1114,9 @@ function AppShell() {
 
   return (
     <View style={styles.root}>
-      <StatusBar style="light" />
+      <StatusBar style={where === 'map' || where === 'list' || scheme === 'dark' ? 'light' : 'dark'} />
 
-      <View style={styles.body}>
+      <Entrance identity={where === 'map' || where === 'list' ? 'map' : where} style={styles.body}>
         {/*
           One boundary per screen, not just the one at the root.
 
@@ -1149,6 +1157,8 @@ function AppShell() {
               // The back-to-event button occupies the row under the menu, so
               // the mode toggle starts below it.
               controlsTop={activeEvent ? 48 : 0}
+              chromeVisible={where === 'map' && !sheetOpen && !navStop}
+              controlsBottom={mapActionsHeight + space.md + 12}
               mediaUris={mediaUris}
               mediaFocal={mediaFocal}
               position={circuitPosition}
@@ -1214,6 +1224,7 @@ function AppShell() {
                */
               <View
                 style={[styles.bottomBar, { bottom: insets.bottom + space.md }]}
+                onLayout={(event) => setMapActionsHeight(event.nativeEvent.layout.height)}
                 pointerEvents="box-none"
               >
                 <Pressable
@@ -1368,7 +1379,7 @@ function AppShell() {
 
             {where === 'list' && !sheetOpen && (
               <View
-                style={[styles.listPanel, listFull && styles.listPanelFull]}
+                style={[styles.listPanel, { paddingBottom: insets.bottom }, listFull && { top: insets.top + MENU_TOP + MENU_HEIGHT + 12, height: undefined }]}
               >
                 <View style={styles.listHeader}>
                   <Pressable
@@ -1665,7 +1676,7 @@ function AppShell() {
           null
         )}
         </ErrorBoundary>
-      </View>
+      </Entrance>
 
 
 
@@ -1742,15 +1753,16 @@ function makeStyles(color: Theme['color']) {
       alignItems: 'center',
       justifyContent: 'space-between',
       gap: space.sm,
+      flexWrap: 'wrap',
     },
 
     addButton: {
-      height: 52,
+      height: 56,
       paddingHorizontal: space.lg,
       alignItems: 'center',
       justifyContent: 'center',
       borderRadius: radius.md,
-      backgroundColor: color.surface,
+      backgroundColor: color.accent,
       borderWidth: 1,
       borderColor: color.border,
     },
@@ -1797,6 +1809,7 @@ function makeStyles(color: Theme['color']) {
      * the middle of the map covers the ground you are trying to look at.
      */
     hereButton: {
+      flexShrink: 1,
       minHeight: 52,
       paddingHorizontal: space.md,
       justifyContent: 'center',
@@ -1812,7 +1825,7 @@ function makeStyles(color: Theme['color']) {
     hereHint: { color: color.onAccent, fontSize: 10, opacity: 0.85 },
 
     listButton: {
-      height: 52,
+      height: 56,
       paddingHorizontal: space.lg,
       alignItems: 'center',
       justifyContent: 'center',
@@ -1826,8 +1839,8 @@ function makeStyles(color: Theme['color']) {
       fontSize: type.body,
       fontWeight: weight.bold,
     },
-    addLabel: { color: color.text, fontSize: type.body, fontWeight: weight.bold },
-    addLabelActive: { color: '#0B0D10' },
+    addLabel: { color: color.onAccent, fontSize: type.body, fontWeight: weight.bold },
+    addLabelActive: { color: color.onAccent },
 
     /**
      * Bottom panel heights.

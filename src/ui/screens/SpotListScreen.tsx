@@ -1,3 +1,4 @@
+import { Text, TextInput } from '../Typography';
 /**
  * Waypoint list.
  *
@@ -6,16 +7,7 @@
  * only place hidden spots are reachable.
  */
 import { useMemo, useState } from 'react';
-import {
-  Alert,
-  Image,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { Alert, Image, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { AccessClassification, type Spot } from '../../core/domain/spot';
 import type { Media } from '../../core/domain/media';
@@ -61,6 +53,7 @@ export default function SpotListScreen({
   const styles = useMemo(() => makeStyles(color), [color]);
 
   const [showHidden, setShowHidden] = useState(false);
+  const [actionsFor, setActionsFor] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [minRating, setMinRating] = useState<number | null>(null);
   const [sort, setSort] = useState<SpotSort>('recent');
@@ -253,7 +246,7 @@ export default function SpotListScreen({
                 />
               ) : (
                 <View style={[styles.thumb, styles.thumbEmpty]}>
-                  <Text style={styles.thumbEmptyText}>no key</Text>
+                  <Text style={styles.thumbEmptyText}>No photo</Text>
                 </View>
               )}
 
@@ -280,6 +273,8 @@ export default function SpotListScreen({
                 )}
               </View>
 
+              <Pressable accessibilityRole="button" accessibilityLabel={`Actions for ${s.name}`} accessibilityState={{ expanded: actionsFor === s.id }} onPress={e => { e.stopPropagation(); setActionsFor(actionsFor === s.id ? null : s.id); }} style={styles.moreButton}><Text style={{ color: color.textMuted, fontSize: 22 }}>···</Text></Pressable>
+              {actionsFor === s.id && <View style={styles.actionRow}>
               {/* Stop the press bubbling to the row, or hiding also opens it. */}
               <Pressable
                 onPress={(e) => {
@@ -332,6 +327,7 @@ export default function SpotListScreen({
               >
                 <Text style={[styles.hideLabel, styles.deleteLabel]}>Delete</Text>
               </Pressable>
+              </View>}
             </Pressable>
           );
         })}
@@ -411,6 +407,7 @@ function makeStyles(color: Theme['color']) {
 
     row: {
       flexDirection: 'row',
+      flexWrap: 'wrap',
       alignItems: 'center',
       gap: space.sm,
       padding: space.sm,
@@ -429,7 +426,9 @@ function makeStyles(color: Theme['color']) {
     },
     thumbEmptyText: { color: color.textFaint, fontSize: 10 },
 
-    rowBody: { flex: 1 },
+    rowBody: { flex: 1, minWidth: 100 },
+    moreButton: { width: 44, height: 48, alignItems: 'center', justifyContent: 'center' },
+    actionRow: { width: '100%', flexDirection: 'row', justifyContent: 'flex-end', gap: 12, paddingTop: 8 },
     rowName: {
       color: color.text,
       fontSize: type.body,

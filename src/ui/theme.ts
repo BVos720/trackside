@@ -65,9 +65,9 @@ export const space = {
 } as const;
 
 export const radius = {
-  sm: 6,
-  md: 10,
-  lg: 16,
+  sm: 10,
+  md: 16,
+  lg: 24,
 } as const;
 
 /**
@@ -85,7 +85,7 @@ export const weight = {
 
 export const type = {
   display: 44,
-  title: 24,
+  title: 30,
   body: 16,
   label: 13,
   mono: 15,
@@ -118,14 +118,14 @@ export interface ColorTokens {
 
 export const color: ColorTokens = {
   /** Opaque, not translucent. See the §5.14 note above. */
-  background: '#0B0D10',
-  surface: '#161A20',
-  surfaceRaised: '#1F242C',
-  border: '#2A313B',
+  background: '#101416',
+  surface: '#191F22',
+  surfaceRaised: '#242C30',
+  border: '#354045',
 
-  text: '#F2F5F8',
-  textMuted: '#9AA5B1',
-  textFaint: '#5E6874',
+  text: '#F4F5F0',
+  textMuted: '#B0BBB9',
+  textFaint: '#8E9B9B',
 
   /** One accent colour. */
   accent: '#2E7DF6',
@@ -140,7 +140,7 @@ export const color: ColorTokens = {
   onAccent: '#08111F',
 
   /** Undocumented data reads as absent, never as a plausible default (§0.2). */
-  undocumented: '#5E6874',
+  undocumented: '#8E9B9B',
 
   /**
    * Destructive actions, and plans that do not hold.
@@ -194,19 +194,19 @@ export const color: ColorTokens = {
  * palette existed to expose it).
  */
 export const lightColor: ColorTokens = {
-  background: '#D8DEE5',
-  surface: '#EDF0F3',
+  background: '#F1F2EC',
+  surface: '#FAFBF7',
   surfaceRaised: '#FFFFFF',
-  border: '#C3CBD5',
+  border: '#D8DDD5',
 
-  text: '#12161B',
-  textMuted: '#48505B',
-  textFaint: '#727B87',
+  text: '#192522',
+  textMuted: '#54645E',
+  textFaint: '#64736B',
 
   accent: '#1B63D1',
   onAccent: '#FFFFFF',
 
-  undocumented: '#727B87',
+  undocumented: '#64736B',
 
   danger: '#C13B30',
 };

@@ -1,3 +1,4 @@
+import { Text } from '../Typography';
 /**
  * What the app is not, shown before it is used for the first time.
  *
@@ -26,7 +27,8 @@
  * did not happen.
  */
 import { useMemo } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import {
   HIT_SIZE,
@@ -47,11 +49,12 @@ import {
 export const SAFETY_NOTICE_VERSION = 1;
 
 export default function SafetyNotice({ onAccept }: { onAccept: () => void }) {
+  const insets = useSafeAreaInsets();
   const { color } = useTheme();
   const styles = useMemo(() => makeStyles(color), [color]);
 
   return (
-    <View style={styles.root}>
+    <View style={[styles.root, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
       <ScrollView
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
@@ -129,7 +132,10 @@ function makeStyles(color: Theme['color']) {
     pressed: { opacity: 0.7 },
 
     content: {
-      padding: space.md,
+      padding: space.lg,
+      width: '100%',
+      maxWidth: 760,
+      alignSelf: 'center',
       paddingTop: space.xxl,
       paddingBottom: space.lg,
     },
@@ -142,7 +148,8 @@ function makeStyles(color: Theme['color']) {
     },
     title: {
       color: color.text,
-      fontSize: type.title,
+      fontSize: 42,
+      lineHeight: 46,
       fontWeight: weight.bold,
       marginTop: space.xs,
     },
