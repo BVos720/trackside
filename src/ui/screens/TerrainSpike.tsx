@@ -67,6 +67,7 @@ import FocalImage from '../FocalImage';
 import { SCENERY_DATA_URIS } from '../map/scenerySprites';
 import { cloudFragmentShader, rainFragmentShader, rainVertexShader } from '../map/atmosphereShaders';
 import { TERRAIN_SHADOW_FUNCTION } from '../../core/logic/terrainShadow';
+import { SCENE_LIGHTING_SOURCE } from '../map/sceneLightingSource';
 import { useReducedMotion } from '../Motion';
 import { TILE_ASSETS } from './MapScreen';
 
@@ -94,27 +95,9 @@ const TERRAIN_TILES =
   'https://elevation-tiles-prod.s3.amazonaws.com/terrarium/{z}/{x}/{y}.png';
 
 /**
- * Where to point the test.
- *
- * The venue, unless the venue is flat. Zolder has about forty metres of relief
- * and Zandvoort is dunes — at either, a perfectly working mesh looks like
- * nothing at all, which is exactly how the first run wasted a build.
- *
- * The Nordschleife is the honest local test: three hundred metres of Eifel,
- * and the circuit Branco actually knows, so "does that look right" is a
- * question he can answer rather than guess at.
- */
-const FLAT_VENUES = new Set<VenueKey>(['zolder', 'zandvoort', 'suzuka', 'le-mans']);
-
-/**
- * The style document, as a string, for the venue actually shown.
- *
- * Scenery is off. The woodland scatter is 1.26MB of the 2.4MB total and it is
- * the least of what Branco asked for — circuit, paths, buildings — so it stays
- * out until the rest is proven. Turning it back on is one argument.
+ * The style document for the selected venue, including its own scenery.
  */
 function buildStyleJson(venue: VenueKey): string {
-  const shown = (FLAT_VENUES.has(venue) ? 'nordschleife' : venue) as VenueKey;
   return JSON.stringify(
     // Scenery on: the trailing flag drops TREES_SOURCE from the style
     // altogether, and with it the tree line that makes a circuit legible.
@@ -132,7 +115,7 @@ function buildStyleJson(venue: VenueKey): string {
       exist and cannot be queried". Clustering had not been broken; it had
       never been added.
     */
-    buildMapStyle('bundled', shown, undefined, true, true, REMOTE_GLYPHS_URL, true),
+    buildMapStyle('bundled', venue, undefined, true, true, REMOTE_GLYPHS_URL, true),
   );
 }
 
@@ -338,6 +321,22 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
     function sceneSeconds() {
       return window.__sceneEpoch + (window.__reducedMotion ? 0 : (performance.now() - window.__sceneStarted) / 1000);
     }
+    var installSceneLighting = ${SCENE_LIGHTING_SOURCE};
+    window.__sceneLighting = null;
+    function syncSceneLighting() {
+      if (!window.__sceneLighting) return;
+      var sun = window.__sun || { azimuth: 180, altitude: -18 };
+      var weather = window.__weather || { cover: 0 };
+      var ground = window.__ground;
+      window.__sceneLighting.update({
+        enabled: window.__active !== false,
+        shadows: window.__shadows !== false,
+        reducedMotion: window.__reducedMotion,
+        azimuth: sun.azimuth, altitude: sun.altitude, moon: window.__moon,
+        cover: weather.cover, epoch: sceneSeconds(),
+        ground: ground ? ground.base + ground.thickness : 0
+      });
+    }
 
     /*
       What the sky is doing, from the forecast.
@@ -363,6 +362,7 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
         applyMist();
         lastShadowKey = "";
         if (window.__map) refreshShadows(window.__map);
+        syncSceneLighting();
         pumpWeather();
       } catch (e) {}
     };
@@ -831,8 +831,8 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
       weatherLoop = requestAnimationFrame(step);
     }
     document.addEventListener('visibilitychange', pumpWeather);
-    window.__setReducedMotion = function (value) { window.__reducedMotion = value; pumpWeather(); if (window.__map) window.__map.triggerRepaint(); };
-    window.__setActive = function (value) { window.__active = value; pumpWeather(); };
+    window.__setReducedMotion = function (value) { window.__reducedMotion = value; syncSceneLighting(); pumpWeather(); if (window.__map) window.__map.triggerRepaint(); };
+    window.__setActive = function (value) { window.__active = value; syncSceneLighting(); pumpWeather(); };
 
     /*
       Volumetric weather, drawn as real geometry in the world.
@@ -1082,6 +1082,7 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
       });
       groundTries = 0;
       window.__ground = levels;
+      syncSceneLighting();
       applyMist();
       refreshShadows(map);
       map.triggerRepaint();
@@ -1434,15 +1435,7 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
               maplibregl.MercatorCoordinate.fromLngLat(centre, 0).z
           );
 
-          /*
-            Cloud base above the high ground rather than at a fixed altitude.
-
-            Measured from the terrain for the same reason the mist is: 1200m
-            is a low deck over the Eifel and unreachable over Zandvoort. 700m
-            above the high ground is roughly where a fair-weather base sits,
-            and more importantly it is always *above the hills*, which is the
-            part that has to be true everywhere.
-          */
+          // Modelled altitude above the venue's high ground, shared with ground shadows.
           gl.uniform1f(this.uThickness, 450 + Math.min(w.cover, 100) * 6);
           // A fixed origin prevents the cloud field following every camera pan.
           var cno = maplibregl.MercatorCoordinate.fromLngLat(${JSON.stringify(view.centre)}, 0);
@@ -1450,60 +1443,19 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
           gl.uniform1f(this.uCover, Math.max(0, Math.min(1, w.cover / 100)));
           gl.uniform1f(this.uTime, sceneSeconds() % 86400);
 
-          /*
-            Cloud fades out once the camera climbs above it.
-
-            This is the one place where being literal makes the map worse. The
-            camera here sits kilometres up almost all the time, which is above
-            any real cloud base — so a physically-placed deck spends its life
-            between you and the circuit, and an overcast forecast turns the
-            whole view white. That is accurate and useless: the map exists to
-            show where the light falls, and it cannot do that from inside a
-            cloud.
-
-            So the deck is drawn when you are underneath it, looking up or
-            along, and thins as you rise through it. What is lost is the view
-            of cloud tops from above, which nobody is here for. What is kept
-            is cloud in the sky when you are down in the landscape, where it
-            is the thing you are reading.
-          */
-          /*
-            Camera height from the zoom, not from getFreeCameraOptions.
-
-            That API reports 0 here, which would read as a camera on the
-            ground and leave the cloud at full strength from any altitude —
-            the exact failure this fade exists to prevent. The zoom
-            relationship is fixed and needs nothing from the renderer.
-          */
+          // Estimate camera height from zoom and pitch, with the default MapLibre FOV.
           var latRad = (centre.lat * Math.PI) / 180;
           var mpp =
             (156543.03392 * Math.cos(latRad)) / Math.pow(2, map.getZoom());
           var cam = ((map.getCanvas().clientHeight / 2) * mpp) / 0.3333;
 
-          /*
-            The deck stays above the camera. This is a deliberate lie, and the
-            only one in this sky.
-
-            Everything else here is placed where it really is. Cloud cannot
-            be, because the camera in this app sits kilometres up almost all
-            the time — well above any real base — so a physically-placed deck
-            spends its life *between you and the circuit*. An overcast
-            forecast then turns the whole view white, which is accurate and
-            useless: the map exists to show where the light falls and cannot
-            do that from inside a cloud.
-
-            Fading it as the camera rose was tried first and is worse: the
-            cloud is then either obscuring the map or missing entirely, and it
-            changes with zoom for no reason a person could see.
-
-            Keeping it overhead preserves what the cloud is actually being
-            read for — how much sky is covered, and what the light will be
-            doing — and gives up only the view of cloud tops from above, which
-            nobody opens this map for. The height is a fiction; the *cover* is
-            the forecast's own number.
-          */
-          gl.uniform1f(this.uBase, Math.max(g.base + g.thickness + 700, cam + 500));
-          gl.uniform1f(this.uVisible, 1);
+          // Fade the volume when looking down through it. The deck and its shadow
+          // keep their world position instead of following the camera on every zoom.
+          var groundHeight = g.base + g.thickness;
+          var cameraHeight = groundHeight + cam * Math.cos(map.getPitch() * Math.PI / 180);
+          var placement = window.__sceneLighting.cloudPlacement(groundHeight, cameraHeight, w.cover);
+          gl.uniform1f(this.uBase, placement.base);
+          gl.uniform1f(this.uVisible, placement.visible);
 
           var t = daylight();
           var sun = window.__sun || { azimuth: 180, altitude: -18 };
@@ -1644,6 +1596,7 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
     }
 
     window.__refreshShadows = function () {
+      syncSceneLighting();
       if (!window.__map) return;
       if (window.__shadows === false) {
         if (window.__map.getLayer('terrain-shadows')) {
@@ -2094,6 +2047,7 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
 
         applyGround();
         applyMist();
+        syncSceneLighting();
         if (window.__map) refreshShadows(window.__map);
         /*
           Paired with applyGround, and that pairing is the fix for a real bug.
@@ -2287,6 +2241,12 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
           try {
             applyGround();
             fadeMask();
+            if (window.__sceneLighting) window.__sceneLighting.dispose();
+            window.__sceneLighting = installSceneLighting(map, maplibregl.MercatorCoordinate, {
+              centre: ${JSON.stringify(view.centre)}, bounds: BOUNDS,
+              onError: function (message) { post({ stage: 'scene-lighting-failed', error: message }); }
+            });
+            syncSceneLighting();
             addMistLayer(map);
             addCloudLayer(map);
             addRainLayer(map);
@@ -2311,6 +2271,7 @@ function buildHtml(venue: VenueKey, archiveUrl: string): string {
             try { map.setLayoutProperty(id, "visibility", "visible"); } catch (e) {}
           });
           post({ stage: "3d-layers-shown" });
+          if (window.__sceneLighting) window.__sceneLighting.refresh();
 
           /*
             Spots, added after load rather than baked into the style.

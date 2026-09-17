@@ -36,7 +36,11 @@ import {
   type WalkEstimate,
 } from '../../core/logic/walk';
 import { formatDateRange, fromIsoDate } from '../DateRangePicker';
+import DaySelector from '../DaySelector';
+import PageHeader from '../PageHeader';
+import PanelEmptyState from '../PanelEmptyState';
 import {
+  HIT_SIZE,
   MENU_CLEARANCE,
   radius,
   space,
@@ -107,7 +111,8 @@ export default function PlannerScreen({
   const styles = useMemo(() => makeStyles(color), [color]);
 
   const days = useMemo(() => eventDays(event), [event]);
-  const [day, setDay] = useState<string | null>(days[0] ?? null);
+  const [pickedDay, setDay] = useState<string | null>(null);
+  const day = pickedDay && days.includes(pickedDay) ? pickedDay : days[0] ?? null;
   const [picking, setPicking] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
 
@@ -207,49 +212,15 @@ export default function PlannerScreen({
       contentContainerStyle={
         embedded
           ? undefined
-          : [styles.content, { paddingTop: insets.top + MENU_CLEARANCE }]
+          : [styles.content, { paddingTop: insets.top + MENU_CLEARANCE, paddingBottom: insets.bottom + space.xxl }]
       }
     >
       {!embedded && (
-        <>
-          <Text style={styles.kicker}>PLAN</Text>
-          <Text style={styles.title}>{event.name}</Text>
-          {formatDateRange(event.startDate, event.endDate) && (
-            <Text style={styles.subtitle}>
-              {formatDateRange(event.startDate, event.endDate)}
-            </Text>
-          )}
-        </>
+        <PageHeader eyebrow="Your day at the circuit" title={event.name} description={formatDateRange(event.startDate, event.endDate) || 'Build your route, one spot at a time.'} />
       )}
 
       {days.length > 1 && (
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={styles.dayStrip}
-          contentContainerStyle={styles.dayStripContent}
-        >
-          {days.map((d) => (
-            <Pressable
-              key={d}
-              onPress={() => setDay(d)}
-              style={({ pressed }) => [
-                styles.dayChip,
-                d === day && styles.dayChipActive,
-                pressed && styles.pressed,
-              ]}
-            >
-              <Text
-                style={[
-                  styles.dayChipLabel,
-                  d === day && styles.dayChipLabelActive,
-                ]}
-              >
-                {dayLabel(d)}
-              </Text>
-            </Pressable>
-          ))}
-        </ScrollView>
+        <DaySelector dates={days} selectedDate={day} onSelect={setDay} label={dayLabel} />
       )}
 
       {days.length === 0 && (
@@ -260,11 +231,13 @@ export default function PlannerScreen({
       )}
 
       {planned.length === 0 && (
-        <Text style={styles.empty}>
-          Nothing planned yet. Add a stop, give it a time and what it is for —
-          the walk between stops is worked out from there.
-        </Text>
+        <PanelEmptyState eyebrow="Your route" title="Find your next vantage point" description="Add a spot and an arrival time. Walking estimates and leave-by times connect the stops in your day." />
       )}
+
+      {planned.length > 0 && <View style={styles.planHeading}>
+        <Text accessibilityRole="header" style={styles.planTitle}>Your route</Text>
+        <Text style={styles.planCount}>{planned.length} {planned.length === 1 ? 'stop' : 'stops'}{day ? ` · ${dayLabel(day)}` : ''}</Text>
+      </View>}
 
       {planned.map((p, i) => (
         <View key={p.stop.id} style={styles.stopBlock}>
@@ -301,26 +274,26 @@ export default function PlannerScreen({
           )}
 
           <View style={[styles.row, p.impossible && styles.rowBad]}>
-            <View style={styles.index}>
-              <Text style={styles.indexText}>{i + 1}</Text>
+            <View style={styles.stopTop}>
+              <View style={styles.index}>
+                <Text style={styles.indexText}>{String(i + 1).padStart(2, '0')}</Text>
+              </View>
+              <View style={styles.timeBlock}>
+                <Text style={styles.timeLabel}>{p.stop.arriveAt ? 'BE IN POSITION' : 'ARRIVAL'}</Text>
+                <Text style={[styles.arrival, !p.stop.arriveAt && styles.arrivalUnset]}>{p.stop.arriveAt ?? 'Not set'}</Text>
+              </View>
             </View>
 
-            <View style={styles.rowBody}>
-              <Text style={styles.rowName} numberOfLines={1}>
-                {p.spot?.name ?? 'Deleted spot'}
-              </Text>
-              <Text style={styles.rowMeta} numberOfLines={1}>
-                {p.stop.arriveAt ? `be there ${p.stop.arriveAt}` : 'no time set'}
-                {p.stop.label ? ` · ${p.stop.label}` : ''}
-              </Text>
-            </View>
-
+            <Text accessibilityRole="header" style={styles.rowName}>{p.spot?.name ?? 'Deleted spot'}</Text>
+            {p.stop.label && <Text style={styles.rowMeta}>{p.stop.label}</Text>}
             <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`${editing === p.stop.id ? 'Done editing' : 'Edit'} ${p.spot?.name ?? 'deleted spot'}`}
+              accessibilityState={{ expanded: editing === p.stop.id }}
               onPress={() =>
                 setEditing(editing === p.stop.id ? null : p.stop.id)
               }
-              hitSlop={8}
-              style={({ pressed }) => [styles.small, pressed && styles.pressed]}
+              style={({ pressed }) => [styles.editStop, pressed && styles.pressed]}
             >
               <Text style={styles.smallLabel}>
                 {editing === p.stop.id ? 'Done' : 'Edit'}
@@ -348,6 +321,7 @@ export default function PlannerScreen({
 
       {!picking ? (
         <Pressable
+          accessibilityRole="button"
           onPress={() => setPicking(true)}
           style={({ pressed }) => [styles.primary, pressed && styles.pressed]}
         >
@@ -358,11 +332,12 @@ export default function PlannerScreen({
           <Text style={styles.label}>ADD A STOP</Text>
           {unplanned.length === 0 ? (
             <Text style={styles.help}>
-              Every spot at this circuit is already in the plan.
+              {spots.length === 0 ? 'Add a spot from the event map, then return here to plan your day.' : 'Every spot at this circuit is already in the plan.'}
             </Text>
           ) : (
             unplanned.map((s) => (
               <Pressable
+                accessibilityRole="button"
                 key={s.id}
                 onPress={() => {
                   onAddStop(s.id, day);
@@ -373,13 +348,13 @@ export default function PlannerScreen({
                   pressed && styles.pressed,
                 ]}
               >
-                <Text style={styles.pickName} numberOfLines={1}>
+                <Text style={styles.pickName}>
                   {s.name}
                 </Text>
               </Pressable>
             ))
           )}
-          <Pressable onPress={() => setPicking(false)}>
+          <Pressable accessibilityRole="button" style={styles.cancelButton} onPress={() => setPicking(false)}>
             <Text style={styles.cancel}>Cancel</Text>
           </Pressable>
         </View>
@@ -440,10 +415,10 @@ function StopEditor({
     setLabel(trimmed);
     setShowSuggestions(false);
     
-    // Create a mutable copy of the patch
-    const patch: Record<string, any> = { 
+    let patch: Partial<Omit<PlanStop, 'id' | 'spotId'>> = {
       label: trimmed || null, 
-      sessionId: sessionId ?? stop.sessionId 
+      // Sessions here are persisted timetable rows, whose IDs are branded in storage.
+      sessionId: (sessionId as PlanStop['sessionId'] | undefined) ?? stop.sessionId,
     };
 
     // Auto-fill time if the stop doesn't have one set yet
@@ -452,11 +427,11 @@ function StopEditor({
       if (parsed !== null) {
         const normalised = formatClock(parsed);
         setTime(normalised);
-        patch.arriveAt = normalised;
+        patch = { ...patch, arriveAt: normalised };
       }
     }
 
-    onUpdate(patch as Partial<Omit<PlanStop, 'id' | 'spotId'>>);
+    onUpdate(patch);
   };
 
   const activeDay = stop.day;
@@ -476,6 +451,7 @@ function StopEditor({
     <View style={styles.editor}>
       <Text style={styles.editorLabel}>BE IN POSITION AT</Text>
       <TextInput
+        accessibilityLabel="Be in position at"
         value={time}
         onChangeText={setTime}
         onBlur={commitTime}
@@ -487,8 +463,9 @@ function StopEditor({
       />
 
       <Text style={styles.editorLabel}>WHAT FOR</Text>
-      <View style={{ zIndex: 1 }}>
+      <View>
         <TextInput
+          accessibilityLabel="What this stop is for"
           value={label}
           onChangeText={(text) => {
             setLabel(text);
@@ -496,8 +473,9 @@ function StopEditor({
           }}
           onFocus={() => setShowSuggestions(true)}
           onBlur={() => {
-            // Delay closing to let onPress fire
-            setTimeout(() => commitLabel(label), 150);
+            // Keep inline suggestions mounted so a tap can complete after blur.
+            // Saving immediately avoids a delayed draft overwriting that selection.
+            onUpdate({ label: label.trim() || null });
           }}
           placeholder="Racing legends race 1"
           placeholderTextColor={color.textFaint}
@@ -505,8 +483,10 @@ function StopEditor({
         />
         {suggestions.length > 0 && (
           <View style={styles.suggestionsContainer}>
+            <Text style={styles.suggestionsHeading}>MATCHING SESSIONS</Text>
             {suggestions.map((s) => (
               <Pressable
+                accessibilityRole="button"
                 key={s.id}
                 onPress={() => commitLabel(s.title, s.id, s.start)}
                 style={({ pressed }) => [
@@ -514,7 +494,7 @@ function StopEditor({
                   pressed && styles.pressed,
                 ]}
               >
-                <Text style={styles.suggestionTitle} numberOfLines={1}>
+                <Text style={styles.suggestionTitle}>
                   {s.title}
                 </Text>
                 <Text style={styles.suggestionMeta}>
@@ -528,6 +508,8 @@ function StopEditor({
 
       <View style={styles.editorRow}>
         <Pressable
+          accessibilityRole="button"
+          accessibilityState={{ disabled: index === 0 }}
           onPress={() => onMove(index - 1)}
           disabled={index === 0}
           style={({ pressed }) => [
@@ -539,6 +521,8 @@ function StopEditor({
           <Text style={styles.smallLabel}>↑ Earlier</Text>
         </Pressable>
         <Pressable
+          accessibilityRole="button"
+          accessibilityState={{ disabled: index >= count - 1 }}
           onPress={() => onMove(index + 1)}
           disabled={index >= count - 1}
           style={({ pressed }) => [
@@ -550,6 +534,7 @@ function StopEditor({
           <Text style={styles.smallLabel}>↓ Later</Text>
         </Pressable>
         <Pressable
+          accessibilityRole="button"
           onPress={onNavigate}
           style={({ pressed }) => [styles.navBtn, pressed && styles.pressed]}
         >
@@ -557,7 +542,7 @@ function StopEditor({
         </Pressable>
       </View>
 
-      <Pressable onPress={onRemove} hitSlop={8}>
+      <Pressable accessibilityRole="button" onPress={onRemove} style={styles.removeButton}>
         <Text style={styles.remove}>Remove from plan</Text>
       </Pressable>
       <Text style={styles.removeHint}>
@@ -571,23 +556,13 @@ function makeStyles(color: Theme['color']) {
   return StyleSheet.create({
     root: { flex: 1, backgroundColor: color.background },
     embedded: { paddingTop: space.sm },
-    content: { padding: space.md, paddingBottom: space.xxl },
+    content: { padding: space.md, width: '100%', maxWidth: 760, alignSelf: 'center' },
     pressed: { opacity: 0.7 },
     disabled: { opacity: 0.35 },
 
-    kicker: {
-      color: color.accent,
-      fontSize: type.label,
-      fontWeight: weight.bold,
-      letterSpacing: 2,
-    },
-    title: {
-      color: color.text,
-      fontSize: type.title,
-      fontWeight: weight.bold,
-      marginTop: space.xs,
-    },
-    subtitle: { color: color.textMuted, fontSize: type.label, marginTop: 2 },
+    planHeading: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'baseline', justifyContent: 'space-between', gap: space.sm, marginTop: space.md },
+    planTitle: { color: color.text, fontSize: 28, fontWeight: weight.bold },
+    planCount: { color: color.textMuted, fontSize: type.label },
     label: {
       color: color.textFaint,
       fontSize: type.label,
@@ -601,31 +576,7 @@ function makeStyles(color: Theme['color']) {
       marginTop: space.sm,
       lineHeight: 17,
     },
-    empty: {
-      color: color.textFaint,
-      fontSize: type.body,
-      lineHeight: 21,
-      paddingVertical: space.lg,
-    },
-
-    dayStrip: { marginTop: space.md, marginBottom: space.xs },
-    dayStripContent: { gap: space.sm },
-    dayChip: {
-      paddingHorizontal: space.md,
-      height: 40,
-      justifyContent: 'center',
-      borderRadius: radius.md,
-      backgroundColor: color.surface,
-    },
-    dayChipActive: { backgroundColor: color.accent },
-    dayChipLabel: {
-      color: color.textMuted,
-      fontSize: type.label,
-      fontWeight: weight.bold,
-    },
-    dayChipLabelActive: { color: color.onAccent },
-
-    stopBlock: { marginTop: space.sm },
+    stopBlock: { marginTop: space.md },
 
     legRow: { flexDirection: 'row', alignItems: 'stretch', paddingLeft: 15 },
     legLine: {
@@ -634,7 +585,7 @@ function makeStyles(color: Theme['color']) {
       marginRight: space.md,
       marginVertical: 2,
     },
-    legBody: { flex: 1, paddingVertical: space.xs },
+    legBody: { flex: 1, paddingVertical: space.sm },
     legText: { color: color.textMuted, fontSize: type.label },
     legWarn: { color: color.undocumented, fontSize: 11, marginTop: 1 },
     legDepart: {
@@ -646,36 +597,40 @@ function makeStyles(color: Theme['color']) {
     legBad: { color: color.danger },
 
     row: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: space.sm,
-      minHeight: 60,
-      paddingHorizontal: space.sm,
+      padding: space.md,
       borderRadius: radius.md,
       backgroundColor: color.surface,
       borderWidth: 1,
-      borderColor: 'transparent',
+      borderColor: color.border,
     },
+    stopTop: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: space.md, marginBottom: space.md },
+    timeBlock: { flex: 1, alignItems: 'flex-end' },
+    timeLabel: { color: color.textMuted, fontSize: 10, letterSpacing: 1.2, textAlign: 'right' },
+    arrival: { color: color.accent, fontSize: 36, fontWeight: weight.bold, fontVariant: ['tabular-nums'], textAlign: 'right' },
+    arrivalUnset: { color: color.textMuted, fontSize: 24 },
+    editStop: { minHeight: HIT_SIZE, justifyContent: 'center', alignItems: 'center', padding: space.sm, backgroundColor: color.surfaceRaised, borderRadius: radius.sm, marginTop: space.md },
     rowBad: { borderColor: color.danger },
     index: {
-      width: 26,
-      height: 26,
-      borderRadius: 13,
+      minWidth: 40,
+      minHeight: 40,
+      padding: space.sm,
+      borderRadius: radius.sm,
       alignItems: 'center',
       justifyContent: 'center',
       backgroundColor: color.surfaceRaised,
     },
     indexText: {
-      color: color.textMuted,
-      fontSize: 11,
+      color: color.accent,
+      fontSize: 16,
       fontWeight: weight.bold,
     },
-    rowBody: { flex: 1 },
-    rowName: { color: color.text, fontSize: type.body, fontWeight: weight.bold },
-    rowMeta: { color: color.textMuted, fontSize: type.label, marginTop: 2 },
+    rowName: { color: color.text, fontSize: 24, fontWeight: weight.bold },
+    rowMeta: { color: color.textMuted, fontSize: 14, lineHeight: 22, marginTop: space.xs },
 
     small: {
-      height: 40,
+      minHeight: HIT_SIZE,
+      paddingVertical: space.sm,
+      flexGrow: 1,
       paddingHorizontal: space.md,
       alignItems: 'center',
       justifyContent: 'center',
@@ -688,8 +643,10 @@ function makeStyles(color: Theme['color']) {
       fontWeight: weight.bold,
     },
     navBtn: {
-      flex: 1,
-      height: 40,
+      flexGrow: 1,
+      minWidth: 112,
+      minHeight: HIT_SIZE,
+      padding: space.sm,
       alignItems: 'center',
       justifyContent: 'center',
       borderRadius: radius.md,
@@ -702,7 +659,7 @@ function makeStyles(color: Theme['color']) {
     },
 
     editor: {
-      padding: space.sm,
+      padding: space.md,
       borderBottomLeftRadius: radius.md,
       borderBottomRightRadius: radius.md,
       backgroundColor: color.surfaceRaised,
@@ -716,6 +673,7 @@ function makeStyles(color: Theme['color']) {
     },
     editorRow: {
       flexDirection: 'row',
+      flexWrap: 'wrap',
       gap: space.sm,
       marginTop: space.md,
       alignItems: 'center',
@@ -728,35 +686,29 @@ function makeStyles(color: Theme['color']) {
       paddingVertical: space.sm,
       color: color.text,
       fontSize: type.body,
-      minHeight: 44,
+      minHeight: HIT_SIZE,
     },
     remove: {
       color: color.danger,
       fontSize: type.label,
       fontWeight: weight.bold,
-      marginTop: space.md,
     },
+    removeButton: { minHeight: HIT_SIZE, justifyContent: 'center', marginTop: space.sm },
     removeHint: { color: color.textFaint, fontSize: 11, marginTop: 2 },
   
     suggestionsContainer: {
-      position: 'absolute',
-      top: 52, // TextInput minHeight is 44 + marginTop space.xs (4 or 8)
-      left: 0,
-      right: 0,
+      marginTop: space.sm,
       backgroundColor: color.surface,
       borderRadius: radius.md,
       overflow: 'hidden',
       borderWidth: 1,
       borderColor: color.border,
-      zIndex: 10,
-      elevation: 4,
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.2,
-      shadowRadius: 4,
     },
+    suggestionsHeading: { color: color.textMuted, fontSize: 10, letterSpacing: 1, padding: space.md },
     suggestionRow: {
-      padding: space.sm,
+      padding: space.md,
+      minHeight: HIT_SIZE,
+      justifyContent: 'center',
       borderBottomWidth: StyleSheet.hairlineWidth,
       borderBottomColor: color.border,
     },
@@ -774,7 +726,8 @@ function makeStyles(color: Theme['color']) {
 
     picker: { marginTop: space.md },
     pickRow: {
-      minHeight: 52,
+      minHeight: HIT_SIZE,
+      paddingVertical: space.sm,
       justifyContent: 'center',
       paddingHorizontal: space.md,
       borderRadius: radius.md,
@@ -785,7 +738,8 @@ function makeStyles(color: Theme['color']) {
 
     primary: {
       marginTop: space.md,
-      height: 52,
+      minHeight: HIT_SIZE,
+      padding: space.sm,
       alignItems: 'center',
       justifyContent: 'center',
       borderRadius: radius.md,
@@ -800,7 +754,7 @@ function makeStyles(color: Theme['color']) {
       color: color.textMuted,
       fontSize: type.label,
       textAlign: 'center',
-      marginTop: space.sm,
     },
+    cancelButton: { minHeight: HIT_SIZE, justifyContent: 'center' },
   });
 }

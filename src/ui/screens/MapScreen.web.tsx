@@ -48,7 +48,8 @@ import {
   illuminationFromSun,
   circuitMetricsFor,
 } from '../map/style';
-import { solarPosition } from '../../core/logic/sun';
+import { solarPosition, moonState } from '../../core/logic/sun';
+import { getMapRainEnabled, getMapShadowsEnabled, getMapStarsEnabled } from '../../storage-local/preferences';
 
 /**
  * Teach maplibre-gl to read `pmtiles://` URLs.
@@ -131,6 +132,14 @@ export default function MapScreen({
   const position = useMemo(() => ({ longitude: VENUE_VIEW[venue].centre[0], latitude: VENUE_VIEW[venue].centre[1] }), [venue]);
   const conditions = useVenueConditions(position, VENUE_VIEW[venue].timezone, clock.now);
   const atmosphere = useRef<ReturnType<typeof installWebAtmosphere> | null>(null);
+  const [effects, setEffects] = useState({ rainEnabled: true, starsEnabled: true, shadowsEnabled: true });
+  useEffect(() => {
+    let cancelled = false;
+    void Promise.all([getMapRainEnabled(), getMapStarsEnabled(), getMapShadowsEnabled()])
+      .then(([rainEnabled, starsEnabled, shadowsEnabled]) => { if (!cancelled) setEffects({ rainEnabled, starsEnabled, shadowsEnabled }); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
 
   /**
    * The spot singled out from a stack.
@@ -352,14 +361,14 @@ export default function MapScreen({
     try {
       atmosphere.current ??= installWebAtmosphere(map, VENUE_VIEW[venue].centre, VENUE_VIEW[venue].bounds);
       const sun = solarPosition(clock.now, position);
-      atmosphere.current.update({ cover: conditions.cover, rain: conditions.rain, ...sun, epoch: clock.now.getTime() / 1000, enabled: is3d, reducedMotion });
+      atmosphere.current.update({ cover: conditions.cover, rain: conditions.rain, ...sun, ...effects, moon: moonState(clock.now, position), epoch: clock.now.getTime() / 1000, enabled: is3d, reducedMotion });
       if (map.getLayer('terrain-hillshade')) map.setPaintProperty('terrain-hillshade', 'hillshade-illumination-direction', illuminationFromSun(sun.altitude, sun.azimuth));
       const daylight = Math.max(0, Math.min(1, (sun.altitude + 8) / 35));
       const sunset = Math.max(0, 1 - Math.abs(sun.altitude - 2) / 12);
       const tone = (night: number[], day: number[]) => `rgb(${night.map((v, i) => Math.round(v + (day[i]! - v) * daylight)).join(',')})`;
       map.setSky({ 'sky-color': tone([5, 9, 18], [92, 147, 204]), 'horizon-color': tone([14, 19, 34], [168 + sunset * 70, 200 - sunset * 60, 232 - sunset * 135]), 'fog-color': tone([12, 17, 25], [150, 170, 188]), 'sky-horizon-blend': 0.6, 'atmosphere-blend': 0.8 });
     } catch (error) { setError(`Atmosphere unavailable: ${error instanceof Error ? error.message : String(error)}`); }
-  }, [ready, venue, clock.now, conditions.cover, conditions.rain, is3d, reducedMotion, position]);
+  }, [ready, venue, clock.now, conditions.cover, conditions.rain, is3d, reducedMotion, position, effects]);
 
   /**
    * Push spot changes into the existing source.

@@ -1,6 +1,6 @@
 # Trackside: UI and map atmosphere handoff
 
-Updated 2026-09-16. Read this alongside `AGENTS.md` before continuing this work.
+Updated 2026-09-17. Read this alongside `AGENTS.md` before continuing this work.
 
 ## User intent and authority
 
@@ -54,3 +54,18 @@ This session could not open a browser: both browser discovery and the in-app bro
 On this Windows environment Vitest/Hermes may fail with `spawn EPERM` inside the sandbox; approved execution outside the sandbox works. The user's npm configuration contains an `allow-scripts` setting rejected by npm 12 for project installs. Font installation used `npm install ... --ignore-scripts --userconfig=NUL`; no user/global configuration was edited. Existing audit vulnerabilities were reported by npm; dependency upgrades outside the font addition are not part of this task.
 
 Final check results are recorded below after verification completes.
+
+## September 17 continuation: event planning panels
+
+The field-guide design now extends to the event's Plan, Weather and Gear panels.
+
+- `DaySelector.tsx` shares the horizontal date strip between Plan and Weather. Targets have a 56pt minimum height, selected states are exposed to accessibility, and forecast dates identify event days in text as well as with a border.
+- `PanelEmptyState.tsx` provides consistent headings and next-step guidance for empty plans, missing gear and unavailable forecasts. Forecast states remain distinct.
+- Planner stops use numbered cards with prominent arrival times and wrapping spot/session names. Walking estimates, blocked-route warnings and impossible timings retain their existing calculations. Editor actions wrap on narrow panels; standalone content has the shared 760px maximum width and bottom safe-area padding. Date selection falls back to the first event day when the previous selection is no longer valid.
+- Session suggestions now occupy normal layout space instead of covering controls at a fixed absolute offset. Label drafts save synchronously on blur while suggestions remain mounted; selecting a session then commits its label/link/time without a delayed blur callback overwriting it. Verify this interaction with the native keyboard during device QA.
+- Weather has a separate freshness row, a full selected-day label, a framed chart and a clearest-window callout. The stale indicator uses danger-colored text and an outline on the raised surface. Missing hourly data no longer gets a fabricated cloudy icon. Hour-axis labels have room beyond their narrow column without splitting digits onto separate lines.
+- Packed gear has a body/lens label, a count, wrapping names and full-height remove controls. Locker search and packing callbacks remain in place.
+
+Validation: `npm run typecheck` passed; all 891 tests across 56 files passed; `npx expo export --platform all --output-dir dist-ui-review` produced web JS and Android/iOS Hermes bundles. Vitest and Hermes required approved execution outside the sandbox after `spawn EPERM`. The existing suite covers core/storage/hooks, not these screen interactions.
+
+Visual verification remains pending: browser inventory was empty and creating an in-app browser returned `Browser is not available: iab`. No phone/simulator visual review was performed. Next review should cover the three expanded event panels at 320–390px, large text, light/dark mode, long names, keyboard + session selection, day switching, gear search/removal, and all forecast states. No dependencies, map renderer code, deployments or releases were changed in this continuation.

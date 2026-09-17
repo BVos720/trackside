@@ -22,7 +22,7 @@ import { Text } from '../Typography';
  * tested there. This file only lays it out.
  */
 import { useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import {
   groupForecastByDay,
@@ -32,7 +32,9 @@ import {
   type HourlyForecastPoint,
 } from '../../core/logic/forecast';
 import WeatherGlyph, { cloudColor, conditionLabel } from '../WeatherGlyph';
-import { radius, space, type, useTheme, weight, type Theme } from '../theme';
+import { HIT_SIZE, radius, space, type, useTheme, weight, type Theme } from '../theme';
+import DaySelector from '../DaySelector';
+import PanelEmptyState from '../PanelEmptyState';
 
 /** How tall the cloud-cover columns are drawn. */
 const CHART_HEIGHT = 92;
@@ -192,7 +194,7 @@ function HourAxis({ points }: { points: readonly HourlyForecastPoint[] }) {
         return (
           <View key={point.time} style={styles.axisCell}>
             {show && (
-              <Text style={styles.axisLabel}>
+              <Text style={styles.axisLabel} numberOfLines={1}>
                 {String(hour).padStart(2, '0')}
               </Text>
             )}
@@ -217,6 +219,8 @@ function RefreshButton({
 
   return (
     <Pressable
+      accessibilityRole="button"
+      accessibilityState={{ disabled: refreshing, busy: refreshing }}
       onPress={onRefresh}
       disabled={refreshing}
       style={({ pressed }) => [
@@ -274,30 +278,20 @@ export default function WeatherScreen({
 
   if (display.state === 'no-dates') {
     return (
-      <Text style={styles.help}>
-        Set the event's dates to get a forecast for it.
-      </Text>
+      <PanelEmptyState eyebrow="Circuit conditions" title="Start with your dates" description="Set the event’s dates to see the forecast for your weekend." />
     );
   }
 
   if (display.state === 'too-far-out') {
     return (
-      <Text style={styles.help}>
-        Too far out to forecast yet — check back in{' '}
-        {display.daysUntilForecastable} day
-        {display.daysUntilForecastable === 1 ? '' : 's'}.
-      </Text>
+      <PanelEmptyState eyebrow="Circuit conditions" title="A little closer to race day" description={`Too far out to forecast yet. Check back in ${display.daysUntilForecastable} day${display.daysUntilForecastable === 1 ? '' : 's'}.`} />
     );
   }
 
   if (display.state === 'no-data-yet') {
     return (
       <View>
-        <Text style={styles.help}>
-          {refreshing
-            ? 'Fetching a forecast for this event…'
-            : 'No forecast for this event yet.'}
-        </Text>
+        <PanelEmptyState eyebrow="Circuit conditions" title={refreshing ? 'Checking the sky…' : 'Read the sky before you go'} description={refreshing ? 'Fetching a forecast for this event.' : 'Fetch the forecast to find rain, cloud cover and the clearest hours at the circuit.'} />
         {error !== null && <Text style={styles.error}>{error}</Text>}
         <RefreshButton onRefresh={onRefresh} refreshing={refreshing} />
       </View>
@@ -308,67 +302,33 @@ export default function WeatherScreen({
   const stale = display.state === 'stale';
 
   return (
-    <View>
+    <View style={styles.forecast}>
+      <View style={styles.freshness}>
+        <Text style={styles.eyebrow}>CIRCUIT CONDITIONS</Text>
+        <View style={styles.headerRight}>
+          <View style={[styles.pill, stale ? styles.pillStale : styles.pillFresh]}>
+            <Text style={[styles.pillText, stale && styles.pillTextStale]}>{stale ? 'Stale' : 'Fresh'}</Text>
+          </View>
+          <Text style={styles.age}>Updated {formatAge(display.ageMinutes)}</Text>
+        </View>
+      </View>
       <View style={styles.header}>
-        <WeatherGlyph condition={summary?.condition ?? 'cloudy'} size={44} />
+        {summary && <WeatherGlyph condition={summary.condition} size={48} />}
         <View style={styles.headerText}>
-          <Text style={styles.condition}>
-            {summary ? conditionLabel(summary.condition) : '—'}
+          <Text accessibilityRole="header" style={styles.condition}>
+            {summary ? conditionLabel(summary.condition) : 'No hourly forecast'}
           </Text>
+          {day && <Text style={styles.date}>{new Date(`${day.date}T12:00:00`).toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}</Text>}
           {summary !== null && (
             <Text style={styles.summary}>{summaryLine(summary)}</Text>
           )}
-        </View>
-        <View style={styles.headerRight}>
-          <View
-            style={[styles.pill, stale ? styles.pillStale : styles.pillFresh]}
-          >
-            <Text style={[styles.pillText, stale && styles.pillTextStale]}>
-              {stale ? 'Stale' : 'Fresh'}
-            </Text>
-          </View>
-          <Text style={styles.age}>{formatAge(display.ageMinutes)}</Text>
         </View>
       </View>
 
       {error !== null && <Text style={styles.error}>{error}</Text>}
 
       {days.length > 1 && (
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.tabs}
-        >
-          {days.map((d, i) => {
-            const active = i === dayIndex;
-            // The event's own days are marked, because the tab strip runs
-            // sixteen days and "which of these is the race weekend" stops
-            // being obvious somewhere around the fourth.
-            const isEventDay = eventDays.includes(d.date);
-            return (
-              <Pressable
-                key={d.date}
-                onPress={() => setPicked(d.date)}
-                style={({ pressed }) => [
-                  styles.tab,
-                  isEventDay && styles.tabEvent,
-                  active && styles.tabActive,
-                  pressed && styles.pressed,
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.tabLabel,
-                    isEventDay && styles.tabLabelEvent,
-                    active && styles.tabLabelActive,
-                  ]}
-                >
-                  {formatDayTab(d.date)}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </ScrollView>
+        <DaySelector dates={days.map((d) => d.date)} selectedDate={day?.date ?? null} onSelect={setPicked} label={formatDayTab} eventDates={eventDays} />
       )}
 
       {day !== null && summary !== null && (
@@ -387,12 +347,15 @@ export default function WeatherScreen({
           )}
           {summary.clearestWindow !== null && (
             <View style={styles.clearestRow}>
-              <WeatherGlyph condition="clear" size={18} />
-              <Text style={styles.clearest}>
-                Clearest {pad(summary.clearestWindow.fromHour)}–
-                {pad(summary.clearestWindow.toHour)} ·{' '}
-                {Math.round(summary.clearestWindow.meanCloudPercent)}% cloud
-              </Text>
+              <WeatherGlyph condition="clear" size={28} />
+              <View style={styles.windowText}>
+                <Text style={styles.windowLabel}>CLEAREST WINDOW</Text>
+                <Text style={styles.clearest}>
+                  {pad(summary.clearestWindow.fromHour)}–
+                  {pad(summary.clearestWindow.toHour)} ·{' '}
+                  {Math.round(summary.clearestWindow.meanCloudPercent)}% cloud
+                </Text>
+              </View>
             </View>
           )}
         </View>
@@ -402,7 +365,7 @@ export default function WeatherScreen({
         <RefreshButton
           onRefresh={onRefresh}
           refreshing={refreshing}
-          label="Refresh"
+          label="Refresh forecast"
         />
       </View>
     </View>
@@ -412,7 +375,9 @@ export default function WeatherScreen({
 function makeStyles(color: Theme['color']) {
   return StyleSheet.create({
     pressed: { opacity: 0.7 },
-    help: { color: color.textMuted, fontSize: type.label, lineHeight: 17 },
+    forecast: { paddingTop: space.sm },
+    freshness: { gap: space.sm, marginBottom: space.md },
+    eyebrow: { color: color.textMuted, fontSize: 10, letterSpacing: 1.5, fontWeight: weight.bold },
     error: {
       color: color.danger,
       fontSize: type.label,
@@ -420,11 +385,12 @@ function makeStyles(color: Theme['color']) {
       marginTop: space.sm,
     },
 
-    header: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
-    headerText: { flex: 1 },
-    condition: { color: color.text, fontSize: type.body, fontWeight: weight.bold },
-    summary: { color: color.textMuted, fontSize: type.label, marginTop: 2 },
-    headerRight: { alignItems: 'flex-end', gap: 3 },
+    header: { flexDirection: 'row', alignItems: 'center', gap: space.md, marginBottom: space.md },
+    headerText: { flex: 1, minWidth: 0 },
+    condition: { color: color.text, fontSize: 32, fontWeight: weight.bold },
+    date: { color: color.text, fontSize: type.label, lineHeight: 20, marginTop: space.xs },
+    summary: { color: color.textMuted, fontSize: type.label, lineHeight: 20, marginTop: space.xs },
+    headerRight: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: space.sm },
 
     /**
      * "Fresh" and "Stale" are never the same colour — accent for one, danger
@@ -435,32 +401,16 @@ function makeStyles(color: Theme['color']) {
       paddingHorizontal: space.sm,
       paddingVertical: 2,
       borderRadius: radius.sm,
+      borderWidth: 1,
+      borderColor: 'transparent',
     },
     pillFresh: { backgroundColor: color.accent },
-    pillStale: { backgroundColor: color.danger },
+    pillStale: { backgroundColor: color.surfaceRaised, borderColor: color.danger },
     pillText: { color: color.onAccent, fontSize: 11, fontWeight: weight.bold },
-    pillTextStale: { color: color.text },
+    pillTextStale: { color: color.danger },
     age: { color: color.textFaint, fontSize: 11 },
 
-    tabs: { gap: space.xs, paddingVertical: space.sm },
-    tab: {
-      paddingHorizontal: space.md,
-      paddingVertical: space.xs,
-      borderRadius: radius.md,
-      backgroundColor: color.surfaceRaised,
-    },
-    /** An event day that is not the selected one: outlined, not filled. */
-    tabEvent: { borderWidth: 1, borderColor: color.accent },
-    tabActive: { backgroundColor: color.accent, borderColor: color.accent },
-    tabLabel: {
-      color: color.textMuted,
-      fontSize: type.label,
-      fontWeight: weight.bold,
-    },
-    tabLabelEvent: { color: color.text },
-    tabLabelActive: { color: color.onAccent },
-
-    chartBlock: { marginTop: space.sm },
+    chartBlock: { marginTop: space.sm, backgroundColor: color.surfaceRaised, borderWidth: 1, borderColor: color.border, borderRadius: radius.md, padding: space.md },
     scaleRow: {
       flexDirection: 'row',
       justifyContent: 'space-between',
@@ -515,8 +465,9 @@ function makeStyles(color: Theme['color']) {
      * content. An unresolvable percentage left several hundred points of dead
      * space hanging under the panel.
      */
-    axisCell: { flex: 1 },
+    axisCell: { flex: 1, minWidth: 0, alignItems: 'center' },
     axisLabel: {
+      width: 40,
       color: color.textFaint,
       fontSize: 10,
       fontVariant: ['tabular-nums'],
@@ -526,15 +477,21 @@ function makeStyles(color: Theme['color']) {
     clearestRow: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: space.xs,
-      marginTop: space.sm,
+      gap: space.sm,
+      marginTop: space.md,
+      paddingTop: space.md,
+      borderTopWidth: 1,
+      borderTopColor: color.border,
     },
-    clearest: { color: color.textMuted, fontSize: type.label, flex: 1 },
+    windowText: { flex: 1 },
+    windowLabel: { color: color.textMuted, fontSize: 10, letterSpacing: 1 },
+    clearest: { color: color.text, fontSize: type.label, lineHeight: 20, marginTop: space.xs },
 
     footer: { marginTop: space.sm, alignItems: 'flex-start' },
 
     btn: {
-      height: 40,
+      minHeight: HIT_SIZE,
+      paddingVertical: space.sm,
       paddingHorizontal: space.md,
       alignItems: 'center',
       justifyContent: 'center',

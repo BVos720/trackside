@@ -26,6 +26,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 
 import { GearKind, bodies, lenses, type GearItem } from '../../core/domain/gear';
 import { searchGear } from '../../core/logic/gearSearch';
+import PanelEmptyState from '../PanelEmptyState';
 import type { UserGearItemId } from '../../core/domain/ids';
 import {
   HIT_SIZE,
@@ -96,10 +97,7 @@ export default function GearScreen({
 
   if (items.length === 0) {
     return (
-      <Text style={styles.help}>
-        No gear yet — add bodies and lenses from the profile screen's Gear
-        section, then bring them to this event here.
-      </Text>
+      <PanelEmptyState eyebrow="Your kit" title="Build your trackside kit" description="Add bodies and lenses in Profile → Gear. Then choose what to bring to this event here." />
     );
   }
 
@@ -107,40 +105,49 @@ export default function GearScreen({
     <View>
       {/* ── what you are taking ── */}
       {carried.length === 0 ? (
-        <Text style={styles.help}>
-          Nothing packed for this event yet.
-        </Text>
+        <PanelEmptyState eyebrow="Your kit" title="Pack for the weekend" description="Choose bodies and lenses from your locker. Only the gear you’re bringing will appear here." />
       ) : (
-        carried.map((item) => {
-          const subtitle = gearSubtitle(item);
-          return (
-            <View key={item.id} style={styles.row}>
-              <Text style={styles.tickOn}>✓</Text>
-              <View style={styles.rowText}>
-                <Text style={styles.itemName} numberOfLines={1}>
-                  {gearLabel(item)}
-                </Text>
-                {subtitle && (
-                  <Text style={styles.itemSubtitle} numberOfLines={1}>
-                    {subtitle}
+        <>
+          <View style={styles.kitHeading}>
+            <Text accessibilityRole="header" style={styles.kitTitle}>Packed for the circuit</Text>
+            <Text style={styles.kitCount}>{carried.length} {carried.length === 1 ? 'item' : 'items'}</Text>
+          </View>
+          {carried.map((item) => {
+            const subtitle = gearSubtitle(item);
+            return (
+              <View key={item.id} style={styles.row}>
+                <View style={styles.itemHeader}>
+                  <Text style={styles.kind}>{item.kind === GearKind.Body ? 'CAMERA BODY' : 'LENS'}</Text>
+                  <Text style={styles.packed}>✓ Packed</Text>
+                </View>
+                <View style={styles.rowText}>
+                  <Text style={styles.carriedName}>
+                    {gearLabel(item)}
                   </Text>
-                )}
+                  {subtitle && (
+                    <Text style={styles.itemSubtitle}>
+                      {subtitle}
+                    </Text>
+                  )}
+                </View>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`Remove ${gearLabel(item)} from this event`}
+                  onPress={() => onToggle(item.id, false)}
+                  style={({ pressed }) => [styles.removeTap, pressed && styles.pressed]}
+                >
+                  <Text style={styles.remove}>Remove</Text>
+                </Pressable>
               </View>
-              <Pressable
-                onPress={() => onToggle(item.id, false)}
-                hitSlop={10}
-                style={({ pressed }) => [styles.removeTap, pressed && styles.pressed]}
-              >
-                <Text style={styles.remove}>Remove</Text>
-              </Pressable>
-            </View>
-          );
-        })
+            );
+          })}
+        </>
       )}
 
       {/* ── the locker, folded away until asked for ── */}
       {!adding ? (
         <Pressable
+          accessibilityRole="button"
           onPress={() => setAdding(true)}
           style={({ pressed }) => [styles.addBtn, pressed && styles.pressed]}
         >
@@ -149,6 +156,7 @@ export default function GearScreen({
       ) : (
         <View style={styles.picker}>
           <TextInput
+            accessibilityLabel="Search your gear"
             value={query}
             onChangeText={setQuery}
             placeholder="Search your gear — e.g. &quot;r6&quot; or &quot;canon&quot;"
@@ -175,6 +183,8 @@ export default function GearScreen({
                     const subtitle = gearSubtitle(item);
                     return (
                       <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={`Pack ${gearLabel(item)}`}
                         key={item.id}
                         onPress={() => {
                           onToggle(item.id, true);
@@ -182,17 +192,17 @@ export default function GearScreen({
                           // family means the same search twice otherwise.
                         }}
                         style={({ pressed }) => [
-                          styles.row,
+                          styles.pickRow,
                           pressed && styles.pressed,
                         ]}
                       >
                         <Text style={styles.tick}>+</Text>
                         <View style={styles.rowText}>
-                          <Text style={styles.itemName} numberOfLines={1}>
+                          <Text style={styles.itemName}>
                             {gearLabel(item)}
                           </Text>
                           {subtitle && (
-                            <Text style={styles.itemSubtitle} numberOfLines={1}>
+                            <Text style={styles.itemSubtitle}>
                               {subtitle}
                             </Text>
                           )}
@@ -206,6 +216,7 @@ export default function GearScreen({
           )}
 
           <Pressable
+            accessibilityRole="button"
             onPress={() => {
               setAdding(false);
               setQuery('');
@@ -224,7 +235,14 @@ function makeStyles(color: Theme['color']) {
   return StyleSheet.create({
     pressed: { opacity: 0.7 },
 
-    help: { color: color.textMuted, fontSize: type.label, lineHeight: 17 },
+    help: { color: color.textMuted, fontSize: 14, lineHeight: 22, marginVertical: space.sm },
+    kitHeading: { gap: space.xs, marginTop: space.sm, marginBottom: space.sm },
+    kitTitle: { color: color.text, fontSize: 28, fontWeight: weight.bold },
+    kitCount: { color: color.textMuted, fontSize: type.label },
+    itemHeader: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', gap: space.sm },
+    kind: { color: color.textMuted, fontSize: 10, letterSpacing: 1.2, fontWeight: weight.bold },
+    packed: { color: color.accent, fontSize: 11, fontWeight: weight.bold },
+    carriedName: { color: color.text, fontSize: type.body, fontWeight: weight.bold, marginTop: space.sm },
 
     search: {
       backgroundColor: color.surfaceRaised,
@@ -232,7 +250,10 @@ function makeStyles(color: Theme['color']) {
       paddingHorizontal: space.md,
       color: color.text,
       fontSize: type.body,
-      height: HIT_SIZE,
+      minHeight: HIT_SIZE,
+      paddingVertical: space.sm,
+      borderWidth: 1,
+      borderColor: color.border,
     },
 
     groupHeading: {
@@ -244,40 +265,46 @@ function makeStyles(color: Theme['color']) {
     },
 
     row: {
+      padding: space.md,
+      marginBottom: space.sm,
+      borderRadius: radius.md,
+      backgroundColor: color.surface,
+      borderWidth: 1,
+      borderColor: color.border,
+    },
+    pickRow: {
       flexDirection: 'row',
       alignItems: 'center',
       gap: space.sm,
       minHeight: HIT_SIZE,
       paddingHorizontal: space.sm,
+      paddingVertical: space.sm,
       marginTop: space.xs,
       borderRadius: radius.md,
       backgroundColor: color.surface,
       borderWidth: 1,
       borderColor: 'transparent',
     },
-    rowText: { flex: 1 },
+    rowText: { flexShrink: 1, minWidth: 0 },
     itemName: { color: color.text, fontSize: type.label, fontWeight: weight.bold },
     itemSubtitle: { color: color.textMuted, fontSize: 11, marginTop: 2 },
 
     tick: { color: color.textFaint, fontSize: 18, width: 18, textAlign: 'center' },
-    tickOn: {
-      color: color.accent,
-      fontSize: 16,
-      width: 18,
-      textAlign: 'center',
-      fontWeight: weight.bold,
-    },
-
     removeTap: {
-      minHeight: HIT_SIZE - 12,
+      minHeight: HIT_SIZE,
       paddingHorizontal: space.sm,
       justifyContent: 'center',
+      alignItems: 'center',
+      backgroundColor: color.surfaceRaised,
+      borderRadius: radius.sm,
+      marginTop: space.sm,
     },
     remove: { color: color.textMuted, fontSize: 11, fontWeight: weight.bold },
 
     addBtn: {
       marginTop: space.sm,
-      height: HIT_SIZE,
+      minHeight: HIT_SIZE,
+      padding: space.sm,
       alignItems: 'center',
       justifyContent: 'center',
       borderRadius: radius.md,
@@ -293,7 +320,8 @@ function makeStyles(color: Theme['color']) {
     },
     doneBtn: {
       marginTop: space.md,
-      height: HIT_SIZE,
+      minHeight: HIT_SIZE,
+      padding: space.sm,
       alignItems: 'center',
       justifyContent: 'center',
       borderRadius: radius.md,

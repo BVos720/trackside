@@ -62,6 +62,11 @@ public/tiles/
 .env.local
 .env.*.local
 
+# /brag video output — the rendered MP4 and poster, the Hyperframes project
+# that produced them, and copies of its licensed music and SFX. Several MB,
+# and re-generatable from the plan and brief inside it.
+brag-output/
+
 # AI coding tooling — local scaffolding, not part of the app
 .agents/
 .claude-flow/

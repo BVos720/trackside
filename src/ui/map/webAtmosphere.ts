@@ -1,10 +1,16 @@
 import { MercatorCoordinate, type Map as MapLibreMap, type CustomLayerInterface, type ImageSource } from 'maplibre-gl';
-import { rainVertexShader, rainFragmentShader, cloudFragmentShader } from './atmosphereShaders';
+import { rainVertexShader, rainFragmentShader, cloudFragmentShader, mistFragmentShader } from './atmosphereShaders';
 import { terrainShadowMask } from '../../core/logic/terrainShadow';
+import { cloudPlacement } from '../../core/logic/sceneShadows';
+import { installSceneLighting } from './sceneLighting';
 
 export interface AtmosphereState {
   cover: number; rain: number; azimuth: number; altitude: number; epoch: number;
   enabled: boolean; reducedMotion: boolean;
+  moon?: { azimuth: number; altitude: number } | null;
+  shadowsEnabled?: boolean;
+  starsEnabled?: boolean;
+  rainEnabled?: boolean;
 }
 
 const cloudVertexShader = `#version 300 es
@@ -27,7 +33,8 @@ export function installWebAtmosphere(map: MapLibreMap, centre: readonly [number,
   let lastShadow = '';
   let ground = 0;
   const origin = MercatorCoordinate.fromLngLat([centre[0], centre[1]]);
-  const rain: number[] = [], clouds: number[] = [];
+  const lighting = installSceneLighting(map, MercatorCoordinate, { centre, bounds, sky: true, onError: message => console.warn(message) });
+  const rain: number[] = [], clouds: number[] = [], mist: number[] = [];
   let seed = 9147;
   const random = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
   for (let i = 0; i < 7000; i++) {
@@ -39,6 +46,12 @@ export function installWebAtmosphere(map: MapLibreMap, centre: readonly [number,
   for (let slice = 0; slice < 16; slice++) for (const index of [0, 1, 2, 0, 2, 3]) {
     const p = corners[index]!; clouds.push(p.x, p.y, 1 - slice / 15);
   }
+  const mistCorners = [[bounds[0][0], bounds[0][1]], [bounds[1][0], bounds[0][1]], [bounds[1][0], bounds[1][1]], [bounds[0][0], bounds[1][1]]].map(p => MercatorCoordinate.fromLngLat([p[0]!, p[1]!]));
+  for (let slice = 0; slice < 16; slice++) for (const index of [0, 1, 2, 0, 2, 3]) {
+    const p = mistCorners[index]!; mist.push(p.x, p.y, 1 - slice / 15);
+  }
+  // Illustrative dawn/night haze, matching the native fallback; not measured fog.
+  const mistDensity = () => (1 - Math.max(0, Math.min(1, (state.altitude + 2) / 10))) * (1 - Math.min(1, state.rain / 1.5)) * 0.9;
   type GL = WebGLRenderingContext | WebGL2RenderingContext;
   function program(gl: GL, vs: string, fs: string) {
     const result = gl.createProgram()!;
@@ -51,19 +64,19 @@ export function installWebAtmosphere(map: MapLibreMap, centre: readonly [number,
     if (!gl.getProgramParameter(result, gl.LINK_STATUS)) { const message = gl.getProgramInfoLog(result); gl.deleteProgram(result); throw new Error(message ?? 'Atmosphere program failed'); }
     return result;
   }
-  function layer(kind: 'rain' | 'cloud'): CustomLayerInterface {
+  function layer(kind: 'rain' | 'cloud' | 'mist'): CustomLayerInterface {
     let prog: WebGLProgram, buffer: WebGLBuffer, attribute: number;
     const locations = new Map<string, WebGLUniformLocation | null>();
-    const data = new Float32Array(kind === 'rain' ? rain : clouds);
+    const data = new Float32Array(kind === 'rain' ? rain : kind === 'mist' ? mist : clouds);
     return {
       id: `trackside-${kind}`, type: 'custom', renderingMode: '3d',
       onAdd(_map, gl) {
-        prog = program(gl, kind === 'rain' ? rainVertexShader : cloudVertexShader, kind === 'rain' ? rainFragmentShader : cloudFragmentShader);
+        prog = program(gl, kind === 'rain' ? rainVertexShader : cloudVertexShader, kind === 'rain' ? rainFragmentShader : kind === 'mist' ? mistFragmentShader : cloudFragmentShader);
         buffer = gl.createBuffer()!; gl.bindBuffer(gl.ARRAY_BUFFER, buffer); gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
         attribute = gl.getAttribLocation(prog, kind === 'rain' ? 'a_drop' : 'a_pos');
       },
       render(gl, args) {
-        if (!state.enabled || (kind === 'rain' ? state.rain <= 0 : state.cover <= 0)) return;
+        if (!state.enabled || (kind === 'rain' ? state.rain <= 0 || state.rainEnabled === false : kind === 'mist' ? mistDensity() <= 0 : state.cover <= 0)) return;
         const uniform = (name: string) => { if (!locations.has(name)) locations.set(name, gl.getUniformLocation(prog, name)); return locations.get(name)!; };
         gl.useProgram(prog);
         gl.uniformMatrix4fv(uniform('u_matrix'), false, args.defaultProjectionData.mainMatrix);
@@ -83,15 +96,24 @@ export function installWebAtmosphere(map: MapLibreMap, centre: readonly [number,
           gl.uniform2f(uniform('u_resolution'), gl.drawingBufferWidth, gl.drawingBufferHeight);
           gl.uniform1f(uniform('u_alpha'), Math.min(0.55, 0.20 + state.rain * 0.035) * (0.4 + light * 0.6));
           gl.uniform3f(uniform('u_tint'), 0.62 + light * 0.2, 0.70 + light * 0.18, 0.80 + light * 0.14);
+        } else if (kind === 'mist') {
+          gl.uniform1f(uniform('u_base'), ground - 20);
+          gl.uniform1f(uniform('u_thickness'), 90);
+          gl.uniform1f(uniform('u_density'), mistDensity());
+          gl.uniform1f(uniform('u_cover'), 0);
+          gl.uniform1f(uniform('u_time'), time % 86400);
+          gl.uniform2f(uniform('u_noiseOrigin'), origin.x, origin.y);
+          gl.uniform3f(uniform('u_tint'), 0.18 + light * 0.42, 0.23 + light * 0.43, 0.32 + light * 0.43);
         } else {
           const mpp = 156543.03392 * Math.cos(at.lat * Math.PI / 180) / Math.pow(2, map.getZoom());
-          const camera = map.getCanvas().clientHeight / 2 * mpp / 0.3333;
-          gl.uniform1f(uniform('u_base'), Math.max(ground + 900, camera + 500));
-          gl.uniform1f(uniform('u_thickness'), 450 + state.cover * 6);
+          const camera = ground + map.getCanvas().clientHeight / 2 * mpp / 0.3333 * Math.cos(map.getPitch() * Math.PI / 180);
+          const placement = cloudPlacement(ground, camera, state.cover);
+          gl.uniform1f(uniform('u_base'), placement.base);
+          gl.uniform1f(uniform('u_thickness'), placement.thickness);
           gl.uniform2f(uniform('u_noiseOrigin'), origin.x, origin.y);
           gl.uniform1f(uniform('u_cover'), state.cover / 100);
           gl.uniform1f(uniform('u_time'), time % 86400);
-          gl.uniform1f(uniform('u_visible'), 1);
+          gl.uniform1f(uniform('u_visible'), placement.visible);
           const az = state.azimuth * Math.PI / 180, alt = state.altitude * Math.PI / 180;
           gl.uniform3f(uniform('u_sun'), Math.sin(az) * Math.cos(alt), -Math.cos(az) * Math.cos(alt), Math.sin(alt));
           const warmth = Math.max(0, 1 - Math.abs(state.altitude - 3) / 12) * (1 - state.cover / 140);
@@ -106,10 +128,10 @@ export function installWebAtmosphere(map: MapLibreMap, centre: readonly [number,
       onRemove(_map, gl) { gl.deleteBuffer(buffer); gl.deleteProgram(prog); },
     };
   }
-  map.addLayer(layer('cloud')); map.addLayer(layer('rain'));
+  map.addLayer(layer('mist')); map.addLayer(layer('cloud')); map.addLayer(layer('rain'));
 
   function shadows() {
-    if (!state.enabled || state.altitude <= 0) { if (map.getLayer('trackside-shadow')) map.setPaintProperty('trackside-shadow', 'raster-opacity', 0); lastShadow = ''; return; }
+    if (!state.enabled || state.shadowsEnabled === false || state.altitude <= 0) { if (map.getLayer('trackside-shadow')) map.setPaintProperty('trackside-shadow', 'raster-opacity', 0); lastShadow = ''; return; }
     const size = 100, [sw, ne] = bounds;
     if (!grid) {
       const candidate = new Float32Array(size * size); let found = 0;
@@ -136,18 +158,31 @@ export function installWebAtmosphere(map: MapLibreMap, centre: readonly [number,
   }
   function tick(timestamp: number) {
     frame = 0;
-    if (disposed || document.hidden || !state.enabled || state.reducedMotion || (!state.cover && !state.rain)) return;
+    if (disposed || document.hidden || !state.enabled || state.reducedMotion || (!state.cover && !(state.rain && state.rainEnabled !== false) && !mistDensity())) return;
     if (timestamp - previous >= 33) { previous = timestamp; map.triggerRepaint(); }
     frame = requestAnimationFrame(tick);
   }
   function wake() { if (frame) cancelAnimationFrame(frame); frame = requestAnimationFrame(tick); }
-  function sample() { if (!state.enabled) return; const elevation = map.queryTerrainElevation(map.getCenter()); if (elevation !== null) ground = elevation; shadows(); }
-  map.on('idle', sample); document.addEventListener('visibilitychange', wake);
+  function syncLighting() { lighting.update({ ...state, epoch: state.epoch + (state.reducedMotion ? 0 : (performance.now() - started) / 1000), ground, shadows: state.shadowsEnabled !== false, stars: state.starsEnabled !== false }); }
+  function sample() {
+    if (!state.enabled) return;
+    const elevation = map.queryTerrainElevation({ lng: centre[0], lat: centre[1] });
+    if (typeof elevation === 'number' && Number.isFinite(elevation) && ground !== elevation) { ground = elevation; syncLighting(); }
+    shadows();
+  }
+  // Continuous weather repainting can prevent idle from firing; DEM arrivals still sample.
+  let terrainSample: ReturnType<typeof setTimeout> | undefined;
+  function sourceData(event: { sourceId?: string }) {
+    if (event.sourceId !== 'terrain') return;
+    clearTimeout(terrainSample); terrainSample = setTimeout(sample, 150);
+  }
+  map.on('idle', sample); map.on('sourcedata', sourceData); document.addEventListener('visibilitychange', wake);
   return {
-    update(next: AtmosphereState) { state = next; started = performance.now(); if (state.enabled) sample(); else shadows(); wake(); map.triggerRepaint(); },
+    update(next: AtmosphereState) { state = next; started = performance.now(); if (state.enabled) sample(); else shadows(); syncLighting(); wake(); map.triggerRepaint(); },
     dispose() {
-      disposed = true; cancelAnimationFrame(frame); map.off('idle', sample); document.removeEventListener('visibilitychange', wake);
-      for (const id of ['trackside-rain', 'trackside-cloud', 'trackside-shadow']) if (map.getLayer(id)) map.removeLayer(id);
+      disposed = true; cancelAnimationFrame(frame); clearTimeout(terrainSample); map.off('idle', sample); map.off('sourcedata', sourceData); document.removeEventListener('visibilitychange', wake);
+      lighting.dispose();
+      for (const id of ['trackside-rain', 'trackside-cloud', 'trackside-mist', 'trackside-shadow']) if (map.getLayer(id)) map.removeLayer(id);
       if (map.getSource('trackside-shadow-source')) map.removeSource('trackside-shadow-source');
     },
   };

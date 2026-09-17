@@ -32,6 +32,8 @@ export default defineConfig({
       'src/storage-local/**/*.test.ts',
       'src/ui/state/**/*.test.ts',
       'src/ui/state/**/*.test.tsx',
+      // Plain MapLibre lifecycle tests with map/GL boundaries mocked; no RN primitives.
+      'src/ui/map/**/*.test.ts',
     ],
     globals: false,
   },
